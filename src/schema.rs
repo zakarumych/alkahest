@@ -8,7 +8,7 @@ pub trait SchemaUnpack<'a> {
 /// Trait for data schemas.
 ///
 /// This trait requires implementation of `SchemaUnpacked` trait for all possible lifetimes.
-pub trait Schema: for<'a> SchemaUnpack<'a> {
+pub trait Schema: for<'a> SchemaUnpack<'a> + 'static {
     /// Packed value with this schema.
     /// Trivially readable from and writable to bytes.
     type Packed: bytemuck::Pod;

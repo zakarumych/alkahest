@@ -267,9 +267,14 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                         type Unpacked = #unpacked_ident #unpacked_type_generics;
                     }
 
-                    #[derive(Clone, Copy)]
                     #[repr(C, packed)]
                     struct #packed_ident #generics ( #( #packed_fields ,)* );
+
+                    impl #impl_generics ::core::clone::Clone for #packed_ident #type_generics #where_clause {
+                        fn clone(&self) -> Self { *self }
+                    }
+
+                    impl #impl_generics ::core::marker::Copy for #packed_ident #type_generics #where_clause {}
 
                     unsafe impl #impl_generics alkahest::Zeroable for #packed_ident #type_generics #where_clause {}
                     unsafe impl #impl_generics alkahest::Pod for #packed_ident #type_generics #where_clause {}
@@ -279,7 +284,7 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
 
                         fn align() -> usize {
                             #[allow(dead_code)]
-                            fn drop_fields(value: #ident) {
+                            fn drop_fields #generics (value: #ident #type_generics) {
                                 #( #drop_fields ; )*
                             }
 
@@ -312,9 +317,14 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                         type Unpacked = #unpacked_ident #unpacked_type_generics;
                     }
 
-                    #[derive(Clone, Copy)]
                     #[repr(C, packed)]
                     struct #packed_ident #generics { #( #packed_fields ,)* }
+
+                    impl #impl_generics ::core::clone::Clone for #packed_ident #type_generics #where_clause {
+                        fn clone(&self) -> Self { *self }
+                    }
+
+                    impl #impl_generics ::core::marker::Copy for #packed_ident #type_generics #where_clause {}
 
                     unsafe impl #impl_generics alkahest::Zeroable for #packed_ident #type_generics #where_clause {}
                     unsafe impl #impl_generics alkahest::Pod for #packed_ident #type_generics #where_clause {}
@@ -324,14 +334,14 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
 
                         fn align() -> usize {
                             #[allow(dead_code)]
-                            fn drop_fields(value: #ident) {
+                            fn drop_fields #generics (value: #ident #type_generics) {
                                 #( #drop_fields ; )*
                             }
 
                             1 + (0 #(| #align_masks )*)
                         }
 
-                        fn unpack<'alkahest>(packed: #packed_ident, bytes: &'alkahest [u8]) -> #unpacked_ident #unpacked_type_generics {
+                        fn unpack<'alkahest>(packed: #packed_ident #type_generics, bytes: &'alkahest [u8]) -> #unpacked_ident #unpacked_type_generics {
                             #unpacked_ident {
                                 #(#unpack_fields, )*
                             }

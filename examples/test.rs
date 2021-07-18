@@ -11,26 +11,26 @@ fn main() {
     use alkahest::*;
 
     #[derive(Schema)]
-    struct TestStruct {
+    struct TestStruct<T: Schema> {
         a: u32,
-        b: u32,
+        b: T,
         c: Seq<u32>,
         d: Seq<Seq<u32>>,
     }
 
     let mut data = aligned_bytes::<u32, 1024>([0; 1024]);
 
-    write::<TestStruct, _>(
+    write::<TestStruct<f32>, _>(
         &mut data.bytes,
         TestStructPack {
             a: 11,
-            b: 42,
+            b: 42.0,
             c: std::array::IntoIter::new([1, 2, 3]),
             d: (0..3).map(|i| (i..i + 4)),
         },
     );
 
-    let test = read::<TestStruct>(&data.bytes);
+    let test = read::<TestStruct<f32>>(&data.bytes);
 
     println!("{:#?}", test.a);
     println!("{:#?}", test.b);
