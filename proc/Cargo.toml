@@ -1,0 +1,19 @@
+[package]
+name = "alkahest-proc"
+version = "0.1.0"
+authors = ["Zakarum <zakarumych@ya.ru>"]
+edition = "2018"
+license = "MIT OR Apache-2.0"
+documentation = "https://docs.rs/alkahest-proc/0.0.0"
+homepage = "https://github.com/zakarumych/alkahest-proc"
+repository = "https://github.com/zakarumych/alkahest-proc"
+readme = "../README.md"
+description = "Procedural macros for 'alkahest-proc' crate"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1.0"
+syn = { version = "1.0", features = ["derive", "printing"] }
+quote = "1.0"
