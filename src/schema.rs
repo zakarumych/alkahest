@@ -18,7 +18,7 @@ pub trait Schema: for<'a> SchemaUnpack<'a> + 'static {
     fn align() -> usize;
 
     /// Unpack the value from packed value and bytes.
-    fn unpack<'a>(packed: Self::Packed, bytes: &'a [u8]) -> Unpacked<'a, Self>;
+    fn unpack<'a>(packed: Self::Packed, input: &'a [u8]) -> Unpacked<'a, Self>;
 }
 
 /// Trait for packable types with that match specified schema.
@@ -26,7 +26,7 @@ pub trait Pack<T: Schema> {
     /// Packs into trivially serializable value.
     ///
     /// Returns packed data and number of bytes used from `bytes` storage.
-    fn pack(self, offset: usize, bytes: &mut [u8]) -> (Packed<T>, usize);
+    fn pack(self, offset: usize, output: &mut [u8]) -> (Packed<T>, usize);
 }
 
 /// Type alias for packed value type of `T`.

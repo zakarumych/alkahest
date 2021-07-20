@@ -2,28 +2,36 @@ use alkahest::{Schema, Seq};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 #[derive(Schema)]
-struct TestSchema {
-    a: u32,
-    b: u32,
-    c: Seq<u32>,
-    d: Seq<Seq<u32>>,
+enum TestSchema {
+    Foo { a: u32, b: u32 },
+    Bar { c: Seq<u32>, d: Seq<Seq<u32>> },
+}
+
+enum TestSchemaPack<'a> {
+    Foo(TestSchemaFooPack<u32, u32>),
+    Bar(TestSchemaBarPack<&'a [u32], &'a [Vec<u32>]>),
 }
 
 #[derive(serde::Serialize, serde::Deserialize, rkyv::Archive, rkyv::Serialize)]
-struct TestData {
-    a: u32,
-    b: u32,
-    c: Vec<u32>,
-    d: Vec<Vec<u32>>,
+enum TestData {
+    Foo { a: u32, b: u32 },
+    Bar { c: Vec<u32>, d: Vec<Vec<u32>> },
 }
 
 impl TestData {
-    fn wrapper(&self) -> TestSchemaPack<u32, u32, &[u32], &[Vec<u32>]> {
-        TestSchemaPack {
-            a: self.a,
-            b: self.b,
-            c: &self.c,
-            d: &self.d,
+    fn wrapper(&self) -> TestSchemaPack<'_> {
+        match self {
+            &TestData::Foo { a, b } => TestSchemaPack::Foo(TestSchemaFooPack { a, b }),
+            TestData::Bar { c, d } => TestSchemaPack::Bar(TestSchemaBarPack { c, d }),
+        }
+    }
+}
+
+impl alkahest::Pack<TestSchema> for TestSchemaPack<'_> {
+    fn pack(self, offset: usize, output: &mut [u8]) -> (alkahest::Packed<TestSchema>, usize) {
+        match self {
+            TestSchemaPack::Foo(foo) => foo.pack(offset, output),
+            TestSchemaPack::Bar(bar) => bar.pack(offset, output),
         }
     }
 }
@@ -50,66 +58,83 @@ fn ser_rkyv(bytes: &mut [u8], data: &TestData) {
 }
 
 fn de_alkahest(bytes: &[u8]) {
-    let test = alkahest::read::<TestSchema>(bytes);
-    black_box(test.a);
-    black_box(test.b);
-    test.c.into_iter().for_each(|c| {
-        black_box(c);
-    });
-    test.d.into_iter().for_each(|d| {
-        d.into_iter().for_each(|d| {
-            black_box(d);
-        })
-    });
+    match alkahest::read::<TestSchema>(bytes) {
+        TestSchemaUnpacked::Foo { a, b } => {
+            black_box(a);
+            black_box(b);
+        }
+        TestSchemaUnpacked::Bar { c, d } => {
+            c.into_iter().for_each(|c| {
+                black_box(c);
+            });
+            d.into_iter().for_each(|d| {
+                d.into_iter().for_each(|d| {
+                    black_box(d);
+                })
+            });
+        }
+    }
 }
 
 fn de_json(bytes: &[u8]) {
-    let test = serde_json::from_slice::<TestData>(bytes).unwrap();
-    black_box(test.a);
-    black_box(test.b);
-    test.c.into_iter().for_each(|c| {
-        black_box(c);
-    });
-    test.d.into_iter().for_each(|d| {
-        d.into_iter().for_each(|d| {
-            black_box(d);
-        })
-    });
+    match serde_json::from_slice::<TestData>(bytes).unwrap() {
+        TestData::Foo { a, b } => {
+            black_box(a);
+            black_box(b);
+        }
+        TestData::Bar { c, d } => {
+            c.into_iter().for_each(|c| {
+                black_box(c);
+            });
+            d.into_iter().for_each(|d| {
+                d.into_iter().for_each(|d| {
+                    black_box(d);
+                })
+            });
+        }
+    }
 }
 
 fn de_bincode(bytes: &[u8]) {
-    let test = bincode::deserialize::<TestData>(bytes).unwrap();
-    black_box(test.a);
-    black_box(test.b);
-    test.c.into_iter().for_each(|c| {
-        black_box(c);
-    });
-    test.d.into_iter().for_each(|d| {
-        d.into_iter().for_each(|d| {
-            black_box(d);
-        })
-    });
+    match bincode::deserialize::<TestData>(bytes).unwrap() {
+        TestData::Foo { a, b } => {
+            black_box(a);
+            black_box(b);
+        }
+        TestData::Bar { c, d } => {
+            c.into_iter().for_each(|c| {
+                black_box(c);
+            });
+            d.into_iter().for_each(|d| {
+                d.into_iter().for_each(|d| {
+                    black_box(d);
+                })
+            });
+        }
+    }
 }
 
 fn de_rkyv(bytes: &[u8]) {
-    let test = unsafe { rkyv::archived_root::<TestData>(bytes) };
-
-    black_box(test.a);
-    black_box(test.b);
-    test.c.into_iter().for_each(|c| {
-        black_box(c);
-    });
-    test.d.into_iter().for_each(|d| {
-        d.into_iter().for_each(|d| {
-            black_box(d);
-        })
-    });
+    match unsafe { rkyv::archived_root::<TestData>(bytes) } {
+        ArchivedTestData::Foo { a, b } => {
+            black_box(a);
+            black_box(b);
+        }
+        ArchivedTestData::Bar { c, d } => {
+            c.into_iter().for_each(|c| {
+                black_box(c);
+            });
+            d.into_iter().for_each(|d| {
+                d.into_iter().for_each(|d| {
+                    black_box(d);
+                })
+            });
+        }
+    }
 }
 
 pub fn criterion_benchmark(c: &mut Criterion) {
-    let data = TestData {
-        a: 42,
-        b: 11,
+    let data = TestData::Bar {
         c: vec![1, 2, 3],
         d: vec![vec![4, 5, 1]],
     };

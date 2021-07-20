@@ -8,14 +8,15 @@
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
+mod bytes;
 mod primitive;
-// mod pod;
 mod schema;
 mod seq;
 
 use core::mem::size_of;
 
 pub use self::{
+    bytes::Bytes,
     schema::{Pack, Packed, Schema, SchemaUnpack, Unpacked},
     seq::Seq,
 };
@@ -50,3 +51,9 @@ where
         bytes,
     )
 }
+
+/// Type used to represent sizes and offsets in alkahest packages.
+/// This places limitation on sequence sizes which practically is never hit.
+/// `usize` itself is not portable and cannot be written into alkahest package.
+#[doc(hidden)]
+pub type FixedUsize = u32;

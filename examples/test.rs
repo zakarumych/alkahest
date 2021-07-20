@@ -38,4 +38,30 @@ fn main() {
     for d in test.d {
         println!("{:#?}", d.as_slice());
     }
+
+    #[derive(Schema)]
+    #[allow(dead_code)]
+    enum TestEnum<T: Schema> {
+        Foo,
+        Bar(T),
+        Baz { val: f32 },
+        Fuss { val: T, var: Seq<u32> },
+    }
+
+    write::<TestEnum<u64>, _>(&mut data.bytes, TestEnumFussPack { val: 4, var: 0..4 });
+
+    let test = read::<TestEnum<u64>>(&data.bytes);
+
+    match test {
+        TestEnumUnpacked::Foo => println!("Foo"),
+        TestEnumUnpacked::Bar(val) => println!("Bar({})", val),
+        TestEnumUnpacked::Baz { val } => println!("Bar{{val: {}}}", val),
+        TestEnumUnpacked::Fuss { val, var } => {
+            println!(
+                "Fuss{{val: {}, var_sum: {}}}",
+                val,
+                var.into_iter().sum::<u32>()
+            )
+        }
+    }
 }

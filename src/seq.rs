@@ -1,16 +1,14 @@
 use {
-    crate::{Pack, Schema, SchemaUnpack, Unpacked},
+    crate::{
+        schema::{Pack, Schema, SchemaUnpack, Unpacked},
+        FixedUsize,
+    },
     core::{
         convert::TryFrom,
         marker::PhantomData,
         mem::{align_of, size_of},
     },
 };
-
-/// Type used to represent sizes and offsets in alkahest packages.
-/// This places limitation on sequence sizes which practically is never hit.
-/// `usize` itself is not portable and cannot be written into alkahest package.
-type FixedUsize = u32;
 
 #[derive(Clone, Copy)]
 pub struct SeqUnpacked<'a, T> {
@@ -54,6 +52,8 @@ where
 #[cfg(target_endian = "little")]
 impl<'a, T> SeqUnpacked<'a, T> {
     /// View sequence of `Pod` values are a slice.
+    ///
+    /// Note that this function is available only on little-endian machines.
     pub fn as_slice(&self) -> &[T]
     where
         T: bytemuck::Pod + Schema<Packed = T>,
@@ -100,7 +100,7 @@ where
     I::IntoIter: ExactSizeIterator,
     I::Item: Pack<T>,
 {
-    fn pack(self, offset: usize, bytes: &mut [u8]) -> ([FixedUsize; 2], usize) {
+    fn pack(self, offset: usize, output: &mut [u8]) -> ([FixedUsize; 2], usize) {
         let iter = self.into_iter();
         let len = iter.len();
 
@@ -113,8 +113,8 @@ where
 
         let mut off = 0;
         for item in iter {
-            let (item_packed, item_used) = item.pack(offset + used, &mut bytes[used..]);
-            bytes[off..][..size_of::<T::Packed>()]
+            let (item_packed, item_used) = item.pack(offset + used, &mut output[used..]);
+            output[off..][..size_of::<T::Packed>()]
                 .copy_from_slice(bytemuck::bytes_of(&item_packed));
             used += item_used;
             off += size_of::<T::Packed>();
