@@ -8,7 +8,7 @@ documentation = "https://docs.rs/alkahest"
 homepage = "https://github.com/zakarumych/alkahest"
 repository = "https://github.com/zakarumych/alkahest"
 readme = "README.md"
-description = "Fantastic serialization library"
+description = "Fantastic serialization library with zero-overhead serialization and zero-copy deserialization"
 
 [features]
 derive = ["alkahest-proc"]

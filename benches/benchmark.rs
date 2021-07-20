@@ -2,6 +2,7 @@ use alkahest::{Schema, Seq};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 #[derive(Schema)]
+#[allow(dead_code)] // Values of schema type are never constructed. TODO: Generate code to silence this working for enums.
 enum TestSchema {
     Foo { a: u32, b: u32 },
     Bar { c: Seq<u32>, d: Seq<Seq<u32>> },
