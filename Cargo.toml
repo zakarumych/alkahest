@@ -32,3 +32,6 @@ required-features = ["derive"]
 name = "benchmark"
 harness = false
 required-features = ["derive"]
+
+[workspace]
+members = ["proc"]

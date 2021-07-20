@@ -1,12 +1,19 @@
 //!
-//! Alkahest generates code to write and read packets.
-//! Fast, correct, with low overhead and with simple API.
+//! *Alkahest* is serialization library aimed for packet writing and reading in hot path.
+//! For this purpose *Alkahest* avoids allocations and reads data only on demand.
 //!
+//! Key differences of *Alkahest* from other popular serialization crates is zero-overhead serialization and zero-copy lazy deserialization.\
+//! For example to serialize value sequence it is not necessary to construct expensive type with allocations such as vectors.\
+//! Instead sequences are serialized directly from iterators. On deserialization an iterator is returned to the user, which does not parse any element before it is requested.
+//! Which means that data that is not accessed - not parsed either.
+//!
+//! *Alkahest* works similarly to *FlatBuffers*,\
+//! but does not require using another language for data scheme definition and running external tool,\
+//! and supports generic schemas.
+//!
+
 #![no_std]
 #![forbid(unsafe_code)]
-
-#[cfg(feature = "alloc")]
-extern crate alloc;
 
 mod bytes;
 mod primitive;
@@ -18,7 +25,7 @@ use core::mem::size_of;
 pub use self::{
     bytes::Bytes,
     schema::{Pack, Packed, Schema, SchemaUnpack, Unpacked},
-    seq::Seq,
+    seq::{Seq, SeqUnpacked},
 };
 
 #[cfg(feature = "derive")]
@@ -28,8 +35,12 @@ pub use alkahest_proc::Schema;
 #[doc(hidden)]
 pub use bytemuck::{Pod, Zeroable};
 
-/// Writes the package into provided bytes slice.
+/// Writes data into bytes slice.
 /// Returns number of bytes written.
+///
+/// # Panics
+///
+/// Panics if value doesn't fit into bytes.
 pub fn write<'a, T, P>(bytes: &'a mut [u8], packable: P) -> usize
 where
     T: Schema,
@@ -42,6 +53,11 @@ where
 }
 
 /// Reads and unpacks package from raw bytes.
+///
+/// # Panics
+///
+/// This function or returned value's methods may panic
+/// if `bytes` slice does not contain data written with same schema.
 pub fn read<'a, T>(bytes: &'a [u8]) -> Unpacked<'a, T>
 where
     T: Schema,
