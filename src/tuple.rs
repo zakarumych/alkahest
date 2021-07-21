@@ -1,5 +1,28 @@
 use crate::{Pack, Schema, SchemaUnpack, Unpacked};
 
+impl<'a> SchemaUnpack<'a> for () {
+    type Unpacked = ();
+}
+
+impl Schema for () {
+    type Packed = ();
+
+    #[inline(always)]
+    fn align() -> usize {
+        1
+    }
+
+    #[inline(always)]
+    fn unpack<'a>((): (), _input: &'a [u8]) {}
+}
+
+impl Pack<()> for () {
+    #[inline(always)]
+    fn pack(self, _offset: usize, _output: &mut [u8]) -> ((), usize) {
+        ((), 0)
+    }
+}
+
 macro_rules! impl_for_tuple {
     ($packed_tuple:ident, [$($a:ident),+ $(,)?] [$($b:ident),+ $(,)?]) => {
         impl<'a, $($a),+> SchemaUnpack<'a> for ($($a,)+)
@@ -14,6 +37,7 @@ macro_rules! impl_for_tuple {
         pub struct $packed_tuple<$($a),+>($($a,)+);
 
         impl<$($a: Copy),+> Clone for $packed_tuple<$($a,)+> {
+            #[inline(always)]
             fn clone(&self) -> Self {
                 *self
             }
@@ -32,10 +56,12 @@ macro_rules! impl_for_tuple {
         {
             type Packed = $packed_tuple<$($a::Packed,)+>;
 
+            #[inline(always)]
             fn align() -> usize {
                 1 + ($(($a::align() - 1))|+)
             }
 
+            #[inline(always)]
             fn unpack<'a>(packed: $packed_tuple<$($a::Packed,)+>, input: &'a [u8]) -> Unpacked<'a, Self> {
                 #![allow(non_snake_case)]
 
@@ -48,6 +74,7 @@ macro_rules! impl_for_tuple {
         where
             $($a: Schema, $b: Pack<$a>,)+
         {
+            #[inline]
             fn pack(self, offset: usize, output: &mut [u8]) -> ($packed_tuple<$($a::Packed,)+>, usize) {
                 #![allow(non_snake_case)]
 

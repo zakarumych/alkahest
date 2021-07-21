@@ -39,6 +39,7 @@ impl<T> Pack<Bytes> for T
 where
     T: AsRef<[u8]>,
 {
+    #[inline]
     fn pack(self, offset: usize, output: &mut [u8]) -> ([FixedUsize; 2], usize) {
         let bytes = self.as_ref();
 

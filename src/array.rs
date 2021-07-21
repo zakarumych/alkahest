@@ -17,6 +17,7 @@ where
         T::align()
     }
 
+    #[inline]
     fn unpack<'a>(packed: [T::Packed; N], input: &'a [u8]) -> Unpacked<'a, Self> {
         packed.map(|packed| T::unpack(packed, input))
     }
@@ -27,6 +28,7 @@ where
     T: Schema,
     U: Pack<T>,
 {
+    #[inline]
     fn pack(self, offset: usize, output: &mut [u8]) -> (Packed<[T; N]>, usize) {
         let mut used = 0;
 
@@ -44,6 +46,7 @@ where
     T: Schema,
     for<'a> &'a U: Pack<T>,
 {
+    #[inline]
     fn pack(self, offset: usize, output: &mut [u8]) -> (Packed<[T; N]>, usize) {
         let mut storage: Packed<[T; N]> = bytemuck::Zeroable::zeroed();
 

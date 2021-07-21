@@ -15,6 +15,7 @@ pub struct PackedOption<T: bytemuck::Pod> {
 }
 
 impl<T: bytemuck::Pod> Clone for PackedOption<T> {
+    #[inline(always)]
     fn clone(&self) -> Self {
         *self
     }
@@ -32,10 +33,12 @@ where
 {
     type Packed = PackedOption<T::Packed>;
 
+    #[inline]
     fn align() -> usize {
         T::align()
     }
 
+    #[inline]
     fn unpack<'a>(packed: PackedOption<T::Packed>, input: &'a [u8]) -> Unpacked<'a, Self> {
         if packed.some != 0 {
             Some(T::unpack(packed.value, input))
@@ -50,6 +53,7 @@ where
     T: Schema,
     U: Pack<T>,
 {
+    #[inline]
     fn pack(self, offset: usize, output: &mut [u8]) -> (Packed<Option<T>>, usize) {
         match self {
             None => (

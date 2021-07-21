@@ -41,10 +41,12 @@ where
 {
     type Packed = [FixedUsize; 2];
 
+    #[inline(always)]
     fn align() -> usize {
         1 + ((align_of::<[FixedUsize; 2]>() - 1) | (<T as Schema>::align() - 1))
     }
 
+    #[inline(always)]
     fn unpack<'a>(packed: [FixedUsize; 2], bytes: &'a [u8]) -> SeqUnpacked<'a, T> {
         SeqUnpacked {
             len: usize::try_from(packed[0]).expect("Sequence is too large"),
@@ -62,6 +64,7 @@ impl<'a, T> SeqUnpacked<'a, T> {
     /// Note that this function is available only on little-endian machines.
     ///
     /// [`Pod`]: bytemuck::Pod
+    #[inline(always)]
     pub fn as_slice(&self) -> &[T]
     where
         T: bytemuck::Pod + Schema<Packed = T>,
@@ -76,6 +79,7 @@ where
 {
     type Item = Unpacked<'a, T>;
 
+    #[inline]
     fn next(&mut self) -> Option<Unpacked<'a, T>> {
         if self.len == 0 {
             None
@@ -87,6 +91,7 @@ where
         }
     }
 
+    #[inline(always)]
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.len, Some(self.len))
     }
@@ -96,6 +101,7 @@ impl<'a, T> ExactSizeIterator for SeqUnpacked<'a, T>
 where
     T: Schema,
 {
+    #[inline(always)]
     fn len(&self) -> usize {
         self.len
     }
@@ -108,6 +114,7 @@ where
     I::IntoIter: ExactSizeIterator,
     I::Item: Pack<T>,
 {
+    #[inline]
     fn pack(self, offset: usize, output: &mut [u8]) -> ([FixedUsize; 2], usize) {
         let iter = self.into_iter();
         let len = iter.len();
