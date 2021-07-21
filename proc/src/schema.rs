@@ -107,9 +107,10 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
 
                 match &variant.fields {
                     syn::Fields::Unit => quote::quote_spanned!(variant.span() => 
-                        struct #packed_variant_ident;
+                        #vis struct #packed_variant_ident;
 
                         impl ::core::clone::Clone for #packed_variant_ident {
+                            #[inline]
                             fn clone(&self) -> Self { *self }
                         }
 
@@ -121,13 +122,14 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                     syn::Fields::Unnamed(fields) => {
                         let packed_fields = fields.unnamed.iter().enumerate().map(|(idx, field)| {
                             let ty = quote::format_ident!("PackedField{}", idx);
-                            quote::quote_spanned!(field.span() => #ty )
+                            quote::quote_spanned!(field.span() => pub #ty )
                         });
 
                         quote::quote_spanned!(variant.span() => 
-                            #[repr(C, packed)] struct #packed_variant_ident #packed_variant_generics ( #(#packed_fields,)* );
+                            #[repr(C, packed)] #vis struct #packed_variant_ident #packed_variant_generics ( #(#packed_fields,)* );
 
                             impl #packed_variant_impl_generics ::core::clone::Clone for #packed_variant_ident #packed_variant_type_generics #packed_variant_where_clause {
+                                #[inline]
                                 fn clone(&self) -> Self { *self }
                             }
 
@@ -141,13 +143,14 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                         let packed_fields = fields.named.iter().enumerate().map(|(idx, field)| {
                             let ty = quote::format_ident!("PackedField{}", idx);
                             let ident = field.ident.as_ref().unwrap();
-                            quote::quote_spanned!(field.span() => #ident: #ty )
+                            quote::quote_spanned!(field.span() => pub #ident: #ty )
                         });
 
                         quote::quote_spanned!(variant.span() =>
-                            #[repr(C, packed)] struct #packed_variant_ident #packed_variant_generics { #(#packed_fields,)* }
+                            #[repr(C, packed)] #vis struct #packed_variant_ident #packed_variant_generics { #(#packed_fields,)* }
 
                             impl #packed_variant_impl_generics ::core::clone::Clone for #packed_variant_ident #packed_variant_type_generics #packed_variant_where_clause {
+                                #[inline]
                                 fn clone(&self) -> Self { *self }
                             }
 
@@ -257,9 +260,9 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                     ty.set_span(field.ty.span());
 
                     match &field.ident {
-                        None => quote::quote_spanned!( field.span() => #ty ),
+                        None => quote::quote_spanned!( field.span() => pub #ty ),
                         Some(ident) => {
-                            quote::quote_spanned!( field.span() => #ident: #ty )
+                            quote::quote_spanned!( field.span() => pub #ident: #ty )
                         }
                     }
                 });
@@ -393,6 +396,7 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                             #vis struct #pack_ident;
 
                             impl #pack_impl_generics ::alkahest::Pack<#ident #type_generics> for #pack_ident #pack_type_generics #pack_where_clause {
+                                #[inline]
                                 fn pack(self, offset: usize, bytes: &mut [u8]) -> (#packed_ident #type_generics, usize) {
                                     let mut used = 0;
                                     let packed = #packed_ident {
@@ -412,6 +416,7 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                             #vis struct #pack_ident #pack_type_generics ( #( #pack_fields ,)* );
 
                             impl #pack_impl_generics ::alkahest::Pack<#ident #type_generics> for #pack_ident #pack_type_generics #pack_where_clause {
+                                #[inline]
                                 fn pack(self, offset: usize, bytes: &mut [u8]) -> (#packed_ident #type_generics, usize) {
                                     let mut used = 0;
                                     let packed = #packed_ident {
@@ -432,6 +437,7 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                             #vis struct #pack_ident #pack_type_generics { #( #pack_fields ,)* }
 
                             impl #pack_impl_generics ::alkahest::Pack<#ident #type_generics> for #pack_ident #pack_type_generics #pack_where_clause {
+                                #[inline]
                                 fn pack(self, offset: usize, bytes: &mut [u8]) -> (#packed_ident #type_generics, usize) {
                                     let mut used = 0;
                                     let packed = #packed_ident {
@@ -460,11 +466,12 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                 #(#packed_variants)*
 
                 #[allow(non_snake_case, dead_code)]
-                union #packed_variants_ident #generics {
-                    #( #packed_variant_idents: #packed_variant_concrete_types ,)*
+                #vis union #packed_variants_ident #generics {
+                    #( #vis #packed_variant_idents: #packed_variant_concrete_types ,)*
                 }
 
                 impl #impl_generics ::core::clone::Clone for #packed_variants_ident #type_generics #where_clause {
+                    #[inline]
                     fn clone(&self) -> Self { *self }
                 }
 
@@ -475,11 +482,12 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
 
                 #[repr(C, packed)]
                 #vis struct #packed_ident #generics {
-                    discriminant: u32,
-                    variants: #packed_variants_ident #type_generics,
+                    #vis discriminant: u32,
+                    #vis variants: #packed_variants_ident #type_generics,
                 }
 
                 impl #impl_generics ::core::clone::Clone for #packed_ident #type_generics #where_clause {
+                    #[inline]
                     fn clone(&self) -> Self { *self }
                 }
 
@@ -491,10 +499,12 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                 impl #impl_generics ::alkahest::Schema for #ident #type_generics #where_clause {
                     type Packed = #packed_ident #type_generics;
 
+                    #[inline]
                     fn align() -> usize {
                         1 + (0 #(| #align_masks )*)
                     }
 
+                    #[inline]
                     fn unpack<'alkahest>(packed: #packed_ident #type_generics, bytes: &'alkahest [u8]) -> #unpacked_ident #unpacked_type_generics {
                         match packed.discriminant as usize {
                             #(#unpack_variants,)*
@@ -533,12 +543,13 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
 
             // Packed
             let packed_fields = data.fields.iter().map(|field| {
+                let vis = &field.vis;
                 let ty = &field.ty;
 
                 match &field.ident {
-                    None => quote::quote_spanned!(field.span() => <#ty as ::alkahest::Schema>::Packed ),
+                    None => quote::quote_spanned!(field.span() => #vis <#ty as ::alkahest::Schema>::Packed ),
                     Some(ident) => {
-                        quote::quote_spanned!(field.span() => #ident: <#ty as ::alkahest::Schema>::Packed )
+                        quote::quote_spanned!(field.span() => #vis #ident: <#ty as ::alkahest::Schema>::Packed )
                     }
                 }
             });
@@ -547,14 +558,14 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
             let (unpacked_impl_generics, unpacked_type_generics, _) =
                 unpacked_generics.split_for_impl();
 
-
             let unpacked_fields = data.fields.iter().map(|field| {
+                let vis = &field.vis;
                 let ty = &field.ty;
 
                 match &field.ident {
-                    None => quote::quote_spanned!(field.span() => <#ty as ::alkahest::SchemaUnpack<'alkahest>>::Unpacked ),
+                    None => quote::quote_spanned!(field.span() => #vis <#ty as ::alkahest::SchemaUnpack<'alkahest>>::Unpacked ),
                     Some(ident) => {
-                        quote::quote_spanned!(field.span() => #ident: <#ty as ::alkahest::SchemaUnpack<'alkahest>>::Unpacked )
+                        quote::quote_spanned!(field.span() => #vis #ident: <#ty as ::alkahest::SchemaUnpack<'alkahest>>::Unpacked )
                     }
                 }
             });
@@ -576,13 +587,14 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
 
 
             let pack_fields = data.fields.iter().enumerate().map(|(idx, field)| {
+                let vis = &field.vis;
                 let mut ty = quote::format_ident!("PackField{}", idx);
                 ty.set_span(field.ty.span());
 
                 match &field.ident {
-                    None => quote::quote_spanned!( field.span() => #ty ),
+                    None => quote::quote_spanned!( field.span() => #vis #ty ),
                     Some(ident) => {
-                        quote::quote_spanned!( field.span() => #ident: #ty )
+                        quote::quote_spanned!( field.span() => #vis #ident: #ty )
                     }
                 }
             });
@@ -719,8 +731,10 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                         impl ::alkahest::Schema for #ident {
                             type Packed = ();
 
+                            #[inline]
                             fn align() -> usize { 1 }
 
+                            #[inline]
                             fn unpack<'alkahest>(packed: (), _bytes: &'alkahest [u8]) -> Self {
                                 #ident
                             }
@@ -729,6 +743,7 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                         #vis struct #pack_ident;
 
                         impl ::alkahest::Pack<#ident> for #pack_ident {
+                            #[inline]
                             fn pack(self, offset: usize, bytes: &mut [u8]) -> ((), usize) {
                                 ((), 0)
                             }
@@ -748,6 +763,7 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                     #vis struct #packed_ident #generics ( #( #packed_fields ,)* );
 
                     impl #impl_generics ::core::clone::Clone for #packed_ident #type_generics #where_clause {
+                        #[inline]
                         fn clone(&self) -> Self { *self }
                     }
 
@@ -759,6 +775,7 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                     impl #impl_generics ::alkahest::Schema for #ident #type_generics #where_clause {
                         type Packed = #packed_ident #type_generics;
 
+                        #[inline]
                         fn align() -> usize {
                             #[allow(dead_code)]
                             fn drop_fields #generics (value: #ident #type_generics) {
@@ -768,6 +785,7 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                             1 + (0 #(| #align_masks )*)
                         }
 
+                        #[inline]
                         fn unpack<'alkahest>(packed: #packed_ident, bytes: &'alkahest [u8]) -> #unpacked_ident #unpacked_type_generics {
                             #unpacked_ident (
                                 #(#unpack_fields, )*
@@ -779,6 +797,7 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                     #vis struct #pack_ident #pack_type_generics ( #( #pack_fields ,)* );
 
                     impl #pack_impl_generics ::alkahest::Pack<#ident #type_generics> for #pack_ident #pack_type_generics #pack_where_clause {
+                        #[inline]
                         fn pack(self, offset: usize, bytes: &mut [u8]) -> (#packed_ident #type_generics, usize) {
                             let mut used = 0;
                             let packed = #packed_ident (
@@ -801,6 +820,7 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                     #vis struct #packed_ident #generics { #( #packed_fields ,)* }
 
                     impl #impl_generics ::core::clone::Clone for #packed_ident #type_generics #where_clause {
+                        #[inline]
                         fn clone(&self) -> Self { *self }
                     }
 
@@ -812,6 +832,7 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                     impl #impl_generics ::alkahest::Schema for #ident #type_generics #where_clause {
                         type Packed = #packed_ident #type_generics;
 
+                        #[inline]
                         fn align() -> usize {
                             #[allow(dead_code)]
                             fn drop_fields #generics (value: #ident #type_generics) {
@@ -821,6 +842,7 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                             1 + (0 #(| #align_masks )*)
                         }
 
+                        #[inline]
                         fn unpack<'alkahest>(packed: #packed_ident #type_generics, bytes: &'alkahest [u8]) -> #unpacked_ident #unpacked_type_generics {
                             #unpacked_ident {
                                 #(#unpack_fields, )*
@@ -832,6 +854,7 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                     #vis struct #pack_ident #pack_type_generics { #( #pack_fields ,)* }
 
                     impl #pack_impl_generics ::alkahest::Pack<#ident #type_generics> for #pack_ident #pack_type_generics #pack_where_clause {
+                        #[inline]
                         fn pack(self, offset: usize, bytes: &mut [u8]) -> (#packed_ident #type_generics, usize) {
                             let mut used = 0;
                             let packed = #packed_ident {
