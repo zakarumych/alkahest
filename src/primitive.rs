@@ -49,3 +49,28 @@ macro_rules! impl_primitive {
 }
 
 impl_primitive!(u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64);
+
+impl<'a> SchemaUnpack<'a> for bool {
+    type Unpacked = bool;
+}
+
+impl Schema for bool {
+    type Packed = u8;
+
+    fn align() -> usize {
+        align_of::<u8>()
+    }
+
+    fn unpack<'a>(packed: u8, _bytes: &'a [u8]) -> bool {
+        packed != 0
+    }
+}
+
+impl<T> Pack<bool> for T
+where
+    T: core::borrow::Borrow<bool>,
+{
+    fn pack(self, _offset: usize, _bytes: &mut [u8]) -> (u8, usize) {
+        (*self.borrow() as u8, 0)
+    }
+}
