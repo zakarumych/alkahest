@@ -19,7 +19,6 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
     let generics = &input.generics;
     let mut unpacked_generics = input.generics.clone();
 
-    
     let (impl_generics, type_generics, where_clause) = generics.split_for_impl();
 
     let lt_token = *unpacked_generics
@@ -40,9 +39,18 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
         syn::Data::Enum(data) => {
             let packed_variants_ident = quote::format_ident!("{}PackedVariants", input.ident);
 
-            let (impl_generics, type_generics, where_clause) = generics.split_for_impl();
-            let (unpacked_impl_generics, unpacked_type_generics, _) =
+            let (unpacked_impl_generics, mut unpacked_type_generics, _) =
                 unpacked_generics.split_for_impl();
+
+            let unpacked_generics = if data.variants.iter().all(|v| v.fields.is_empty()) {
+                &generics
+            } else {
+                &unpacked_generics
+            };
+
+            if data.variants.iter().all(|v| v.fields.is_empty()) {
+                unpacked_type_generics = type_generics.clone();
+            }
 
             let align_masks = data.variants.iter().flat_map(|variant| {
                 variant.fields.iter().map(|field| {
@@ -467,6 +475,7 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
 
                 #[allow(non_snake_case, dead_code)]
                 #vis union #packed_variants_ident #generics {
+                    pub _alkahest_packed_enum_uninit: (),
                     #( #vis #packed_variant_idents: #packed_variant_concrete_types ,)*
                 }
 
@@ -516,7 +525,7 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                 #(#pack_variants)*
             )
         }
-        syn::Data::Struct(data) => {            
+        syn::Data::Struct(data) => {
             let pack_ident = quote::format_ident!("{}Pack", input.ident);
 
             let drop_fields =
@@ -555,8 +564,19 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
             });
 
             // Unpacked
-            let (unpacked_impl_generics, unpacked_type_generics, _) =
+            let (unpacked_impl_generics, mut unpacked_type_generics, _) =
                 unpacked_generics.split_for_impl();
+
+            
+            let unpacked_generics = if data.fields.is_empty() {
+                &generics
+            } else {
+                &unpacked_generics
+            };
+
+            if data.fields.is_empty() {
+                unpacked_type_generics = type_generics.clone();
+            }
 
             let unpacked_fields = data.fields.iter().map(|field| {
                 let vis = &field.vis;
@@ -786,7 +806,7 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                         }
 
                         #[inline]
-                        fn unpack<'alkahest>(packed: #packed_ident, bytes: &'alkahest [u8]) -> #unpacked_ident #unpacked_type_generics {
+                        fn unpack<'alkahest>(packed: #packed_ident #type_generics, bytes: &'alkahest [u8]) -> #unpacked_ident #unpacked_type_generics {
                             #unpacked_ident (
                                 #(#unpack_fields, )*
                             )
