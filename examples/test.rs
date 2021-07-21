@@ -8,19 +8,17 @@ fn aligned_bytes<T, const N: usize>(bytes: [u8; N]) -> AlignedBytes<T, N> {
 }
 
 fn main() {
-    use alkahest::*;
-
-    #[derive(Schema)]
-    struct TestStruct<T: Schema> {
+    #[derive(alkahest::Schema)]
+    struct TestStruct<T: alkahest::Schema> {
         a: u32,
         b: T,
-        c: Seq<u32>,
-        d: Seq<Seq<u32>>,
+        c: alkahest::Seq<u32>,
+        d: alkahest::Seq<alkahest::Seq<u32>>,
     }
 
     let mut data = aligned_bytes::<u32, 1024>([0; 1024]);
 
-    write::<TestStruct<f32>, _>(
+    alkahest::write::<TestStruct<f32>, _>(
         &mut data.bytes,
         TestStructPack {
             a: 11,
@@ -30,7 +28,7 @@ fn main() {
         },
     );
 
-    let test = read::<TestStruct<f32>>(&data.bytes);
+    let test = alkahest::read::<TestStruct<f32>>(&data.bytes);
 
     println!("{:#?}", test.a);
     println!("{:#?}", test.b);
@@ -39,18 +37,18 @@ fn main() {
         println!("{:#?}", d.as_slice());
     }
 
-    #[derive(Schema)]
+    #[derive(alkahest::Schema)]
     #[allow(dead_code)]
-    enum TestEnum<T: Schema> {
+    enum TestEnum<T: alkahest::Schema> {
         Foo,
         Bar(T),
         Baz { val: f32 },
-        Fuss { val: T, var: Seq<u32> },
+        Fuss { val: T, var: alkahest::Seq<u32> },
     }
 
-    write::<TestEnum<u64>, _>(&mut data.bytes, TestEnumFussPack { val: 4, var: 0..4 });
+    alkahest::write::<TestEnum<u64>, _>(&mut data.bytes, TestEnumFussPack { val: 4, var: 0..4 });
 
-    let test = read::<TestEnum<u64>>(&data.bytes);
+    let test = alkahest::read::<TestEnum<u64>>(&data.bytes);
 
     match test {
         TestEnumUnpacked::Foo => println!("Foo"),

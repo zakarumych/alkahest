@@ -47,7 +47,7 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
             let align_masks = data.variants.iter().flat_map(|variant| {
                 variant.fields.iter().map(|field| {
                     let ty = &field.ty;
-                    quote::quote_spanned!(field.span() => (<#ty as Schema>::align() - 1))
+                    quote::quote_spanned!(field.span() => (<#ty as ::alkahest::Schema>::align() - 1))
                 })
             });
 
@@ -225,7 +225,7 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                         let unpack_fields = fields.unnamed.iter().enumerate().map(|(idx, field)| {
                             let ty = &field.ty;
                             let member = syn::Member::Unnamed(syn::Index { index: idx as u32, span: field.span() });
-                            quote::quote_spanned!( field.span() => <#ty as Schema>::unpack(variant.#member, bytes))
+                            quote::quote_spanned!( field.span() => <#ty as ::alkahest::Schema>::unpack(variant.#member, bytes))
                         });
                         quote::quote_spanned!(variant.span() => #idx => {
                             let variant = unsafe { &packed.variants.#variant_ident };
@@ -236,7 +236,7 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                         let unpack_fields = fields.named.iter().map(|field| {
                             let ty = &field.ty;
                             let ident = field.ident.as_ref().unwrap();
-                            quote::quote_spanned!( field.span() => #ident: <#ty as Schema>::unpack(variant.#ident, bytes))
+                            quote::quote_spanned!( field.span() => #ident: <#ty as ::alkahest::Schema>::unpack(variant.#ident, bytes))
                         });
                         quote::quote_spanned!(variant.span() => #idx => {
                             let variant = unsafe { &packed.variants.#variant_ident };
@@ -528,7 +528,7 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
 
             let align_masks = data.fields.iter().map(|field| {
                 let ty = &field.ty;
-                quote::quote_spanned!(field.span() => (<#ty as Schema>::align() - 1))
+                quote::quote_spanned!(field.span() => (<#ty as ::alkahest::Schema>::align() - 1))
             });
 
             // Packed
@@ -566,10 +566,10 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                 match &field.ident {
                     None => {
                         let member = syn::Member::Unnamed(syn::Index { index: idx as u32, span: field.span() });
-                        quote::quote_spanned!( field.span() => <#ty as Schema>::unpack(packed.#member, bytes))
+                        quote::quote_spanned!( field.span() => <#ty as ::alkahest::Schema>::unpack(packed.#member, bytes))
                     }
                     Some(ident) => {
-                        quote::quote_spanned!( field.span() => #ident: <#ty as Schema>::unpack(packed.#ident, bytes))
+                        quote::quote_spanned!( field.span() => #ident: <#ty as ::alkahest::Schema>::unpack(packed.#ident, bytes))
                     },
                 }
             });
