@@ -12,9 +12,10 @@ description = "Fantastic serialization library with zero-overhead serialization 
 
 [features]
 derive = ["alkahest-proc"]
+nightly = []
 
 [dependencies]
-bytemuck = { version = "1.0", default-features = false }
+bytemuck = { version = "1.0", default-features = false, features = ["min_const_generics"] }
 alkahest-proc = { version = "=0.1.2", path = "proc", optional = true }
 
 [dev-dependencies]

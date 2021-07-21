@@ -13,12 +13,16 @@
 //!
 
 #![no_std]
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 
+#[cfg(feature = "nightly")]
+mod array;
 mod bytes;
+mod option;
 mod primitive;
 mod schema;
 mod seq;
+mod tuple;
 
 use core::mem::size_of;
 
