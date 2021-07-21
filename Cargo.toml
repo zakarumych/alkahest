@@ -1,6 +1,6 @@
 [package]
 name = "alkahest"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2018"
 authors = ["Zakarum <zakarumych@ya.ru>"]
 license = "MIT OR Apache-2.0"
@@ -16,7 +16,7 @@ nightly = []
 
 [dependencies]
 bytemuck = { version = "1.0", default-features = false, features = ["min_const_generics"] }
-alkahest-proc = { version = "=0.1.2", path = "proc", optional = true }
+alkahest-proc = { version = "=0.1.3", path = "proc", optional = true }
 
 [dev-dependencies]
 criterion = "0.3"
