@@ -12,60 +12,61 @@ use crate::schema::SchemaOwned;
 /// `Schema` for runtime sized bytes array.
 /// Should be used for bytes and strings alike.
 ///
-/// Packed from `impl `[`AsRef`]`<[u8]>`.
-/// Unpacks into `&[`[`u8`]`]`.
+/// Packed from `impl `[`AsRef`]`<str>`.
+/// Unpacks into `&[`str`]`.
 ///
-/// Serialized exactly as [`Seq<u8>`].
+/// Serialized exactly as [`Bytes`] and [`Seq<u8>`].
 ///
 /// [`Seq<u8>`]: crate::Seq
+/// [`Bytes`]: crate::Bytes
 #[cfg_attr(feature = "alloc", repr(transparent))]
-pub struct Bytes {
+pub struct Str {
     #[cfg(feature = "alloc")]
-    bytes: alloc::boxed::Box<[u8]>,
+    string: alloc::boxed::Box<str>,
 }
 
 #[cfg(feature = "alloc")]
-impl core::ops::Deref for Bytes {
-    type Target = [u8];
+impl core::ops::Deref for Str {
+    type Target = str;
 
-    fn deref(&self) -> &[u8] {
-        &*self.bytes
+    fn deref(&self) -> &str {
+        &*self.string
     }
 }
 
 #[cfg(feature = "alloc")]
-impl core::ops::DerefMut for Bytes {
-    fn deref_mut(&mut self) -> &mut [u8] {
-        &mut *self.bytes
+impl core::ops::DerefMut for Str {
+    fn deref_mut(&mut self) -> &mut str {
+        &mut *self.string
     }
 }
 
 #[cfg(feature = "alloc")]
-impl Bytes {
-    pub fn into_inner(self) -> alloc::boxed::Box<[u8]> {
-        self.bytes
+impl Str {
+    pub fn into_inner(self) -> alloc::boxed::Box<str> {
+        self.string
     }
 }
 
-impl<'a> SchemaUnpack<'a> for Bytes {
-    type Unpacked = &'a [u8];
+impl<'a> SchemaUnpack<'a> for Str {
+    type Unpacked = &'a str;
 }
 
-impl Schema for Bytes {
+impl Schema for Str {
     type Packed = [FixedUsize; 2];
 
     fn align() -> usize {
         align_of::<[FixedUsize; 2]>()
     }
 
-    fn unpack<'a>(packed: [FixedUsize; 2], bytes: &'a [u8]) -> &'a [u8] {
+    fn unpack<'a>(packed: [FixedUsize; 2], bytes: &'a [u8]) -> &'a str {
         let len = usize::try_from(packed[0]).expect("Slice is too large");
         let offset = usize::try_from(packed[1]).expect("Package is too large");
-        &bytes[offset..][..len]
+        core::str::from_utf8(&bytes[offset..][..len]).unwrap()
     }
 }
 
-impl<T> Pack<Bytes> for T
+impl<T> Pack<Str> for T
 where
     T: AsRef<[u8]>,
 {
@@ -82,11 +83,11 @@ where
 }
 
 #[cfg(feature = "alloc")]
-impl SchemaOwned for Bytes {
+impl SchemaOwned for Str {
     #[inline(always)]
-    fn to_owned_schema<'a>(unpacked: &'a [u8]) -> Bytes {
-        Bytes {
-            bytes: unpacked.into(),
+    fn to_owned_schema<'a>(unpacked: &'a str) -> Str {
+        Str {
+            string: unpacked.into(),
         }
     }
 }

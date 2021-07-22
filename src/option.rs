@@ -1,10 +1,10 @@
-use crate::{Pack, Packed, Schema, SchemaUnpack, Unpacked};
+use crate::schema::{Pack, Packed, Schema, SchemaOwned, SchemaUnpack, Unpacked};
 
 impl<'a, T> SchemaUnpack<'a> for Option<T>
 where
     T: Schema,
 {
-    type Unpacked = Option<<T as SchemaUnpack<'a>>::Unpacked>;
+    type Unpacked = Option<Unpacked<'a, T>>;
 }
 
 #[derive(Copy)]
@@ -55,6 +55,18 @@ where
 {
     #[inline]
     fn pack(self, offset: usize, output: &mut [u8]) -> (Packed<Option<T>>, usize) {
+        debug_assert_eq!(
+            output.as_ptr() as usize % <Option<T> as Schema>::align(),
+            0,
+            "Output buffer is not aligned"
+        );
+
+        debug_assert_eq!(
+            offset % <Option<T> as Schema>::align(),
+            0,
+            "Offset is not aligned"
+        );
+
         match self {
             None => (
                 PackedOption {
@@ -73,6 +85,19 @@ where
                     used,
                 )
             }
+        }
+    }
+}
+
+impl<T> SchemaOwned for Option<T>
+where
+    T: SchemaOwned,
+{
+    #[inline(always)]
+    fn to_owned_schema<'a>(unpacked: Option<Unpacked<'a, T>>) -> Self {
+        match unpacked {
+            None => None,
+            Some(unpacked) => Some(T::to_owned_schema(unpacked)),
         }
     }
 }

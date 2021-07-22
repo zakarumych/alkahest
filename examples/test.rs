@@ -9,11 +9,12 @@ fn aligned_bytes<T, const N: usize>(bytes: [u8; N]) -> AlignedBytes<T, N> {
 
 fn main() {
     #[derive(alkahest::Schema)]
-    struct TestStruct<T: alkahest::Schema> {
-        a: u32,
-        b: T,
-        c: alkahest::Seq<u32>,
-        d: alkahest::Seq<alkahest::Seq<u32>>,
+    #[alkahest(owned)]
+    pub struct TestStruct<T> {
+        pub a: u32,
+        pub b: T,
+        pub c: alkahest::Seq<u32>,
+        pub d: alkahest::Seq<alkahest::Seq<u32>>,
     }
 
     let mut data = aligned_bytes::<u32, 1024>([0; 1024]);
@@ -38,8 +39,9 @@ fn main() {
     }
 
     #[derive(alkahest::Schema)]
+    #[alkahest(owned)]
     #[allow(dead_code)]
-    enum TestEnum<T: alkahest::Schema> {
+    enum TestEnum<T> {
         Foo,
         Bar(T),
         Baz { val: f32 },

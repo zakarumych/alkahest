@@ -1,4 +1,4 @@
-use crate::{Pack, Schema, SchemaUnpack, Unpacked};
+use crate::{Pack, Schema, SchemaOwned, SchemaUnpack, Unpacked};
 
 impl<'a> SchemaUnpack<'a> for () {
     type Unpacked = ();
@@ -23,13 +23,18 @@ impl Pack<()> for () {
     }
 }
 
+impl SchemaOwned for () {
+    #[inline(always)]
+    fn to_owned_schema<'a>((): ()) {}
+}
+
 macro_rules! impl_for_tuple {
     ($packed_tuple:ident, [$($a:ident),+ $(,)?] [$($b:ident),+ $(,)?]) => {
         impl<'a, $($a),+> SchemaUnpack<'a> for ($($a,)+)
         where
             $($a: Schema,)+
         {
-            type Unpacked = ($(<$a as SchemaUnpack<'a>>::Unpacked,)+);
+            type Unpacked = ($(Unpacked<'a, $a>,)+);
         }
 
         #[derive(Copy)]
@@ -62,7 +67,7 @@ macro_rules! impl_for_tuple {
             }
 
             #[inline(always)]
-            fn unpack<'a>(packed: $packed_tuple<$($a::Packed,)+>, input: &'a [u8]) -> Unpacked<'a, Self> {
+            fn unpack<'a>(packed: $packed_tuple<$($a::Packed,)+>, input: &'a [u8]) -> ($(Unpacked<'a, $a>,)+) {
                 #![allow(non_snake_case)]
 
                 let $packed_tuple($($a,)+) = packed;
@@ -78,14 +83,39 @@ macro_rules! impl_for_tuple {
             fn pack(self, offset: usize, output: &mut [u8]) -> ($packed_tuple<$($a::Packed,)+>, usize) {
                 #![allow(non_snake_case)]
 
+                debug_assert_eq!(
+                    output.as_ptr() as usize % <($($a,)+) as Schema>::align(),
+                    0,
+                    "Output buffer is not aligned"
+                );
+                debug_assert_eq!(
+                    offset % <($($a,)+) as Schema>::align(),
+                    0,
+                    "Offset is not aligned"
+                );
+
                 let ($($b,)+) = self;
                 let mut used = 0;
                 let packed = $packed_tuple( $( {
-                    let (packed, size) = $b.pack(offset + used, &mut output[used..]);
-                    used += size;
+                    let aligned = (used + (<$a>::align() - 1)) & !(<$a>::align() - 1);
+                    let (packed, size) = $b.pack(offset + aligned, &mut output[aligned..]);
+                    used = aligned + size;
                     packed
                 },)+ );
                 (packed, used)
+            }
+        }
+
+        impl<$($a),+> SchemaOwned for ($($a,)+)
+        where
+            $($a: SchemaOwned,)+
+        {
+            #[inline(always)]
+            fn to_owned_schema<'a>(unpacked: ($(Unpacked<'a, $a>,)+)) -> ($($a,)+) {
+                #![allow(non_snake_case)]
+
+                let ($($a,)+) = unpacked;
+                ($( <$a>::to_owned_schema($a) ,)+)
             }
         }
     };

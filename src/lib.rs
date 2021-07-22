@@ -15,6 +15,9 @@
 #![no_std]
 #![deny(unsafe_code)]
 
+#[cfg(feature = "alloc")]
+extern crate alloc;
+
 #[cfg(feature = "nightly")]
 mod array;
 mod bytes;
@@ -22,14 +25,16 @@ mod option;
 mod primitive;
 mod schema;
 mod seq;
+mod str;
 mod tuple;
 
 use core::mem::size_of;
 
 pub use self::{
     bytes::Bytes,
-    schema::{Pack, Packed, Schema, SchemaUnpack, Unpacked},
+    schema::{Pack, Packed, Schema, SchemaOwned, SchemaUnpack, Unpacked},
     seq::{Seq, SeqUnpacked},
+    str::Str,
 };
 
 #[cfg(feature = "derive")]
@@ -51,9 +56,11 @@ where
     P: Pack<T>,
 {
     let packed_size = size_of::<T::Packed>();
-    let (packed, used) = packable.pack(packed_size, &mut bytes[packed_size..]);
+    let align_mask = T::align();
+    let aligned = (packed_size + align_mask) & !align_mask;
+    let (packed, used) = packable.pack(aligned, &mut bytes[aligned..]);
     bytes[..packed_size].copy_from_slice(bytemuck::bytes_of(&packed));
-    packed_size + used
+    aligned + used
 }
 
 /// Reads and unpacks package from raw bytes.
