@@ -1,10 +1,10 @@
-use crate::{Pack, Packed, Schema, SchemaUnpack, Unpacked};
+use crate::schema::{OwnedSchema, Pack, Packed, Schema, SchemaUnpack, Unpacked};
 
 impl<'a, T> SchemaUnpack<'a> for Option<T>
 where
     T: Schema,
 {
-    type Unpacked = Option<<T as SchemaUnpack<'a>>::Unpacked>;
+    type Unpacked = Option<Unpacked<'a, T>>;
 }
 
 #[derive(Copy)]
@@ -73,6 +73,19 @@ where
                     used,
                 )
             }
+        }
+    }
+}
+
+impl<T> OwnedSchema for Option<T>
+where
+    T: OwnedSchema,
+{
+    #[inline(always)]
+    fn to_owned<'a>(unpacked: Option<Unpacked<'a, T>>) -> Self {
+        match unpacked {
+            None => None,
+            Some(unpacked) => Some(T::to_owned(unpacked)),
         }
     }
 }

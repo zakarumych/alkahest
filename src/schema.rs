@@ -22,6 +22,15 @@ pub trait Schema: for<'a> SchemaUnpack<'a> + 'static {
     fn unpack<'a>(packed: Self::Packed, input: &'a [u8]) -> Unpacked<'a, Self>;
 }
 
+/// Trait to to_owned unpacked value and construct owned structure.
+/// It may be as trivial as no-op for POD types.
+///
+/// Some types may require "alloc" feature to implement this trait.
+pub trait OwnedSchema: Schema + for<'a> SchemaUnpack<'a> {
+    /// OwnedSchema to owned value.
+    fn to_owned<'a>(unpacked: Unpacked<'a, Self>) -> Self;
+}
+
 /// Trait for packable types that match specified [`Schema`].
 pub trait Pack<T: Schema> {
     /// Packs into trivially serializable value.

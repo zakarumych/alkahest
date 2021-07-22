@@ -1,4 +1,4 @@
-use crate::{Pack, Packed, Schema, SchemaUnpack, Unpacked};
+use crate::schema::{OwnedSchema, Pack, Packed, Schema, SchemaUnpack, Unpacked};
 
 impl<'a, T, const N: usize> SchemaUnpack<'a> for [T; N]
 where
@@ -59,5 +59,15 @@ where
         }
 
         (storage, used)
+    }
+}
+
+impl<T, const N: usize> OwnedSchema for [T; N]
+where
+    T: OwnedSchema,
+{
+    #[inline]
+    fn to_owned<'a>(unpacked: Unpacked<'a, [T; N]>) -> [T; N] {
+        unpacked.map(|unpacked| T::to_owned(unpacked))
     }
 }

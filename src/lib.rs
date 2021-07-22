@@ -15,6 +15,9 @@
 #![no_std]
 #![deny(unsafe_code)]
 
+#[cfg(feature = "alloc")]
+extern crate alloc;
+
 #[cfg(feature = "nightly")]
 mod array;
 mod bytes;
@@ -22,13 +25,14 @@ mod option;
 mod primitive;
 mod schema;
 mod seq;
+mod str;
 mod tuple;
 
 use core::mem::size_of;
 
 pub use self::{
     bytes::Bytes,
-    schema::{Pack, Packed, Schema, SchemaUnpack, Unpacked},
+    schema::{OwnedSchema, Pack, Packed, Schema, SchemaUnpack, Unpacked},
     seq::{Seq, SeqUnpacked},
 };
 

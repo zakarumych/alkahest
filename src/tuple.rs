@@ -1,4 +1,4 @@
-use crate::{Pack, Schema, SchemaUnpack, Unpacked};
+use crate::{OwnedSchema, Pack, Schema, SchemaUnpack, Unpacked};
 
 impl<'a> SchemaUnpack<'a> for () {
     type Unpacked = ();
@@ -23,13 +23,18 @@ impl Pack<()> for () {
     }
 }
 
+impl OwnedSchema for () {
+    #[inline(always)]
+    fn to_owned<'a>((): ()) {}
+}
+
 macro_rules! impl_for_tuple {
     ($packed_tuple:ident, [$($a:ident),+ $(,)?] [$($b:ident),+ $(,)?]) => {
         impl<'a, $($a),+> SchemaUnpack<'a> for ($($a,)+)
         where
             $($a: Schema,)+
         {
-            type Unpacked = ($(<$a as SchemaUnpack<'a>>::Unpacked,)+);
+            type Unpacked = ($(Unpacked<'a, $a>,)+);
         }
 
         #[derive(Copy)]
@@ -62,7 +67,7 @@ macro_rules! impl_for_tuple {
             }
 
             #[inline(always)]
-            fn unpack<'a>(packed: $packed_tuple<$($a::Packed,)+>, input: &'a [u8]) -> Unpacked<'a, Self> {
+            fn unpack<'a>(packed: $packed_tuple<$($a::Packed,)+>, input: &'a [u8]) -> ($(Unpacked<'a, $a>,)+) {
                 #![allow(non_snake_case)]
 
                 let $packed_tuple($($a,)+) = packed;
@@ -86,6 +91,19 @@ macro_rules! impl_for_tuple {
                     packed
                 },)+ );
                 (packed, used)
+            }
+        }
+
+        impl<$($a),+> OwnedSchema for ($($a,)+)
+        where
+            $($a: OwnedSchema,)+
+        {
+            #[inline(always)]
+            fn to_owned<'a>(unpacked: ($(Unpacked<'a, $a>,)+)) -> ($($a,)+) {
+                #![allow(non_snake_case)]
+
+                let ($($a,)+) = unpacked;
+                ($( <$a>::to_owned($a) ,)+)
             }
         }
     };

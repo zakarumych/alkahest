@@ -9,9 +9,9 @@ fn aligned_bytes<T, const N: usize>(bytes: [u8; N]) -> AlignedBytes<T, N> {
 
 fn main() {
     #[derive(alkahest::Schema)]
-    struct TestStruct<T: alkahest::Schema> {
-        a: u32,
-        b: T,
+    pub struct TestStruct<T> {
+        pub a: u32,
+        pub b: T,
         c: alkahest::Seq<u32>,
         d: alkahest::Seq<alkahest::Seq<u32>>,
     }
@@ -39,7 +39,7 @@ fn main() {
 
     #[derive(alkahest::Schema)]
     #[allow(dead_code)]
-    enum TestEnum<T: alkahest::Schema> {
+    enum TestEnum<T> {
         Foo,
         Bar(T),
         Baz { val: f32 },
