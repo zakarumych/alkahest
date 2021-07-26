@@ -443,7 +443,7 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                 #[allow(dead_code)]
                 #vis enum #unpacked_ident #unpacked_impl_generics #unpacked_where_clause  { #( #unpacked_variants ,)* }
 
-                impl #schema_unpack_type_generics ::alkahest::SchemaUnpack<'a> for #ident #schema_type_generics #schema_where_clause {
+                impl #schema_unpack_impl_generics ::alkahest::SchemaUnpack<'a> for #ident #schema_type_generics #schema_where_clause {
                     type Unpacked = #unpacked_ident #unpacked_type_generics;
                 }
 
