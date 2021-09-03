@@ -1,4 +1,4 @@
-use crate::schema::{OwnedSchema, Pack, Packed, Schema, SchemaUnpack, Unpacked};
+use crate::schema::{Pack, Packed, Schema, SchemaUnpack, Unpacked};
 
 impl<'a, T> SchemaUnpack<'a> for Option<T>
 where
@@ -73,19 +73,6 @@ where
                     used,
                 )
             }
-        }
-    }
-}
-
-impl<T> OwnedSchema for Option<T>
-where
-    T: OwnedSchema,
-{
-    #[inline(always)]
-    fn to_owned<'a>(unpacked: Option<Unpacked<'a, T>>) -> Self {
-        match unpacked {
-            None => None,
-            Some(unpacked) => Some(T::to_owned(unpacked)),
         }
     }
 }

@@ -6,9 +6,6 @@ use {
     core::{convert::TryFrom, mem::align_of},
 };
 
-#[cfg(feature = "alloc")]
-use crate::schema::OwnedSchema;
-
 /// `Schema` for runtime sized bytes array.
 /// Should be used for bytes and strings alike.
 ///
@@ -18,34 +15,7 @@ use crate::schema::OwnedSchema;
 /// Serialized exactly as [`Seq<u8>`].
 ///
 /// [`Seq<u8>`]: crate::Seq
-#[cfg_attr(feature = "alloc", repr(transparent))]
-pub struct Bytes {
-    #[cfg(feature = "alloc")]
-    bytes: alloc::boxed::Box<[u8]>,
-}
-
-#[cfg(feature = "alloc")]
-impl core::ops::Deref for Bytes {
-    type Target = [u8];
-
-    fn deref(&self) -> &[u8] {
-        &*self.bytes
-    }
-}
-
-#[cfg(feature = "alloc")]
-impl core::ops::DerefMut for Bytes {
-    fn deref_mut(&mut self) -> &mut [u8] {
-        &mut *self.bytes
-    }
-}
-
-#[cfg(feature = "alloc")]
-impl Bytes {
-    pub fn into_inner(self) -> alloc::boxed::Box<[u8]> {
-        self.bytes
-    }
-}
+pub enum Bytes {}
 
 impl<'a> SchemaUnpack<'a> for Bytes {
     type Unpacked = &'a [u8];
@@ -78,15 +48,5 @@ where
 
         output[..bytes.len()].copy_from_slice(bytes);
         ([len32, offset32], bytes.len())
-    }
-}
-
-#[cfg(feature = "alloc")]
-impl OwnedSchema for Bytes {
-    #[inline(always)]
-    fn to_owned<'a>(unpacked: &'a [u8]) -> Bytes {
-        Bytes {
-            bytes: unpacked.into(),
-        }
     }
 }

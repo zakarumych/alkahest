@@ -10,43 +10,15 @@ use {
     },
 };
 
-#[cfg(feature = "alloc")]
-use crate::schema::OwnedSchema;
-
 /// `Schema` for runtime sized sequence of `T`.
 ///
 /// Packed from iterator of `impl `[`Pack<T>`].
 /// Unpacks into iterator of [`Unpacked<T>`]
-#[cfg_attr(feature = "alloc", repr(transparent))]
-pub struct Seq<T> {
-    #[cfg(feature = "alloc")]
-    slice: alloc::boxed::Box<[T]>,
-
-    #[cfg(not(feature = "alloc"))]
-    marker: PhantomData<[T]>,
-}
-
-#[cfg(feature = "alloc")]
-impl<T> core::ops::Deref for Seq<T> {
-    type Target = [T];
-
-    fn deref(&self) -> &[T] {
-        &*self.slice
-    }
-}
-
-#[cfg(feature = "alloc")]
-impl<T> core::ops::DerefMut for Seq<T> {
-    fn deref_mut(&mut self) -> &mut [T] {
-        &mut *self.slice
-    }
-}
-
-#[cfg(feature = "alloc")]
-impl<T> Seq<T> {
-    pub fn into_inner(self) -> alloc::boxed::Box<[T]> {
-        self.slice
-    }
+pub enum Seq<T> {
+    Uninhabited {
+        void: core::convert::Infallible,
+        marker: PhantomData<[T]>,
+    },
 }
 
 /// Unpacked array.
@@ -167,17 +139,5 @@ where
         }
 
         ([len32, offset32], used)
-    }
-}
-
-#[cfg(feature = "alloc")]
-impl<T> OwnedSchema for Seq<T>
-where
-    T: OwnedSchema,
-{
-    fn to_owned<'a>(unpacked: SeqUnpacked<'a, T>) -> Seq<T> {
-        Seq {
-            slice: unpacked.map(|item| T::to_owned(item)).collect(),
-        }
     }
 }

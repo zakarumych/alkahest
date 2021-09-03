@@ -1,5 +1,5 @@
 use {
-    crate::schema::{OwnedSchema, Pack, Schema, SchemaUnpack},
+    crate::schema::{Pack, Schema, SchemaUnpack},
     core::mem::align_of,
 };
 
@@ -50,13 +50,6 @@ macro_rules! impl_primitive {
                 (<$ty>::to_le(*self.borrow()), 0)
             }
         }
-
-        impl OwnedSchema for $ty {
-            #[inline(always)]
-            fn to_owned(unpacked: $ty) -> $ty {
-                unpacked
-            }
-        }
     };
 }
 
@@ -87,11 +80,5 @@ where
     #[inline(always)]
     fn pack(self, _offset: usize, _bytes: &mut [u8]) -> (u8, usize) {
         (*self.borrow() as u8, 0)
-    }
-}
-
-impl OwnedSchema for bool {
-    fn to_owned<'a>(unpacked: bool) -> bool {
-        unpacked
     }
 }

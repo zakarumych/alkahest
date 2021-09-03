@@ -12,18 +12,13 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
 
     let attrs = crate::parse_attrs(input.attrs.iter())?;
 
-    let should_impl_owned = crate::should_impl_owned(&attrs);
-
     let schema_bounds = crate::get_schema_bounds(&attrs, &input.generics);
-    let owned_bounds = crate::get_owned_bounds(&attrs, &input.generics);
 
     let vis = &input.vis;
 
     let ident = &input.ident;
     let packed_ident = quote::format_ident!("{}Packed", input.ident);
     let unpacked_ident = quote::format_ident!("{}Unpacked", input.ident);
-
-    let (impl_generics, type_generics, where_clause) = input.generics.split_for_impl();
 
     let mut schema_generics = input.generics.clone();
 
@@ -40,15 +35,6 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
 
     let (schema_unpack_impl_generics, schema_unpack_type_generics, schema_unpack_where_clause) =
         schema_unpack_generics.split_for_impl();
-
-    let mut owned_generics = input.generics.clone();
-    match &mut owned_generics.where_clause {
-        Some(where_clause) => where_clause.predicates.extend(owned_bounds.predicates),
-        none => *none = Some(owned_bounds),
-    }
-
-    let (owned_impl_generics, owned_type_generics, owned_where_clause) =
-        owned_generics.split_for_impl();
 
     let result = match input.data {
         syn::Data::Enum(data) => {
@@ -401,44 +387,6 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                 }
             });
 
-            let owned = if should_impl_owned {
-                let variants_to_owned = data.variants.iter().map(|variant| {
-                    let variant_ident = &variant.ident;
-
-                    match &variant.fields {
-                        syn::Fields::Unit => quote::quote!(#unpacked_ident :: #variant_ident => #ident :: #variant_ident),
-                        syn::Fields::Unnamed(fields) => {
-                            let fields = fields.unnamed.iter().enumerate().map(|(idx, field)| {
-                                let ident = quote::format_ident!("a{}", idx);
-                                quote::quote_spanned!(field.span() => #ident)
-                            }).collect::<Vec<_>>();
-
-                            quote::quote!(#unpacked_ident :: #variant_ident ( #(#fields),* ) => #ident :: #variant_ident ( #(::alkahest::OwnedSchema::to_owned(#fields)),* ))
-                        }
-                        syn::Fields::Named(fields) => {
-                            let fields = fields.named.iter().map(|field| {
-                                let ident = field.ident.as_ref().unwrap();
-                                quote::quote_spanned!(field.span() => #ident)
-                            }).collect::<Vec<_>>();
-
-                            quote::quote!(#unpacked_ident :: #variant_ident { #(#fields),* } => #ident :: #variant_ident { #(#fields: ::alkahest::OwnedSchema::to_owned(#fields)),* })
-                        }
-                    }
-                });
-
-                quote::quote!(
-                    impl #owned_impl_generics alkahest::OwnedSchema for #ident #owned_type_generics #owned_where_clause {
-                        fn to_owned<'a>(unpacked: #unpacked_ident #unpacked_type_generics) -> Self {
-                            match unpacked {
-                                #( #variants_to_owned ),*
-                            }
-                        }
-                    }
-                )
-            } else {
-                Default::default()
-            };
-
             quote::quote!(
                 #[allow(dead_code)]
                 #vis enum #unpacked_ident #unpacked_impl_generics #unpacked_where_clause  { #( #unpacked_variants ,)* }
@@ -499,8 +447,6 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                 }
 
                 #(#pack_variants)*
-
-                #owned
             )
         }
         syn::Data::Struct(data) => {
@@ -662,48 +608,6 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                 }
             });
 
-            let owned = if should_impl_owned {
-                match &data.fields {
-                    syn::Fields::Unit => quote::quote!(
-                        impl alkahest::OwnedSchema for #ident {
-                            fn to_owned<'a>(unpacked: #ident) -> Self {
-                                unpacked
-                            }
-                        }
-                    ),
-                    syn::Fields::Unnamed(fields) => {
-                        let fields_to_owned = fields.unnamed.iter().enumerate().map(|(idx, field)| {
-                            let member = syn::Member::Unnamed(syn::Index { index: idx as u32, span: field.span() });
-                            quote::quote_spanned!(field.span() => ::alkahest::OwnedSchema::to_owned(unpacked.#member))
-                        });
-
-                        quote::quote!(
-                            impl #owned_impl_generics alkahest::OwnedSchema for #ident #owned_type_generics #owned_where_clause {
-                                fn to_owned<'a>(unpacked: #unpacked_ident #unpacked_type_generics) -> Self {
-                                    #ident ( #(#fields_to_owned),* )
-                                }
-                            }
-                        )
-                    }
-                    syn::Fields::Named(fields) => {
-                        let fields_to_owned = fields.named.iter().map(|field| {
-                            let ident = field.ident.as_ref().unwrap();
-                            quote::quote_spanned!(field.span() => #ident: ::alkahest::OwnedSchema::to_owned(unpacked.#ident))
-                        });
-
-                        quote::quote!(
-                            impl #owned_impl_generics alkahest::OwnedSchema for #ident #owned_type_generics #owned_where_clause {
-                                fn to_owned<'a>(unpacked: #unpacked_ident #unpacked_type_generics) -> Self {
-                                    #ident { #(#fields_to_owned),* }
-                                }
-                            }
-                        )
-                    }
-                }
-            } else {
-                Default::default()
-            };
-
             match data.fields {
                 syn::Fields::Unit => {
                     quote::quote!(
@@ -731,8 +635,6 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                                 ((), 0)
                             }
                         }
-
-                        #owned
                     )
                 }
                 syn::Fields::Unnamed(_) => quote::quote!(
@@ -785,8 +687,6 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                             (packed, used)
                         }
                     }
-
-                    #owned
                 ),
                 syn::Fields::Named(_) => quote::quote!(
                     #[allow(dead_code)]
@@ -838,8 +738,6 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                             (packed, used)
                         }
                     }
-
-                    #owned
                 ),
             }
         }

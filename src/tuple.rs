@@ -1,4 +1,4 @@
-use crate::{OwnedSchema, Pack, Schema, SchemaUnpack, Unpacked};
+use crate::{Pack, Schema, SchemaUnpack, Unpacked};
 
 impl<'a> SchemaUnpack<'a> for () {
     type Unpacked = ();
@@ -21,11 +21,6 @@ impl Pack<()> for () {
     fn pack(self, _offset: usize, _output: &mut [u8]) -> ((), usize) {
         ((), 0)
     }
-}
-
-impl OwnedSchema for () {
-    #[inline(always)]
-    fn to_owned<'a>((): ()) {}
 }
 
 macro_rules! impl_for_tuple {
@@ -91,19 +86,6 @@ macro_rules! impl_for_tuple {
                     packed
                 },)+ );
                 (packed, used)
-            }
-        }
-
-        impl<$($a),+> OwnedSchema for ($($a,)+)
-        where
-            $($a: OwnedSchema,)+
-        {
-            #[inline(always)]
-            fn to_owned<'a>(unpacked: ($(Unpacked<'a, $a>,)+)) -> ($($a,)+) {
-                #![allow(non_snake_case)]
-
-                let ($($a,)+) = unpacked;
-                ($( <$a>::to_owned($a) ,)+)
             }
         }
     };
