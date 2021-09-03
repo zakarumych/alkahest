@@ -12,8 +12,8 @@ fn main() {
     pub struct TestStruct<T> {
         pub a: u32,
         pub b: T,
-        c: alkahest::Seq<u32>,
-        d: alkahest::Seq<alkahest::Seq<u32>>,
+        pub c: alkahest::Seq<u32>,
+        pub d: alkahest::Seq<alkahest::Seq<u32>>,
     }
 
     let mut data = aligned_bytes::<u32, 1024>([0; 1024]);
