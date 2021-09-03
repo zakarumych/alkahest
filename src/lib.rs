@@ -31,6 +31,7 @@ pub use self::{
     bytes::Bytes,
     schema::{Pack, Packed, Schema, SchemaUnpack, Unpacked},
     seq::{Seq, SeqUnpacked},
+    str::Str,
 };
 
 #[cfg(feature = "derive")]
