@@ -23,6 +23,13 @@ impl Pack<()> for () {
     }
 }
 
+impl Pack<()> for &'_ () {
+    #[inline(always)]
+    fn pack(self, _offset: usize, _output: &mut [u8]) -> ((), usize) {
+        ((), 0)
+    }
+}
+
 macro_rules! impl_for_tuple {
     ($packed_tuple:ident, [$($a:ident),+ $(,)?] [$($b:ident),+ $(,)?]) => {
         impl<'a, $($a),+> SchemaUnpack<'a> for ($($a,)+)
@@ -73,6 +80,25 @@ macro_rules! impl_for_tuple {
         impl<$($a),+ , $($b),+> Pack<($($a,)+)> for ($($b,)+)
         where
             $($a: Schema, $b: Pack<$a>,)+
+        {
+            #[inline]
+            fn pack(self, offset: usize, output: &mut [u8]) -> ($packed_tuple<$($a::Packed,)+>, usize) {
+                #![allow(non_snake_case)]
+
+                let ($($b,)+) = self;
+                let mut used = 0;
+                let packed = $packed_tuple( $( {
+                    let (packed, size) = $b.pack(offset + used, &mut output[used..]);
+                    used += size;
+                    packed
+                },)+ );
+                (packed, used)
+            }
+        }
+
+        impl<'a, $($a),+ , $($b),+> Pack<($($a,)+)> for &'a ($($b,)+)
+        where
+            $($a: Schema, &'a $b: Pack<$a>,)+
         {
             #[inline]
             fn pack(self, offset: usize, output: &mut [u8]) -> ($packed_tuple<$($a::Packed,)+>, usize) {
