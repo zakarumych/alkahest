@@ -85,11 +85,23 @@ macro_rules! impl_for_tuple {
             fn pack(self, offset: usize, output: &mut [u8]) -> ($packed_tuple<$($a::Packed,)+>, usize) {
                 #![allow(non_snake_case)]
 
+                debug_assert_eq!(
+                    output.as_ptr() as usize % <($($a,)+) as Schema>::align(),
+                    0,
+                    "Output buffer is not aligned"
+                );
+                debug_assert_eq!(
+                    offset % <($($a,)+) as Schema>::align(),
+                    0,
+                    "Offset is not aligned"
+                );
+
                 let ($($b,)+) = self;
                 let mut used = 0;
                 let packed = $packed_tuple( $( {
-                    let (packed, size) = $b.pack(offset + used, &mut output[used..]);
-                    used += size;
+                    let aligned = (used + (<$a>::align() - 1)) & !(<$a>::align() - 1);
+                    let (packed, size) = $b.pack(offset + aligned, &mut output[aligned..]);
+                    used = aligned + size;
                     packed
                 },)+ );
                 (packed, used)

@@ -28,46 +28,55 @@ pub fn derive_schema(input: TokenStream) -> TokenStream {
     }
 }
 
+mod kw {
+    // syn::custom_keyword!(alkahest);
+    // syn::custom_keyword!(schema);
+    // syn::custom_keyword!(owned);
+}
+
 enum AlkahestAttr {
-    Empty,
     Bounds(syn::WhereClause),
-    Schema(Option<syn::WhereClause>),
-    Owned(Option<syn::WhereClause>),
+    // Schema {
+    //     schema: kw::schema,
+    //     clause: syn::WhereClause,
+    // },
+    // Owned {
+    //     owned: kw::owned,
+    //     clause: Option<syn::WhereClause>,
+    // },
 }
 
 impl syn::parse::Parse for AlkahestAttr {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        if input.is_empty() {
-            Ok(AlkahestAttr::Empty)
+        if input.peek(syn::Token![where]) {
+            let clause = input.parse::<syn::WhereClause>()?;
+            Ok(AlkahestAttr::Bounds(clause))
         } else {
-            if input.peek(syn::Token![where]) {
-                let clause = input.parse::<syn::WhereClause>()?;
-                Ok(AlkahestAttr::Bounds(clause))
-            } else {
-                match input.parse::<syn::Ident>()? {
-                    ident if ident == "schema" => {
-                        if input.peek(syn::token::Paren) {
-                            let bounds;
-                            syn::parenthesized!(bounds in input);
-                            let clause = bounds.parse::<syn::WhereClause>()?;
-                            Ok(AlkahestAttr::Schema(Some(clause)))
-                        } else {
-                            Ok(AlkahestAttr::Schema(None))
-                        }
-                    }
-                    ident if ident == "owned" => {
-                        if input.peek(syn::token::Paren) {
-                            let bounds;
-                            syn::parenthesized!(bounds in input);
-                            let clause = bounds.parse::<syn::WhereClause>()?;
-                            Ok(AlkahestAttr::Owned(Some(clause)))
-                        } else {
-                            Ok(AlkahestAttr::Owned(None))
-                        }
-                    }
-                    ident => Err(syn::Error::new_spanned(ident, "Unknown sub-attribute")),
-                }
-            }
+            // if input.peek(kw::schema) {
+            //     let schema = input.parse::<kw::schema>()?;
+            //     let bounds;
+            //     syn::parenthesized!(bounds in input);
+            //     let clause = bounds.parse::<syn::WhereClause>()?;
+            //     Ok(AlkahestAttr::Schema { schema, clause })
+            // } else if input.peek(kw::owned) {
+            //     let owned = input.parse::<kw::owned>()?;
+            //     if input.peek(syn::token::Paren) {
+            //         let bounds;
+            //         syn::parenthesized!(bounds in input);
+            //         let clause = bounds.parse::<syn::WhereClause>()?;
+            //         Ok(AlkahestAttr::Owned {
+            //             owned,
+            //             clause: Some(clause),
+            //         })
+            //     } else {
+            //         Ok(AlkahestAttr::Owned {
+            //             owned,
+            //             clause: None,
+            //         })
+            //     }
+            // } else {
+            Err(input.error("Expected where clause, `schema` with where clause, or `owner` ident with optional where clause"))
+            // }
         }
     }
 }
@@ -88,31 +97,127 @@ fn parse_attrs<'a>(
     Ok(result)
 }
 
-fn get_schema_bounds(attrs: &[AlkahestAttr], generics: &syn::Generics) -> syn::WhereClause {
-    for attr in attrs {
-        match attr {
-            AlkahestAttr::Bounds(bounds) => return bounds.clone(),
-            AlkahestAttr::Schema(bounds) => {
-                if let Some(bounds) = bounds {
-                    return bounds.clone();
-                }
-            }
-            _ => {}
-        }
+struct AlkahestConfig {
+    schema_bounds: syn::WhereClause,
+    // owned_bounds: syn::WhereClause,
+    // derive_owned: bool,
+}
+
+impl AlkahestConfig {
+    fn from_input(input: &syn::DeriveInput) -> syn::Result<Self> {
+        let attrs = parse_attrs(input.attrs.iter())?;
+        Self::new(&attrs, &input.generics)
     }
-    syn::WhereClause {
-        where_token: Default::default(),
-        predicates: generics
-            .params
-            .iter()
-            .filter_map(|param| -> Option<syn::WherePredicate> {
-                if let syn::GenericParam::Type(param) = param {
-                    let ident = &param.ident;
-                    Some(syn::parse_quote!(#ident : ::alkahest::Schema))
-                } else {
-                    None
+
+    fn new(attrs: &[AlkahestAttr], generics: &syn::Generics) -> syn::Result<Self> {
+        let mut common_bounds = None;
+        let schema_bounds = None;
+        // let mut owned_bounds = None;
+        // let mut derive_owned = false;
+
+        for attr in attrs {
+            match attr {
+                AlkahestAttr::Bounds(clause) => {
+                    if common_bounds.is_some() {
+                        return Err(syn::Error::new_spanned(
+                            clause,
+                            "Duplicate where clause for alkahest derive",
+                        ));
+                    }
+                    // if schema_bounds.is_some() {
+                    //     return Err(syn::Error::new_spanned(
+                    //         clause,
+                    //         "Redundant where clause for alkahest derive when `Schema` specific is already provided",
+                    //     ));
+                    // }
+                    // if owned_bounds.is_some() {
+                    //     return Err(syn::Error::new_spanned(
+                    //         clause,
+                    //         "Redundant where clause for alkahest derive when `SchemaOwned` specific is already provided",
+                    //     ));
+                    // }
+                    common_bounds = Some(clause);
+                } // AlkahestAttr::Schema { schema, clause } => {
+                  //     if common_bounds.is_some() {
+                  //         return Err(syn::Error::new_spanned(
+                  //             schema,
+                  //             "Redundant where clause for `alkahest::Schema` derive when common one is already provided",
+                  //         ));
+                  //     }
+                  //     if schema_bounds.is_some() {
+                  //         return Err(syn::Error::new_spanned(
+                  //             schema,
+                  //             "Duplicate where clause for `alkahest::Schema` derive",
+                  //         ));
+                  //     }
+
+                  //     schema_bounds = Some(clause);
+                  // }
+                  // AlkahestAttr::Owned { owned, clause } => {
+                  //     if derive_owned {
+                  //         return Err(syn::Error::new_spanned(
+                  //             owned,
+                  //             "Redundant `owned` attribute",
+                  //         ));
+                  //     }
+
+                  //     derive_owned = true;
+
+                  //     if let Some(clause) = clause {
+                  //         if common_bounds.is_some() {
+                  //             return Err(syn::Error::new_spanned(
+                  //                 owned,
+                  //                 "Redundant where clause for `alkahest::Owned` derive when common one is already provided",
+                  //             ));
+                  //         }
+                  //         if owned_bounds.is_some() {
+                  //             return Err(syn::Error::new_spanned(
+                  //                 owned,
+                  //                 "Duplicate where clause for `alkahest::Owned` derive",
+                  //             ));
+                  //         }
+                  //         owned_bounds = Some(clause);
+                  //     }
+                  // }
+            }
+        }
+
+        Ok(AlkahestConfig {
+            // derive_owned,
+            schema_bounds: schema_bounds.or(common_bounds).cloned().unwrap_or_else(|| {
+                syn::WhereClause {
+                    where_token: Default::default(),
+                    predicates: generics
+                        .params
+                        .iter()
+                        .filter_map(|param| -> Option<syn::WherePredicate> {
+                            if let syn::GenericParam::Type(param) = param {
+                                let ident = &param.ident;
+                                Some(syn::parse_quote!(#ident : ::alkahest::Schema))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect(),
                 }
-            })
-            .collect(),
+            }),
+            // owned_bounds: owned_bounds.or(common_bounds).cloned().unwrap_or_else(|| {
+            //     syn::WhereClause {
+            //         where_token: Default::default(),
+            //         predicates: generics
+            //             .params
+            //             .iter()
+            //             .filter_map(|param| -> Option<syn::WherePredicate> {
+            //                 if let syn::GenericParam::Type(param) = param {
+            //                     let ident = &param.ident;
+            //                     Some(syn::parse_quote!(#ident : ::alkahest::SchemaOwned))
+            //                 } else {
+            //                     None
+            //                 }
+            //             })
+            //             .collect(),
+            //     }
+            // }),
+        })
     }
 }

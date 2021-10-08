@@ -10,9 +10,8 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
         }
     }
 
-    let attrs = crate::parse_attrs(input.attrs.iter())?;
-
-    let schema_bounds = crate::get_schema_bounds(&attrs, &input.generics);
+    let cfg = crate::AlkahestConfig::from_input(&input)?;
+    let schema_bounds = cfg.schema_bounds;
 
     let vis = &input.vis;
 
@@ -299,6 +298,7 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                 let (pack_impl_generics, _, pack_where_clause) = pack_generics.split_for_impl();
 
                 let packing_fields = variant.fields.iter().enumerate().map(|(idx, field)| {
+                    let ty = &field.ty;
                     match &field.ident {
                         None => {
                             let member = syn::Member::Unnamed(syn::Index {
@@ -306,15 +306,21 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                                 span: field.span(),
                             });
                             quote::quote_spanned!(field.span() => {
-                                    let (packed, field_used) = self.#member.pack(offset + used, &mut bytes[used..]);
-                                    used += field_used;
+                                    let align_mask = <#ty as ::alkahest::Schema>::align() - 1;
+                                    debug_assert_eq!(offset & align_mask, 0, "Offset is not aligned to {}", align_mask + 1);
+                                    let aligned = (used + align_mask) & !align_mask;
+                                    let (packed, field_used) = self.#member.pack(offset + aligned, &mut bytes[aligned..]);
+                                    used = aligned + field_used;
                                     packed
                                 }
                             )
                         }
                         Some(ident) => quote::quote_spanned!(field.span() => #ident: {
-                            let (packed, field_used) = self.#ident.pack(offset + used, &mut bytes[used..]);
-                            used += field_used;
+                            let align_mask = <#ty as ::alkahest::Schema>::align() - 1;
+                            debug_assert_eq!(offset & align_mask, 0, "Offset is not aligned to {}", align_mask + 1);
+                            let aligned = (used + align_mask) & !align_mask;
+                            let (packed, field_used) = self.#ident.pack(offset + aligned, &mut bytes[aligned..]);
+                            used = aligned + field_used;
                             packed
                         }),
                     }
@@ -326,11 +332,16 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                     syn::Fields::Unit => {
                         quote::quote!(
                             #[allow(dead_code)]
+                            #[derive(Clone, Copy, Debug)]
                             #vis struct #pack_ident;
 
                             impl #pack_impl_generics ::alkahest::Pack<#ident #schema_type_generics> for #pack_ident #pack_type_generics #pack_where_clause {
                                 #[inline]
                                 fn pack(self, offset: usize, bytes: &mut [u8]) -> (#packed_ident #schema_type_generics, usize) {
+                                    let align_mask = <#ident #schema_type_generics as ::alkahest::Schema>::align() - 1;
+                                    debug_assert_eq!(bytes.as_ptr() as usize & align_mask, 0, "Output is not aligned to {}", align_mask + 1);
+                                    debug_assert_eq!(offset & align_mask, 0, "Offset is not aligned to {}", align_mask + 1);
+
                                     let mut used = 0;
                                     let packed = #packed_ident {
                                         discriminant: #idx,
@@ -346,11 +357,16 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                     syn::Fields::Unnamed(_) => {
                         quote::quote!(
                             #[allow(dead_code)]
+                            #[derive(Clone, Copy, Debug)]
                             #vis struct #pack_ident #pack_type_generics ( #( #pack_fields ,)* );
 
                             impl #pack_impl_generics ::alkahest::Pack<#ident #schema_type_generics> for #pack_ident #pack_type_generics #pack_where_clause {
                                 #[inline]
                                 fn pack(self, offset: usize, bytes: &mut [u8]) -> (#packed_ident #schema_type_generics, usize) {
+                                    let align_mask = <#ident #schema_type_generics as ::alkahest::Schema>::align() - 1;
+                                    debug_assert_eq!(bytes.as_ptr() as usize & align_mask, 0, "Output is not aligned to {}", align_mask + 1);
+                                    debug_assert_eq!(offset & align_mask, 0, "Offset is not aligned to {}", align_mask + 1);
+
                                     let mut used = 0;
                                     let packed = #packed_ident {
                                         discriminant: #idx,
@@ -367,11 +383,16 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                     syn::Fields::Named(_) => {
                         quote::quote!(
                             #[allow(dead_code)]
+                            #[derive(Clone, Copy, Debug)]
                             #vis struct #pack_ident #pack_type_generics { #( #pack_fields ,)* }
 
                             impl #pack_impl_generics ::alkahest::Pack<#ident #schema_type_generics> for #pack_ident #pack_type_generics #pack_where_clause {
                                 #[inline]
                                 fn pack(self, offset: usize, bytes: &mut [u8]) -> (#packed_ident #schema_type_generics, usize) {
+                                    let align_mask = <#ident #schema_type_generics as ::alkahest::Schema>::align() - 1;
+                                    debug_assert_eq!(bytes.as_ptr() as usize & align_mask, 0, "Output is not aligned to {}", align_mask + 1);
+                                    debug_assert_eq!(offset & align_mask, 0, "Offset is not aligned to {}", align_mask + 1);
+
                                     let mut used = 0;
                                     let packed = #packed_ident {
                                         discriminant: #idx,
@@ -586,6 +607,7 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
             let (pack_impl_generics, _, pack_where_clause) = pack_generics.split_for_impl();
 
             let packing_fields = data.fields.iter().enumerate().map(|(idx, field)| {
+                let ty = &field.ty;
                 match &field.ident {
                     None => {
                         let member = syn::Member::Unnamed(syn::Index {
@@ -593,15 +615,21 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                             span: field.span(),
                         });
                         quote::quote_spanned!(field.span() => {
-                                let (packed, field_used) = self.#member.pack(offset + used, &mut bytes[used..]);
-                                used += field_used;
+                                let align_mask = <#ty as ::alkahest::Schema>::align() - 1;
+                                debug_assert_eq!(offset & align_mask, 0, "Offset is not aligned to {}", align_mask + 1);
+                                let aligned = (used + align_mask) & !align_mask;
+                                let (packed, field_used) = self.#member.pack(offset + aligned, &mut bytes[aligned..]);
+                                used = aligned + field_used;
                                 packed
                             }
                         )
                     }
                     Some(ident) => quote::quote_spanned!(field.span() => #ident: {
-                        let (packed, field_used) = self.#ident.pack(offset + used, &mut bytes[used..]);
-                        used += field_used;
+                        let align_mask = <#ty as ::alkahest::Schema>::align() - 1;
+                        debug_assert_eq!(offset & align_mask, 0, "Offset is not aligned to {}", align_mask + 1);
+                        let aligned = (used + align_mask) & !align_mask;
+                        let (packed, field_used) = self.#ident.pack(offset + aligned, &mut bytes[aligned..]);
+                        used = aligned + field_used;
                         packed
                     }
                 ),
@@ -627,6 +655,7 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                             }
                         }
 
+                        #[derive(Clone, Copy, Debug)]
                         #vis struct #pack_ident;
 
                         impl ::alkahest::Pack<#ident> for #pack_ident {
@@ -675,11 +704,16 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                     }
 
                     #[allow(dead_code)]
+                    #[derive(Clone, Copy, Debug)]
                     #vis struct #pack_ident #pack_type_generics ( #( #pack_fields ,)* );
 
                     impl #pack_impl_generics ::alkahest::Pack<#ident #schema_type_generics> for #pack_ident #pack_type_generics #pack_where_clause {
                         #[inline]
                         fn pack(self, offset: usize, bytes: &mut [u8]) -> (#packed_ident #schema_type_generics, usize) {
+                            let align_mask = <#ident #schema_type_generics as ::alkahest::Schema>::align() - 1;
+                            debug_assert_eq!(bytes.as_ptr() as usize & align_mask, 0, "Output is not aligned to {}", align_mask + 1);
+                            debug_assert_eq!(offset & align_mask, 0, "Offset is not aligned to {}", align_mask + 1);
+
                             let mut used = 0;
                             let packed = #packed_ident (
                                 #( #packing_fields, )*
@@ -726,11 +760,16 @@ pub fn derive_schema(input: syn::DeriveInput) -> syn::Result<TokenStream> {
                     }
 
                     #[allow(dead_code)]
+                    #[derive(Clone, Copy, Debug)]
                     #vis struct #pack_ident #pack_type_generics { #( #pack_fields ,)* }
 
                     impl #pack_impl_generics ::alkahest::Pack<#ident #schema_type_generics> for #pack_ident #pack_type_generics #pack_where_clause {
                         #[inline]
                         fn pack(self, offset: usize, bytes: &mut [u8]) -> (#packed_ident #schema_type_generics, usize) {
+                            let align_mask = <#ident #schema_type_generics as ::alkahest::Schema>::align() - 1;
+                            debug_assert_eq!(bytes.as_ptr() as usize & align_mask, 0, "Output is not aligned to {}", align_mask + 1);
+                            debug_assert_eq!(offset & align_mask, 0, "Offset is not aligned to {}", align_mask + 1);
+
                             let mut used = 0;
                             let packed = #packed_ident {
                                 #( #packing_fields, )*

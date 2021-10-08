@@ -52,10 +52,19 @@ where
     T: Schema,
     P: Pack<T>,
 {
+    let align_mask = T::align() - 1;
+    debug_assert_eq!(
+        bytes.as_ptr() as usize & align_mask,
+        0,
+        "Output is not aligned to {}",
+        align_mask + 1
+    );
+
     let packed_size = size_of::<T::Packed>();
-    let (packed, used) = packable.pack(packed_size, &mut bytes[packed_size..]);
+    let aligned = (packed_size + align_mask) & !align_mask;
+    let (packed, used) = packable.pack(aligned, &mut bytes[aligned..]);
     bytes[..packed_size].copy_from_slice(bytemuck::bytes_of(&packed));
-    packed_size + used
+    aligned + used
 }
 
 /// Reads and unpacks package from raw bytes.
@@ -68,10 +77,12 @@ pub fn read<'a, T>(bytes: &'a [u8]) -> Unpacked<'a, T>
 where
     T: Schema,
 {
-    T::unpack(
-        *bytemuck::from_bytes(&bytes[..size_of::<T::Packed>()]),
-        bytes,
-    )
+    match bytemuck::try_from_bytes(&bytes[..size_of::<T::Packed>()]) {
+        Ok(value) => T::unpack(*value, bytes),
+        Err(err) => {
+            panic!("Unpack failed due to error: {:#?}", err);
+        }
+    }
 }
 
 /// Type used to represent sizes and offsets in alkahest packages.

@@ -93,10 +93,16 @@ where
         if self.len == 0 {
             None
         } else {
-            let item = *bytemuck::from_bytes(&self.bytes[self.offset..][..size_of::<T::Packed>()]);
-            self.offset += size_of::<T::Packed>();
-            self.len -= 1;
-            Some(T::unpack(item, self.bytes))
+            match bytemuck::try_from_bytes(&self.bytes[self.offset..][..size_of::<T::Packed>()]) {
+                Ok(item) => {
+                    self.offset += size_of::<T::Packed>();
+                    self.len -= 1;
+                    Some(T::unpack(*item, self.bytes))
+                }
+                Err(err) => {
+                    panic!("Seq unpack failed due to error: {:#?}", err);
+                }
+            }
         }
     }
 
@@ -125,6 +131,20 @@ where
 {
     #[inline]
     fn pack(self, offset: usize, output: &mut [u8]) -> ([FixedUsize; 2], usize) {
+        debug_assert_eq!(
+            output.as_ptr() as usize % <Seq<T> as Schema>::align(),
+            0,
+            "Output buffer is not aligned to {}",
+            <Seq<T> as Schema>::align()
+        );
+
+        debug_assert_eq!(
+            offset % <Seq<T> as Schema>::align(),
+            0,
+            "Offset is not aligned to {}",
+            <Seq<T> as Schema>::align()
+        );
+
         let iter = self.into_iter();
         let len = iter.len();
 
@@ -133,15 +153,17 @@ where
 
         let packed_size = size_of::<T::Packed>();
 
+        let item_align_mask = T::align() - 1;
         let mut used = packed_size * len;
+        used = (used + item_align_mask) & !item_align_mask;
 
         let mut off = 0;
         for item in iter {
-            let (item_packed, item_used) = item.pack(offset + used, &mut output[used..]);
-            output[off..][..size_of::<T::Packed>()]
-                .copy_from_slice(bytemuck::bytes_of(&item_packed));
-            used += item_used;
-            off += size_of::<T::Packed>();
+            let aligned = (used + (<T>::align() - 1)) & !(<T>::align() - 1);
+            let (item_packed, item_used) = item.pack(offset + aligned, &mut output[aligned..]);
+            output[off..][..packed_size].copy_from_slice(bytemuck::bytes_of(&item_packed));
+            used = aligned + item_used;
+            off += packed_size;
         }
 
         ([len32, offset32], used)

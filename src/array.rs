@@ -30,11 +30,26 @@ where
 {
     #[inline]
     fn pack(self, offset: usize, output: &mut [u8]) -> (Packed<[T; N]>, usize) {
+        debug_assert_eq!(
+            output.as_ptr() as usize % <[T; N] as Schema>::align(),
+            0,
+            "Output buffer is not aligned"
+        );
+
+        debug_assert_eq!(
+            offset % <[T; N] as Schema>::align(),
+            0,
+            "Offset is not aligned"
+        );
+
+        let item_align_mask = <T>::align() - 1;
+
         let mut used = 0;
 
         let packed = self.map(|pack| {
-            let (packed, size) = pack.pack(offset + used, &mut output[used..]);
-            used += size;
+            let aligned = (used + item_align_mask) & !item_align_mask;
+            let (packed, size) = pack.pack(offset + aligned, &mut output[aligned..]);
+            used = aligned + size;
             packed
         });
         (packed, used)
@@ -48,14 +63,29 @@ where
 {
     #[inline]
     fn pack(self, offset: usize, output: &mut [u8]) -> (Packed<[T; N]>, usize) {
+        debug_assert_eq!(
+            output.as_ptr() as usize % <[T; N] as Schema>::align(),
+            0,
+            "Output buffer is not aligned"
+        );
+
+        debug_assert_eq!(
+            offset % <[T; N] as Schema>::align(),
+            0,
+            "Offset is not aligned"
+        );
+
         let mut storage: Packed<[T; N]> = bytemuck::Zeroable::zeroed();
+
+        let item_align_mask = <T>::align() - 1;
 
         let mut used = 0;
 
         for i in 0..N {
-            let (packed, size) = (&self[i]).pack(offset + used, &mut output[used..]);
+            let aligned = (used + item_align_mask) & !item_align_mask;
+            let (packed, size) = (&self[i]).pack(offset + aligned, &mut output[aligned..]);
+            used = aligned + size;
             storage[i] = packed;
-            used += size;
         }
 
         (storage, used)
