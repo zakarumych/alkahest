@@ -72,7 +72,6 @@ where
     #[inline]
     fn pack(self, offset: usize, output: &mut [u8]) -> ([FixedUsize; 2], usize) {
         let bytes = self.as_ref();
-
         let len32 = u32::try_from(bytes.len()).expect("Slice is too large");
         let offset32 = u32::try_from(offset).expect("Offset is too large");
 

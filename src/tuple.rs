@@ -1,4 +1,4 @@
-use crate::{Pack, Schema, SchemaOwned, SchemaUnpack, Unpacked};
+use crate::schema::{Pack, Schema, SchemaOwned, SchemaUnpack, Unpacked};
 
 impl<'a> SchemaUnpack<'a> for () {
     type Unpacked = ();

@@ -1,6 +1,6 @@
 use {
     crate::schema::{Pack, Schema, SchemaOwned, SchemaUnpack},
-    core::mem::align_of,
+    core::{borrow::Borrow, mem::align_of},
 };
 
 macro_rules! impl_primitive {
@@ -36,7 +36,7 @@ macro_rules! impl_primitive {
 
         impl<T> Pack<$ty> for T
         where
-            T: core::borrow::Borrow<$ty>,
+            T: Borrow<$ty>,
         {
             #[inline(always)]
             #[cfg(target_endian = "little")]
@@ -82,7 +82,7 @@ impl Schema for bool {
 
 impl<T> Pack<bool> for T
 where
-    T: core::borrow::Borrow<bool>,
+    T: Borrow<bool>,
 {
     #[inline(always)]
     fn pack(self, _offset: usize, _bytes: &mut [u8]) -> (u8, usize) {

@@ -57,11 +57,7 @@ fn main() {
         TestEnumUnpacked::Bar(val) => println!("Bar({})", val),
         TestEnumUnpacked::Baz { val } => println!("Bar{{val: {}}}", val),
         TestEnumUnpacked::Fuss { val, var } => {
-            println!(
-                "Fuss{{val: {}, var_sum: {}}}",
-                val,
-                var.into_iter().sum::<u32>()
-            )
+            println!("Fuss{{val: {}, var_sum: {}}}", val, var.iter().sum::<u32>())
         }
     }
 }

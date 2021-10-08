@@ -18,12 +18,13 @@
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
+mod schema;
+
 #[cfg(feature = "nightly")]
 mod array;
 mod bytes;
 mod option;
 mod primitive;
-mod schema;
 mod seq;
 mod str;
 mod tuple;
@@ -33,7 +34,7 @@ use core::mem::size_of;
 pub use self::{
     bytes::Bytes,
     schema::{Pack, Packed, Schema, SchemaOwned, SchemaUnpack, Unpacked},
-    seq::{Seq, SeqUnpacked},
+    seq::{Seq, SeqIter, SeqUnpacked},
     str::Str,
 };
 
@@ -55,8 +56,15 @@ where
     T: Schema,
     P: Pack<T>,
 {
+    let align_mask = T::align() - 1;
+    debug_assert_eq!(
+        bytes.as_ptr() as usize & align_mask,
+        0,
+        "Output is not aligned to {}",
+        align_mask + 1
+    );
+
     let packed_size = size_of::<T::Packed>();
-    let align_mask = T::align();
     let aligned = (packed_size + align_mask) & !align_mask;
     let (packed, used) = packable.pack(aligned, &mut bytes[aligned..]);
     bytes[..packed_size].copy_from_slice(bytemuck::bytes_of(&packed));

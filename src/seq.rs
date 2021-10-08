@@ -115,9 +115,39 @@ impl<'a, T> SeqUnpacked<'a, T> {
     {
         bytemuck::cast_slice(&self.bytes[self.offset..][..size_of::<T>() * self.len])
     }
+
+    pub fn iter(&self) -> SeqIter<'a, T> {
+        SeqIter {
+            offset: self.offset,
+            len: self.len,
+            bytes: self.bytes,
+            marker: self.marker,
+        }
+    }
 }
 
-impl<'a, T> Iterator for SeqUnpacked<'a, T>
+impl<'a, T> IntoIterator for SeqUnpacked<'a, T>
+where
+    T: Schema,
+{
+    type Item = Unpacked<'a, T>;
+    type IntoIter = SeqIter<'a, T>;
+
+    fn into_iter(self) -> SeqIter<'a, T> {
+        self.iter()
+    }
+}
+
+/// Iterator over [`Seq`] schema values.
+#[derive(Clone)]
+pub struct SeqIter<'a, T> {
+    offset: usize,
+    len: usize,
+    bytes: &'a [u8],
+    marker: PhantomData<[T]>,
+}
+
+impl<'a, T> Iterator for SeqIter<'a, T>
 where
     T: Schema,
 {
@@ -143,7 +173,7 @@ where
     }
 }
 
-impl<'a, T> ExactSizeIterator for SeqUnpacked<'a, T>
+impl<'a, T> ExactSizeIterator for SeqIter<'a, T>
 where
     T: Schema,
 {
@@ -165,13 +195,15 @@ where
         debug_assert_eq!(
             output.as_ptr() as usize % <Seq<T> as Schema>::align(),
             0,
-            "Output buffer is not aligned"
+            "Output buffer is not aligned to {}",
+            <Seq<T> as Schema>::align()
         );
 
         debug_assert_eq!(
             offset % <Seq<T> as Schema>::align(),
             0,
-            "Offset is not aligned"
+            "Offset is not aligned to {}",
+            <Seq<T> as Schema>::align()
         );
 
         let iter = self.into_iter();
@@ -206,7 +238,10 @@ where
 {
     fn to_owned_schema<'a>(unpacked: SeqUnpacked<'a, T>) -> Seq<T> {
         Seq {
-            slice: unpacked.map(|item| T::to_owned_schema(item)).collect(),
+            slice: unpacked
+                .iter()
+                .map(|item| T::to_owned_schema(item))
+                .collect(),
         }
     }
 }
