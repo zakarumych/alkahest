@@ -6,15 +6,17 @@ where
 {
     type Access<'a> = [<T as Schema>::Access<'a>; N];
 
+    #[inline(always)]
     fn header() -> usize {
         N * T::header()
     }
 
+    #[inline(always)]
     fn has_body() -> bool {
         T::has_body()
     }
 
-    #[inline]
+    #[inline(always)]
     fn access<'a>(mut input: &'a [u8]) -> Access<'a, Self> {
         [(); N].map(|()| {
             let data = input;
@@ -31,6 +33,7 @@ where
 {
     type Header = [(<U as Serialize<T>>::Header, usize); N];
 
+    #[inline]
     fn serialize_header(header: Self::Header, output: &mut [u8], offset: usize) -> bool {
         let header_size = <T as Schema>::header() * N;
 
@@ -53,6 +56,7 @@ where
         true
     }
 
+    #[inline]
     fn serialize_body(self, output: &mut [u8]) -> Result<(Self::Header, usize), usize> {
         let mut written = 0;
         let mut exhausted = false;
@@ -94,12 +98,12 @@ where
 {
     type Header = [(<&'a U as Serialize<T>>::Header, usize); N];
 
-    #[inline(always)]
+    #[inline]
     fn serialize_header(header: Self::Header, output: &mut [u8], offset: usize) -> bool {
         <[&'a U; N] as Serialize<[T; N]>>::serialize_header(header, output, offset)
     }
 
-    #[inline(always)]
+    #[inline]
     fn serialize_body(self, output: &mut [u8]) -> Result<(Self::Header, usize), usize> {
         let mut written = 0;
         let mut exhausted = false;
@@ -149,6 +153,7 @@ trait MapArrayRef<const N: usize> {
 impl<T, const N: usize> MapArrayRef<N> for [T; N] {
     type Item = T;
 
+    #[inline]
     fn map_ref<'a, F, U>(&'a self, mut f: F) -> [U; N]
     where
         F: FnMut(&'a Self::Item) -> U,
@@ -157,6 +162,7 @@ impl<T, const N: usize> MapArrayRef<N> for [T; N] {
         [(); N].map(|()| f(iter.next().unwrap()))
     }
 
+    #[inline]
     fn map_mut<'a, F, U>(&'a mut self, mut f: F) -> [U; N]
     where
         F: FnMut(&'a mut Self::Item) -> U,

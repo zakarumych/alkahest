@@ -1,4 +1,4 @@
-use alkahest::{Schema, Seq};
+use alkahest::{Schema, Seq, Serialize};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 #[derive(Schema)]
@@ -8,9 +8,9 @@ enum TestSchema {
     Bar { c: Seq<u32>, d: Seq<Seq<u32>> },
 }
 
-enum TestSchemaPack<'a> {
-    Foo(TestSchemaFooPack<u32, u32>),
-    Bar(TestSchemaBarPack<&'a [u32], &'a [Vec<u32>]>),
+enum TestSchemaHeader<'a> {
+    Foo(<TestSchemaFooSerialize<u32, u32> as Serialize<TestSchema>>::Header),
+    Bar(<TestSchemaBarSerialize<&'a [u32], &'a [Vec<u32>]> as Serialize<TestSchema>>::Header),
 }
 
 #[derive(serde::Serialize, serde::Deserialize, rkyv::Archive, rkyv::Serialize)]
@@ -19,26 +19,38 @@ enum TestData {
     Bar { c: Vec<u32>, d: Vec<Vec<u32>> },
 }
 
-impl TestData {
-    fn wrapper(&self) -> TestSchemaPack<'_> {
-        match self {
-            &TestData::Foo { a, b } => TestSchemaPack::Foo(TestSchemaFooPack { a, b }),
-            TestData::Bar { c, d } => TestSchemaPack::Bar(TestSchemaBarPack { c, d }),
+impl<'a> alkahest::Serialize<TestSchema> for &'a TestData {
+    type Header = TestSchemaHeader<'a>;
+
+    fn serialize_body(self, output: &mut [u8]) -> Result<(Self::Header, usize), usize> {
+        match *self {
+            TestData::Foo { a, b } => {
+                let (header, size) = TestSchemaFooSerialize { a, b }.serialize_body(output)?;
+                Ok((TestSchemaHeader::Foo(header), size))
+            }
+            TestData::Bar { ref c, ref d } => {
+                let (header, size) = TestSchemaBarSerialize { c, d }.serialize_body(output)?;
+                Ok((TestSchemaHeader::Bar(header), size))
+            }
         }
     }
-}
 
-impl alkahest::Pack<TestSchema> for TestSchemaPack<'_> {
-    fn pack(self, offset: usize, output: &mut [u8]) -> (alkahest::Packed<TestSchema>, usize) {
-        match self {
-            TestSchemaPack::Foo(foo) => foo.pack(offset, output),
-            TestSchemaPack::Bar(bar) => bar.pack(offset, output),
+    fn serialize_header(header: TestSchemaHeader<'a>, output: &mut [u8], offset: usize) -> bool {
+        match header {
+            TestSchemaHeader::Foo(header) => {
+                TestSchemaFooSerialize::<u32, u32>::serialize_header(header, output, offset)
+            }
+            TestSchemaHeader::Bar(header) => {
+                TestSchemaBarSerialize::<&'a [u32], &'a [Vec<u32>]>::serialize_header(
+                    header, output, offset,
+                )
+            }
         }
     }
 }
 
 fn ser_alkahest(bytes: &mut [u8], data: &TestData) {
-    alkahest::write::<TestSchema, _>(bytes, data.wrapper());
+    alkahest::serialize::<TestSchema, _>(data, bytes).unwrap();
 }
 
 fn ser_json(bytes: &mut [u8], data: &TestData) {
@@ -59,12 +71,12 @@ fn ser_rkyv(bytes: &mut [u8], data: &TestData) {
 }
 
 fn de_alkahest(bytes: &[u8]) {
-    match alkahest::read::<TestSchema>(bytes) {
-        TestSchemaUnpacked::Foo { a, b } => {
+    match alkahest::access::<TestSchema>(bytes) {
+        TestSchemaAccess::Foo { a, b } => {
             black_box(a);
             black_box(b);
         }
-        TestSchemaUnpacked::Bar { c, d } => {
+        TestSchemaAccess::Bar { c, d } => {
             c.into_iter().for_each(|c| {
                 black_box(c);
             });
@@ -97,7 +109,7 @@ fn de_json(bytes: &[u8]) {
 }
 
 fn de_bincode(bytes: &[u8]) {
-    match bincode::access::<TestData>(bytes).unwrap() {
+    match bincode::deserialize::<TestData>(bytes).unwrap() {
         TestData::Foo { a, b } => {
             black_box(a);
             black_box(b);
@@ -140,10 +152,9 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         d: vec![vec![4, 5, 1]],
     };
 
-    let mut storage = [0u32; 128];
-    let bytes = bytemuck::bytes_of_mut(&mut storage);
+    let mut bytes = [0u8; 1024];
 
-    let alkahest_vec = alkahest_to_vec::<TestSchema, _>(data.wrapper());
+    let alkahest_vec = alkahest_to_vec::<TestSchema, _>(&data);
     let json_vec = serde_json::to_vec(&data).unwrap();
     let bincode_vec = bincode::serialize(&data).unwrap();
 
@@ -153,16 +164,20 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     let rkyv_vec = rkyv_ser.into_serializer().into_inner()[..len].to_vec();
 
     c.bench_function("ser alkahest", |b| {
-        b.iter(|| ser_alkahest(bytes, black_box(&data)))
+        b.iter(|| ser_alkahest(&mut bytes, black_box(&data)))
     });
 
-    c.bench_function("ser json", |b| b.iter(|| ser_json(bytes, black_box(&data))));
+    c.bench_function("ser json", |b| {
+        b.iter(|| ser_json(&mut bytes, black_box(&data)))
+    });
 
     c.bench_function("ser bincode", |b| {
-        b.iter(|| ser_bincode(bytes, black_box(&data)))
+        b.iter(|| ser_bincode(&mut bytes, black_box(&data)))
     });
 
-    c.bench_function("ser rkyv", |b| b.iter(|| ser_rkyv(bytes, black_box(&data))));
+    c.bench_function("ser rkyv", |b| {
+        b.iter(|| ser_rkyv(&mut bytes, black_box(&data)))
+    });
 
     c.bench_function("de alkahest", |b| {
         b.iter(|| de_alkahest(black_box(&alkahest_vec)))
@@ -183,21 +198,14 @@ criterion_main!(benches);
 /// Writes the alkahest into provided bytes slice.
 /// Returns number of bytes written.
 
-pub fn alkahest_to_vec<'a, T, P>(wrapper: P) -> Vec<u8>
+pub fn alkahest_to_vec<'a, T, P>(data: P) -> Vec<u8>
 where
     T: Schema,
-    P: alkahest::Pack<T>,
+    P: alkahest::Serialize<T>,
 {
-    struct Aligned {
-        _align: [u128; 0],
-        bytes: [u8; 1024],
-    }
+    let mut bytes = Vec::new();
+    bytes.resize(1024, 0);
 
-    let mut aligned = Aligned {
-        _align: [],
-        bytes: [0; 1024],
-    };
-
-    let size = alkahest::write(&mut aligned.bytes, wrapper);
-    aligned.bytes[..size].to_vec()
+    let size = alkahest::serialize(data, &mut bytes).unwrap();
+    bytes[..size].to_vec()
 }

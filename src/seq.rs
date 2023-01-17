@@ -65,6 +65,7 @@ where
     T: Schema,
     Access<'a, T>: Debug,
 {
+    #[inline(always)]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list().entries(self.iter()).finish()
     }
@@ -159,6 +160,7 @@ where
         }
     }
 
+    #[inline]
     fn serialize_header(header: Self::Header, output: &mut [u8], offset: usize) -> bool {
         if output.len() < size_of::<[FixedUsize; 2]>() {
             return false;
@@ -186,7 +188,7 @@ where
 {
     type Item = Access<'a, T>;
 
-    #[inline]
+    #[inline(always)]
     fn next(&mut self) -> Option<Access<'a, T>> {
         if self.len == 0 {
             None

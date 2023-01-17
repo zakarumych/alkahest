@@ -26,15 +26,16 @@
 
 extern crate self as alkahest;
 
+#[macro_export]
 macro_rules! cold_panic {
-    ($($arg:tt)*) => {
+    ($($arg:tt)*) => {{
         #[cold]
         #[inline(never)]
-        fn do_cold_panic() {
+        fn do_cold_panic() -> ! {
             panic!($($arg)*);
         }
-        do_cold_panic();
-    };
+        do_cold_panic()
+    }};
 }
 
 mod array;
@@ -65,6 +66,7 @@ pub use self::{
 /// # Panics
 ///
 /// Panics if value doesn't fit into bytes.
+#[inline(always)]
 pub fn serialize<T, S>(serializable: S, output: &mut [u8]) -> Result<usize, usize>
 where
     T: Schema,
@@ -90,6 +92,7 @@ where
 }
 
 /// Deserializes data from byte slice.
+#[inline(always)]
 pub fn access<'a, T>(input: &'a [u8]) -> Access<'a, T>
 where
     T: Schema,
@@ -107,14 +110,17 @@ type FixedUsizeType = u32;
 struct FixedUsize(FixedUsizeType);
 
 impl FixedUsize {
+    #[inline(always)]
     fn truncated(value: usize) -> Self {
         FixedUsize(value as FixedUsizeType)
     }
 
+    #[inline(always)]
     fn to_bytes(self) -> [u8; size_of::<Self>()] {
         self.0.to_le_bytes()
     }
 
+    #[inline(always)]
     fn from_bytes(bytes: [u8; size_of::<Self>()]) -> Self {
         FixedUsize(FixedUsizeType::from_le_bytes(bytes))
     }
@@ -122,6 +128,8 @@ impl FixedUsize {
 
 impl TryFrom<usize> for FixedUsize {
     type Error = TryFromIntError;
+
+    #[inline(always)]
     fn try_from(value: usize) -> Result<Self, TryFromIntError> {
         FixedUsizeType::try_from(value).map(FixedUsize)
     }
@@ -129,6 +137,8 @@ impl TryFrom<usize> for FixedUsize {
 
 impl TryFrom<FixedUsizeType> for FixedUsize {
     type Error = TryFromIntError;
+
+    #[inline(always)]
     fn try_from(value: FixedUsizeType) -> Result<Self, TryFromIntError> {
         usize::try_from(value)?;
         Ok(FixedUsize(value))
@@ -136,12 +146,14 @@ impl TryFrom<FixedUsizeType> for FixedUsize {
 }
 
 impl From<FixedUsize> for usize {
+    #[inline(always)]
     fn from(value: FixedUsize) -> Self {
         value.0 as usize
     }
 }
 
 impl From<FixedUsize> for FixedUsizeType {
+    #[inline(always)]
     fn from(value: FixedUsize) -> Self {
         value.0
     }
@@ -149,5 +161,26 @@ impl From<FixedUsize> for FixedUsizeType {
 
 #[doc(hidden)]
 pub mod private {
-    pub use {bool, u8, usize, Result};
+    use core::mem::size_of;
+
+    pub use {bool, u32, u8, usize, Result};
+
+    pub const VARIANT_SIZE: usize = size_of::<u32>();
+
+    #[inline(always)]
+    pub fn write_variant_index(
+        variant: u32,
+        output: &mut [u8],
+        offset: usize,
+    ) -> (&mut [u8], usize) {
+        output[..VARIANT_SIZE].copy_from_slice(&variant.to_le_bytes());
+        (&mut output[VARIANT_SIZE..], offset - VARIANT_SIZE)
+    }
+
+    #[inline(always)]
+    pub fn read_variant_index(input: &[u8]) -> (&[u8], u32) {
+        let (head, tail) = input.split_at(VARIANT_SIZE);
+        let variant = u32::from_le_bytes(head.try_into().unwrap());
+        (tail, variant)
+    }
 }
