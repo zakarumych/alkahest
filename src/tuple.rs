@@ -1,139 +1,171 @@
-use crate::{Pack, Schema, SchemaUnpack, Unpacked};
-
-impl<'a> SchemaUnpack<'a> for () {
-    type Unpacked = ();
-}
+use crate::schema::{Access, Schema, Serialize};
 
 impl Schema for () {
-    type Packed = ();
+    type Access<'a> = ();
 
     #[inline(always)]
-    fn align() -> usize {
-        1
+    fn header() -> usize {
+        0
     }
 
     #[inline(always)]
-    fn unpack<'a>((): (), _input: &'a [u8]) {}
+    fn access<'a>(_input: &'a [u8]) -> Access<'a, Self> {}
 }
 
-impl Pack<()> for () {
+impl Serialize<()> for () {
+    type Header = ();
+
     #[inline(always)]
-    fn pack(self, _offset: usize, _output: &mut [u8]) -> ((), usize) {
-        ((), 0)
+    fn serialize_body(self, _output: &mut [u8]) -> Result<((), usize), usize> {
+        Ok(((), 0))
+    }
+
+    #[inline(always)]
+    fn serialize_header(_header: (), _output: &mut [u8], _offset: usize) -> bool {
+        true
     }
 }
 
-impl Pack<()> for &'_ () {
+impl Serialize<()> for &'_ () {
+    type Header = ();
+
     #[inline(always)]
-    fn pack(self, _offset: usize, _output: &mut [u8]) -> ((), usize) {
-        ((), 0)
+    fn serialize_body(self, _output: &mut [u8]) -> Result<((), usize), usize> {
+        Ok(((), 0))
+    }
+
+    #[inline(always)]
+    fn serialize_header(_header: (), _output: &mut [u8], _offset: usize) -> bool {
+        true
     }
 }
 
 macro_rules! impl_for_tuple {
-    ($packed_tuple:ident, [$($a:ident),+ $(,)?] [$($b:ident),+ $(,)?]) => {
-        impl<'a, $($a),+> SchemaUnpack<'a> for ($($a,)+)
-        where
-            $($a: Schema,)+
-        {
-            type Unpacked = ($(Unpacked<'a, $a>,)+);
-        }
-
-        #[derive(Copy)]
-        #[repr(C, packed)]
-        pub struct $packed_tuple<$($a),+>($($a,)+);
-
-        impl<$($a: Copy),+> Clone for $packed_tuple<$($a,)+> {
-            #[inline(always)]
-            fn clone(&self) -> Self {
-                *self
-            }
-        }
-
-        // `bytemuck` must be able to derive those safely. See https://github.com/Lokathor/bytemuck/issues/70
-        #[allow(unsafe_code)]
-        unsafe impl<$($a: bytemuck::Zeroable),+> bytemuck::Zeroable for $packed_tuple<$($a,)+> {}
-
-        #[allow(unsafe_code)]
-        unsafe impl<$($a: bytemuck::Pod),+> bytemuck::Pod for $packed_tuple<$($a,)+> {}
-
+    ([$($a:ident),+ $(,)?] [$($b:ident),+ $(,)?]) => {
         impl<$($a),+> Schema for ($($a,)+)
         where
             $($a: Schema,)+
         {
-            type Packed = $packed_tuple<$($a::Packed,)+>;
+            type Access<'__a> = ($(Access<'__a, $a>,)+);
 
             #[inline(always)]
-            fn align() -> usize {
-                1 + ($(($a::align() - 1))|+)
+            fn header() -> usize {
+                0 $(+ <$a as Schema>::header())+
             }
 
             #[inline(always)]
-            fn unpack<'a>(packed: $packed_tuple<$($a::Packed,)+>, input: &'a [u8]) -> ($(Unpacked<'a, $a>,)+) {
-                #![allow(non_snake_case)]
+            fn has_body() -> bool {
+                false $(|| <$a as Schema>::has_body())+
+            }
 
-                let $packed_tuple($($a,)+) = packed;
-                ($(<$a>::unpack($a, input),)+)
+            #[inline(always)]
+            fn access<'__a>(input: &'__a [u8]) -> ($(Access<'__a, $a>,)+) {
+                ($(<$a as Schema>::access(input),)+)
             }
         }
 
-        impl<$($a),+ , $($b),+> Pack<($($a,)+)> for ($($b,)+)
+        impl<$($a),+ , $($b),+> Serialize<($($a,)+)> for ($($b,)+)
         where
-            $($a: Schema, $b: Pack<$a>,)+
+            $($a: Schema, $b: Serialize<$a>,)+
         {
+            type Header = ($(
+                (<$b as Serialize<$a>>::Header, usize),
+            )+);
+
             #[inline]
-            fn pack(self, offset: usize, output: &mut [u8]) -> ($packed_tuple<$($a::Packed,)+>, usize) {
+            fn serialize_header(header: Self::Header, output: &mut [u8], offset: usize) -> bool {
                 #![allow(non_snake_case)]
 
-                debug_assert_eq!(
-                    output.as_ptr() as usize % <($($a,)+) as Schema>::align(),
-                    0,
-                    "Output buffer is not aligned"
-                );
-                debug_assert_eq!(
-                    offset % <($($a,)+) as Schema>::align(),
-                    0,
-                    "Offset is not aligned"
-                );
+                let header_size = 0 $(+ <$a as Schema>::header())+;
+
+                if output.len() < header_size {
+                    return false;
+                }
+
+                let ($($b,)+) = header;
+
+                let mut total_offset = offset;
+                let mut output = output;
+                $(
+                    let (header, element_offset) = $b;
+
+                    let (head, tail) = output.split_at_mut(<$a as Schema>::header());
+                    output = tail;
+
+                    <$b as Serialize<$a>>::serialize_header(header, head, total_offset + element_offset);
+                    total_offset -= <$a as Schema>::header();
+                )+
+
+                let _ = (output, total_offset);
+                true
+            }
+
+            #[inline]
+            fn serialize_body(self, output: &mut [u8]) -> Result<(Self::Header, usize), usize> {
+                #![allow(non_snake_case)]
 
                 let ($($b,)+) = self;
-                let mut used = 0;
-                let packed = $packed_tuple( $( {
-                    let aligned = (used + (<$a>::align() - 1)) & !(<$a>::align() - 1);
-                    let (packed, size) = $b.pack(offset + aligned, &mut output[aligned..]);
-                    used = aligned + size;
-                    packed
-                },)+ );
-                (packed, used)
+                let ($(mut $a,)+) = ($({let _ = $b; (None, 0)},)+);
+
+                let mut written = 0;
+                let mut exhausted = false;
+                $(
+                    let offset = written;
+                    if !exhausted {
+                        match <$b as Serialize<$a>>::serialize_body($b, &mut output[offset..]) {
+                            Ok((header, size)) => {
+                                $a = (Some(header), offset);
+                                written += size;
+                            }
+                            Err(size) => {
+                                exhausted = true;
+                                written += size;
+                            }
+                        }
+                    } else {
+                        let size = <$b as Serialize<$a>>::body_size($b);
+                        written += size;
+                    }
+                )+
+
+                if exhausted {
+                    Err(written)
+                } else {
+                    let header = ($(($a.0.unwrap(), $a.1),)+);
+                    Ok((header, written))
+                }
             }
         }
 
-        impl<'a, $($a),+ , $($b),+> Pack<($($a,)+)> for &'a ($($b,)+)
+        impl<'a, $($a),+ , $($b),+> Serialize<($($a,)+)> for &'a ($($b,)+)
         where
-            $($a: Schema, &'a $b: Pack<$a>,)+
+            $($a: Schema, &'a $b: Serialize<$a>,)+
         {
-            #[inline]
-            fn pack(self, offset: usize, output: &mut [u8]) -> ($packed_tuple<$($a::Packed,)+>, usize) {
-                #![allow(non_snake_case)]
+            type Header = ($(
+                (<&'a $b as Serialize<$a>>::Header, usize),
+            )+);
 
+            #[inline(always)]
+            fn serialize_header(header: Self::Header, output: &mut [u8], offset: usize) -> bool {
+                <($(&'a $b,)+) as Serialize<($($a,)+)>>::serialize_header(header, output, offset)
+            }
+
+            #[inline]
+            fn serialize_body(self, output: &mut [u8]) -> Result<(Self::Header, usize), usize> {
+                #![allow(non_snake_case)]
                 let ($($b,)+) = self;
-                let mut used = 0;
-                let packed = $packed_tuple( $( {
-                    let (packed, size) = $b.pack(offset + used, &mut output[used..]);
-                    used += size;
-                    packed
-                },)+ );
-                (packed, used)
+                let me = ($($b,)+);
+                <($(&'a $b,)+) as Serialize<($($a,)+)>>::serialize_body(me, output)
             }
         }
     };
 }
 
-impl_for_tuple!(PackedTuple1, [A][B]);
-impl_for_tuple!(PackedTuple2, [A, B][C, D]);
-impl_for_tuple!(PackedTuple3, [A, B, C][D, E, F]);
-impl_for_tuple!(PackedTuple4, [A, B, C, D][E, F, G, H]);
-impl_for_tuple!(PackedTuple5, [A, B, C, D, E][F, G, H, I, J]);
-impl_for_tuple!(PackedTuple6, [A, B, C, D, E, F][G, H, I, J, K, L]);
-impl_for_tuple!(PackedTuple7, [A, B, C, D, E, F, G][H, I, J, K, L, M, N]);
-impl_for_tuple!(PackedTuple8, [A, B, C, D, E, F, G, H][I, J, K, L, M, N, O, P]);
+impl_for_tuple!([A][B]);
+impl_for_tuple!([A, B][C, D]);
+impl_for_tuple!([A, B, C][D, E, F]);
+impl_for_tuple!([A, B, C, D][E, F, G, H]);
+impl_for_tuple!([A, B, C, D, E][F, G, H, I, J]);
+impl_for_tuple!([A, B, C, D, E, F][G, H, I, J, K, L]);
+impl_for_tuple!([A, B, C, D, E, F, G][H, I, J, K, L, M, N]);
+impl_for_tuple!([A, B, C, D, E, F, G, H][I, J, K, L, M, N, O, P]);

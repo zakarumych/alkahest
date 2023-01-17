@@ -1,93 +1,167 @@
-use crate::schema::{Pack, Packed, Schema, SchemaUnpack, Unpacked};
-
-impl<'a, T, const N: usize> SchemaUnpack<'a> for [T; N]
-where
-    T: Schema,
-{
-    type Unpacked = [<T as SchemaUnpack<'a>>::Unpacked; N];
-}
+use crate::schema::{Access, Schema, Serialize};
 
 impl<T, const N: usize> Schema for [T; N]
 where
     T: Schema,
 {
-    type Packed = [T::Packed; N];
+    type Access<'a> = [<T as Schema>::Access<'a>; N];
 
-    fn align() -> usize {
-        T::align()
+    fn header() -> usize {
+        N * T::header()
+    }
+
+    fn has_body() -> bool {
+        T::has_body()
     }
 
     #[inline]
-    fn unpack<'a>(packed: [T::Packed; N], input: &'a [u8]) -> Unpacked<'a, Self> {
-        packed.map(|packed| T::unpack(packed, input))
-    }
-}
-
-impl<T, U, const N: usize> Pack<[T; N]> for [U; N]
-where
-    T: Schema,
-    U: Pack<T>,
-{
-    #[inline]
-    fn pack(self, offset: usize, output: &mut [u8]) -> (Packed<[T; N]>, usize) {
-        debug_assert_eq!(
-            output.as_ptr() as usize % <[T; N] as Schema>::align(),
-            0,
-            "Output buffer is not aligned"
-        );
-
-        debug_assert_eq!(
-            offset % <[T; N] as Schema>::align(),
-            0,
-            "Offset is not aligned"
-        );
-
-        let item_align_mask = <T>::align() - 1;
-
-        let mut used = 0;
-
-        let packed = self.map(|pack| {
-            let aligned = (used + item_align_mask) & !item_align_mask;
-            let (packed, size) = pack.pack(offset + aligned, &mut output[aligned..]);
-            used = aligned + size;
-            packed
-        });
-        (packed, used)
+    fn access<'a>(mut input: &'a [u8]) -> Access<'a, Self> {
+        [(); N].map(|()| {
+            let data = input;
+            input = &input[T::header()..];
+            <T as Schema>::access(data)
+        })
     }
 }
 
-impl<T, U, const N: usize> Pack<[T; N]> for &'_ [U; N]
+impl<T, U, const N: usize> Serialize<[T; N]> for [U; N]
 where
     T: Schema,
-    for<'a> &'a U: Pack<T>,
+    U: Serialize<T>,
 {
-    #[inline]
-    fn pack(self, offset: usize, output: &mut [u8]) -> (Packed<[T; N]>, usize) {
-        debug_assert_eq!(
-            output.as_ptr() as usize % <[T; N] as Schema>::align(),
-            0,
-            "Output buffer is not aligned"
-        );
+    type Header = [(<U as Serialize<T>>::Header, usize); N];
 
-        debug_assert_eq!(
-            offset % <[T; N] as Schema>::align(),
-            0,
-            "Offset is not aligned"
-        );
+    fn serialize_header(header: Self::Header, output: &mut [u8], offset: usize) -> bool {
+        let header_size = <T as Schema>::header() * N;
 
-        let mut storage: Packed<[T; N]> = bytemuck::Zeroable::zeroed();
-
-        let item_align_mask = <T>::align() - 1;
-
-        let mut used = 0;
-
-        for i in 0..N {
-            let aligned = (used + item_align_mask) & !item_align_mask;
-            let (packed, size) = (&self[i]).pack(offset + aligned, &mut output[aligned..]);
-            used = aligned + size;
-            storage[i] = packed;
+        if output.len() < header_size {
+            return false;
         }
 
-        (storage, used)
+        let mut total_offset = offset;
+        let mut output = output;
+
+        for (header, element_offset) in header {
+            let (head, tail) = output.split_at_mut(<T as Schema>::header());
+            output = tail;
+
+            <U as Serialize<T>>::serialize_header(header, head, total_offset + element_offset);
+            total_offset -= <T as Schema>::header();
+        }
+
+        let _ = (output, total_offset);
+        true
+    }
+
+    fn serialize_body(self, output: &mut [u8]) -> Result<(Self::Header, usize), usize> {
+        let mut written = 0;
+        let mut exhausted = false;
+
+        let headers = self.map(|elem| {
+            let offset = written;
+            if !exhausted {
+                match <U as Serialize<T>>::serialize_body(elem, &mut output[offset..]) {
+                    Ok((header, size)) => {
+                        written += size;
+                        Some((header, offset))
+                    }
+                    Err(size) => {
+                        exhausted = true;
+                        written += size;
+                        None
+                    }
+                }
+            } else {
+                let size = <U as Serialize<T>>::body_size(elem);
+                written += size;
+                None
+            }
+        });
+
+        if exhausted {
+            Err(written)
+        } else {
+            let headers = headers.map(Option::unwrap);
+            Ok((headers, written))
+        }
+    }
+}
+
+impl<'a, T, U, const N: usize> Serialize<[T; N]> for &'a [U; N]
+where
+    T: Schema,
+    &'a U: Serialize<T>,
+{
+    type Header = [(<&'a U as Serialize<T>>::Header, usize); N];
+
+    #[inline(always)]
+    fn serialize_header(header: Self::Header, output: &mut [u8], offset: usize) -> bool {
+        <[&'a U; N] as Serialize<[T; N]>>::serialize_header(header, output, offset)
+    }
+
+    #[inline(always)]
+    fn serialize_body(self, output: &mut [u8]) -> Result<(Self::Header, usize), usize> {
+        let mut written = 0;
+        let mut exhausted = false;
+
+        let headers = self.map_ref(|elem| {
+            let offset = written;
+            if !exhausted {
+                match <&'a U as Serialize<T>>::serialize_body(elem, &mut output[offset..]) {
+                    Ok((header, size)) => {
+                        written += size;
+                        Some((header, offset))
+                    }
+                    Err(size) => {
+                        exhausted = true;
+                        written += size;
+                        None
+                    }
+                }
+            } else {
+                let size = <&'a U as Serialize<T>>::body_size(elem);
+                written += size;
+                None
+            }
+        });
+
+        if exhausted {
+            Err(written)
+        } else {
+            let headers = headers.map(Option::unwrap);
+            Ok((headers, written))
+        }
+    }
+}
+
+trait MapArrayRef<const N: usize> {
+    type Item: Sized;
+
+    fn map_ref<'a, F, U>(&'a self, f: F) -> [U; N]
+    where
+        F: FnMut(&'a Self::Item) -> U;
+
+    fn map_mut<'a, F, U>(&'a mut self, f: F) -> [U; N]
+    where
+        F: FnMut(&'a mut Self::Item) -> U;
+}
+
+impl<T, const N: usize> MapArrayRef<N> for [T; N] {
+    type Item = T;
+
+    fn map_ref<'a, F, U>(&'a self, mut f: F) -> [U; N]
+    where
+        F: FnMut(&'a Self::Item) -> U,
+    {
+        let mut iter = self.iter();
+        [(); N].map(|()| f(iter.next().unwrap()))
+    }
+
+    fn map_mut<'a, F, U>(&'a mut self, mut f: F) -> [U; N]
+    where
+        F: FnMut(&'a mut Self::Item) -> U,
+    {
+        let mut iter = self.iter_mut();
+        [(); N].map(|()| f(iter.next().unwrap()))
     }
 }

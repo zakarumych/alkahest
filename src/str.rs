@@ -1,53 +1,57 @@
-use {
-    crate::{
-        schema::{Pack, Schema, SchemaUnpack},
-        FixedUsize,
-    },
-    core::{convert::TryFrom, mem::align_of},
+use crate::{
+    bytes::{Bytes, BytesHeader},
+    schema::{Schema, Serialize},
 };
 
-/// `Schema` for runtime sized bytes array.
-/// Should be used for bytes and strings alike.
+/// `Schema` for strings.
 ///
-/// Packed from `impl `[`AsRef`]`<str>`.
-/// Unpacks into `&[`str`]`.
+/// Serialized from `impl `[`AsRef`]`<str>`.
+/// Access into `&[str]`.
 ///
 /// Serialized exactly as [`Bytes`] and [`Seq<u8>`].
 ///
 /// [`Seq<u8>`]: crate::Seq
-/// [`Bytes`]: crate::Bytes
+/// [`Bytes`]: Bytes
 pub enum Str {}
 
-impl<'a> SchemaUnpack<'a> for Str {
-    type Unpacked = &'a str;
-}
-
 impl Schema for Str {
-    type Packed = [FixedUsize; 2];
+    type Access<'a> = &'a str;
 
-    fn align() -> usize {
-        align_of::<[FixedUsize; 2]>()
+    #[inline(always)]
+    fn header() -> usize {
+        <Bytes as Schema>::header()
     }
 
-    fn unpack<'a>(packed: [FixedUsize; 2], bytes: &'a [u8]) -> &'a str {
-        let len = usize::try_from(packed[0]).expect("Slice is too large");
-        let offset = usize::try_from(packed[1]).expect("Package is too large");
-        core::str::from_utf8(&bytes[offset..][..len]).unwrap()
+    #[inline(always)]
+    fn has_body() -> bool {
+        <Bytes as Schema>::has_body()
+    }
+
+    #[inline(always)]
+    fn access<'a>(input: &'a [u8]) -> &'a str {
+        let bytes = <Bytes as Schema>::access(input);
+        core::str::from_utf8(bytes).expect("invalid utf8")
     }
 }
 
-impl<T> Pack<Str> for T
+impl<T> Serialize<Str> for T
 where
-    T: AsRef<[u8]>,
+    T: AsRef<str>,
 {
-    #[inline]
-    fn pack(self, offset: usize, output: &mut [u8]) -> ([FixedUsize; 2], usize) {
-        let bytes = self.as_ref();
+    type Header = BytesHeader;
 
-        let len32 = u32::try_from(bytes.len()).expect("Slice is too large");
-        let offset32 = u32::try_from(offset).expect("Offset is too large");
+    #[inline(always)]
+    fn serialize_body(self, output: &mut [u8]) -> Result<(BytesHeader, usize), usize> {
+        <&[u8] as Serialize<Bytes>>::serialize_body(self.as_ref().as_bytes(), output)
+    }
 
-        output[..bytes.len()].copy_from_slice(bytes);
-        ([len32, offset32], bytes.len())
+    #[inline(always)]
+    fn body_size(self) -> usize {
+        <&[u8] as Serialize<Bytes>>::body_size(self.as_ref().as_bytes())
+    }
+
+    #[inline(always)]
+    fn serialize_header(header: BytesHeader, output: &mut [u8], offset: usize) -> bool {
+        <&[u8] as Serialize<Bytes>>::serialize_header(header, output, offset)
     }
 }

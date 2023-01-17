@@ -97,7 +97,7 @@ fn de_json(bytes: &[u8]) {
 }
 
 fn de_bincode(bytes: &[u8]) {
-    match bincode::deserialize::<TestData>(bytes).unwrap() {
+    match bincode::access::<TestData>(bytes).unwrap() {
         TestData::Foo { a, b } => {
             black_box(a);
             black_box(b);

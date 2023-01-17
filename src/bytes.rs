@@ -1,52 +1,93 @@
-use {
-    crate::{
-        schema::{Pack, Schema, SchemaUnpack},
-        FixedUsize,
-    },
-    core::{convert::TryFrom, mem::align_of},
+use core::mem::size_of;
+
+use crate::{
+    schema::{Schema, Serialize},
+    FixedUsize,
 };
 
 /// `Schema` for runtime sized bytes array.
-/// Should be used for bytes and strings alike.
 ///
 /// Packed from `impl `[`AsRef`]`<[u8]>`.
 /// Unpacks into `&[`[`u8`]`]`.
 ///
-/// Serialized exactly as [`Seq<u8>`].
+/// Serialized exactly as [`Str`] and [`Seq<u8>`].
 ///
 /// [`Seq<u8>`]: crate::Seq
+/// [`Str`]: crate::Str
 pub enum Bytes {}
 
-impl<'a> SchemaUnpack<'a> for Bytes {
-    type Unpacked = &'a [u8];
-}
-
 impl Schema for Bytes {
-    type Packed = [FixedUsize; 2];
+    type Access<'a> = &'a [u8];
 
-    fn align() -> usize {
-        align_of::<[FixedUsize; 2]>()
+    #[inline(always)]
+    fn header() -> usize {
+        size_of::<[FixedUsize; 2]>()
     }
 
-    fn unpack<'a>(packed: [FixedUsize; 2], bytes: &'a [u8]) -> &'a [u8] {
-        let len = usize::try_from(packed[0]).expect("Slice is too large");
-        let offset = usize::try_from(packed[1]).expect("Package is too large");
-        &bytes[offset..][..len]
+    #[inline(always)]
+    fn has_body() -> bool {
+        true
+    }
+
+    #[inline(always)]
+    fn access<'a>(input: &'a [u8]) -> &'a [u8] {
+        let len = &input[..size_of::<FixedUsize>()];
+        let len = FixedUsize::from_bytes(len.try_into().unwrap()).into();
+
+        let offset = &input[size_of::<FixedUsize>()..][..size_of::<FixedUsize>()];
+        let offset = FixedUsize::from_bytes(offset.try_into().unwrap()).into();
+
+        &input[offset..][..len]
     }
 }
 
-impl<T> Pack<Bytes> for T
+#[repr(transparent)]
+pub struct BytesHeader {
+    len: FixedUsize,
+}
+
+impl<T> Serialize<Bytes> for T
 where
     T: AsRef<[u8]>,
 {
-    #[inline]
-    fn pack(self, offset: usize, output: &mut [u8]) -> ([FixedUsize; 2], usize) {
-        let bytes = self.as_ref();
+    type Header = BytesHeader;
 
-        let len32 = u32::try_from(bytes.len()).expect("Slice is too large");
-        let offset32 = u32::try_from(offset).expect("Offset is too large");
+    #[inline(always)]
+    fn serialize_body(self, output: &mut [u8]) -> Result<(BytesHeader, usize), usize> {
+        let slice = self.as_ref();
+        let len = slice.len();
 
-        output[..bytes.len()].copy_from_slice(bytes);
-        ([len32, offset32], bytes.len())
+        if output.len() < len {
+            return Err(len);
+        }
+
+        output[..len].copy_from_slice(slice);
+
+        Ok((
+            BytesHeader {
+                len: FixedUsize::truncated(len),
+            },
+            len,
+        ))
+    }
+
+    #[inline(always)]
+    fn body_size(self) -> usize {
+        self.as_ref().len()
+    }
+
+    #[inline(always)]
+    fn serialize_header(header: BytesHeader, output: &mut [u8], offset: usize) -> bool {
+        if output.len() < size_of::<[FixedUsize; 2]>() {
+            return false;
+        }
+
+        let offset = FixedUsize::truncated(offset);
+
+        output[..size_of::<FixedUsize>()].copy_from_slice(&header.len.to_bytes());
+        output[size_of::<FixedUsize>()..][..size_of::<FixedUsize>()]
+            .copy_from_slice(&offset.to_bytes());
+
+        true
     }
 }

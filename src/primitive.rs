@@ -1,7 +1,6 @@
-use {
-    crate::schema::{Pack, Schema, SchemaUnpack},
-    core::mem::align_of,
-};
+use core::mem::size_of;
+
+use crate::schema::{Access, Schema, Serialize};
 
 macro_rules! impl_primitive {
     ($head:ty $(, $tail:ty)+ $(,)?) => {
@@ -9,45 +8,48 @@ macro_rules! impl_primitive {
         impl_primitive!($($tail),+);
     };
     ($ty:ty) => {
-        impl<'a> SchemaUnpack<'a> for $ty {
-            type Unpacked = Self;
-        }
-
         impl Schema for $ty {
-            type Packed = Self;
+            type Access<'a> = Self;
 
             #[inline(always)]
-            fn align() -> usize {
-                align_of::<$ty>()
+            fn header() -> usize {
+                size_of::<$ty>()
             }
 
             #[inline(always)]
-            #[cfg(target_endian = "little")]
-            fn unpack<'a>(packed: $ty, _bytes: &'a [u8]) -> $ty {
-                packed
+            fn has_body() -> bool {
+                false
             }
 
             #[inline(always)]
-            #[cfg(not(target_endian = "little"))]
-            fn unpack<'a>(packed: $ty, _bytes: &'a [u8]) -> $ty {
-                <$ty>::from_le(packed)
+            fn access<'a>(input: &'a [u8]) -> $ty {
+                if input.len() < size_of::<$ty>() {
+                    cold_panic!("input buffer is too small");
+                }
+                let array: [_; size_of::<$ty>()] = input[..size_of::<$ty>()].try_into().unwrap();
+                <$ty>::from_le_bytes(array)
             }
         }
 
-        impl<T> Pack<$ty> for T
+        impl<T> Serialize<$ty> for T
         where
             T: core::borrow::Borrow<$ty>,
         {
+            type Header = $ty;
+
             #[inline(always)]
-            #[cfg(target_endian = "little")]
-            fn pack(self, _offset: usize, _bytes: &mut [u8]) -> ($ty, usize) {
-                (*self.borrow(), 0)
+            fn serialize_body(self, _output: &mut [u8]) -> Result<($ty, usize), usize> {
+                Ok((*self.borrow(), 0))
             }
 
             #[inline(always)]
-            #[cfg(not(target_endian = "little"))]
-            fn pack(self, _offset: usize, _bytes: &mut [u8]) -> ($ty, usize) {
-                (<$ty>::to_le(*self.borrow()), 0)
+            fn serialize_header(header: $ty, output: &mut [u8], _offset: usize) -> bool {
+                if output.len() < size_of::<$ty>() {
+                    return false;
+                }
+                let array: &mut [_; size_of::<$ty>()] = (&mut output[..size_of::<$ty>()]).try_into().unwrap();
+                *array = header.to_le_bytes();
+                true
             }
         }
     };
@@ -55,30 +57,39 @@ macro_rules! impl_primitive {
 
 impl_primitive!(u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64);
 
-impl<'a> SchemaUnpack<'a> for bool {
-    type Unpacked = bool;
-}
-
 impl Schema for bool {
-    type Packed = u8;
+    type Access<'a> = Self;
 
     #[inline(always)]
-    fn align() -> usize {
-        align_of::<u8>()
+    fn header() -> usize {
+        <u8 as Schema>::header()
     }
 
     #[inline(always)]
-    fn unpack<'a>(packed: u8, _bytes: &'a [u8]) -> bool {
-        packed != 0
+    fn has_body() -> bool {
+        <u8 as Schema>::has_body()
+    }
+
+    #[inline(always)]
+    fn access<'a>(input: &'a [u8]) -> Access<'a, Self> {
+        <u8 as Schema>::access(input) != 0
     }
 }
 
-impl<T> Pack<bool> for T
+impl<T> Serialize<bool> for T
 where
     T: core::borrow::Borrow<bool>,
 {
+    type Header = u8;
+
     #[inline(always)]
-    fn pack(self, _offset: usize, _bytes: &mut [u8]) -> (u8, usize) {
-        (*self.borrow() as u8, 0)
+    fn serialize_body(self, output: &mut [u8]) -> Result<(u8, usize), usize> {
+        let v = *self.borrow() as u8;
+        <u8 as Serialize<u8>>::serialize_body(v, output)
+    }
+
+    #[inline(always)]
+    fn serialize_header(header: u8, output: &mut [u8], offset: usize) -> bool {
+        <u8 as Serialize<u8>>::serialize_header(header, output, offset)
     }
 }

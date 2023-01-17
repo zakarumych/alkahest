@@ -1,77 +1,76 @@
-use crate::schema::{Pack, Packed, Schema, SchemaUnpack, Unpacked};
-
-impl<'a, T> SchemaUnpack<'a> for Option<T>
-where
-    T: Schema,
-{
-    type Unpacked = Option<Unpacked<'a, T>>;
-}
-
-#[derive(Copy)]
-#[repr(C, packed)]
-pub struct PackedOption<T: bytemuck::Pod> {
-    some: u8,
-    value: T,
-}
-
-impl<T: bytemuck::Pod> Clone for PackedOption<T> {
-    #[inline(always)]
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-// `bytemuck` must be able to derive those safely. See https://github.com/Lokathor/bytemuck/issues/70
-#[allow(unsafe_code)]
-unsafe impl<T: bytemuck::Pod> bytemuck::Zeroable for PackedOption<T> {}
-#[allow(unsafe_code)]
-unsafe impl<T: bytemuck::Pod> bytemuck::Pod for PackedOption<T> {}
+use crate::{Access, Schema, Serialize};
 
 impl<T> Schema for Option<T>
 where
     T: Schema,
 {
-    type Packed = PackedOption<T::Packed>;
+    type Access<'a> = Option<Access<'a, T>>;
 
-    #[inline]
-    fn align() -> usize {
-        T::align()
+    #[inline(always)]
+    fn header() -> usize {
+        1 + <T as Schema>::header()
     }
 
-    #[inline]
-    fn unpack<'a>(packed: PackedOption<T::Packed>, input: &'a [u8]) -> Unpacked<'a, Self> {
-        if packed.some != 0 {
-            Some(T::unpack(packed.value, input))
-        } else {
+    #[inline(always)]
+    fn has_body() -> bool {
+        <T as Schema>::has_body()
+    }
+
+    #[inline(always)]
+    fn access<'a>(input: &'a [u8]) -> Access<'a, Self> {
+        if input[0] == 0 {
             None
+        } else {
+            Some(<T as Schema>::access(&input[1..]))
         }
     }
 }
 
-impl<T, U> Pack<Option<T>> for Option<U>
+impl<T, U> Serialize<Option<T>> for Option<U>
 where
     T: Schema,
-    U: Pack<T>,
+    U: Serialize<T>,
 {
-    #[inline]
-    fn pack(self, offset: usize, output: &mut [u8]) -> (Packed<Option<T>>, usize) {
+    type Header = Option<U::Header>;
+
+    #[inline(always)]
+    fn serialize_body(self, output: &mut [u8]) -> Result<(Self::Header, usize), usize> {
         match self {
-            None => (
-                PackedOption {
-                    some: 0,
-                    value: bytemuck::Zeroable::zeroed(),
-                },
-                0,
-            ),
+            None => Ok((None, 0)),
             Some(value) => {
-                let (packed, used) = value.pack(offset, output);
-                (
-                    PackedOption {
-                        some: 1,
-                        value: packed,
-                    },
-                    used,
-                )
+                let (header, offset) =
+                    <U as Serialize<T>>::serialize_body(value, &mut output[1..])?;
+                output[0] = 1;
+                Ok((Some(header), offset + 1))
+            }
+        }
+    }
+
+    #[inline(always)]
+    fn body_size(self) -> usize
+    where
+        Self: Sized,
+    {
+        match self {
+            None => 0,
+            Some(value) => <U as Serialize<T>>::body_size(value),
+        }
+    }
+
+    #[inline(always)]
+    fn serialize_header(header: Option<U::Header>, output: &mut [u8], offset: usize) -> bool {
+        if output.len() < <Option<T> as Schema>::header() {
+            return false;
+        }
+
+        match header {
+            None => {
+                output[offset] = 0;
+                true
+            }
+            Some(header) => {
+                output[offset] = 1;
+                <U as Serialize<T>>::serialize_header(header, &mut output[1..], offset - 1)
             }
         }
     }
