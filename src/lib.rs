@@ -66,6 +66,29 @@ pub use self::{
 /// # Panics
 ///
 /// Panics if value doesn't fit into bytes.
+///
+/// # Examples
+///
+/// ```
+/// use alkahest::{Schema, Serialize, serialize, Seq};
+///
+/// #[derive(Schema)]
+/// struct MySchema {
+///   a: u8,
+///   b: u16,
+///   c: Seq<u32>,
+/// }
+///
+/// let mut buffer = [0u8; 1 + 2 + 4 * 2 + 4 * 3]; // a - 1 byte, b - 2 bytes, c - 2 u32s for header + 3 u32s
+///
+/// let size = serialize::<MySchema, _>(MySchemaSerialize {
+///   a: 1,
+///   b: 2,
+///   c: 3..6,
+/// }, &mut buffer).unwrap();
+///
+/// assert_eq!(size, buffer.len());
+/// ```
 #[inline(always)]
 pub fn serialize<T, S>(serializable: S, output: &mut [u8]) -> Result<usize, usize>
 where
@@ -91,7 +114,44 @@ where
     }
 }
 
-/// Deserializes data from byte slice.
+/// Calculates size of serialized data.
+///
+/// # Examples
+///
+/// ```
+/// use alkahest::{Schema, Serialize, bytes_size, Seq};
+///
+/// #[derive(Schema)]
+/// struct MySchema {
+///   a: u8,
+///   b: u16,
+///   c: Seq<u32>,
+/// }
+///
+/// let expected_size = 1 + 2 + 4 * 2 + 4 * 3; // a - 1 byte, b - 2 bytes, c - 2 u32s for header + 3 u32s
+///
+/// let size = bytes_size::<MySchema, _>(MySchemaSerialize {
+///   a: 1,
+///   b: 2,
+///   c: 3..6,
+/// });
+///
+/// assert_eq!(size, expected_size);
+/// ```
+#[inline(always)]
+pub fn bytes_size<T, S>(serializable: S) -> usize
+where
+    T: Schema,
+    S: Serialize<T>,
+{
+    T::header() + serializable.body_size()
+}
+
+/// Access data from byte slice.
+///
+/// Returns value that can be used to traverse data according to specified schema down to primitive types.
+///
+// TODO: Add fallible version of this function - `try_access`.
 #[inline(always)]
 pub fn access<'a, T>(input: &'a [u8]) -> Access<'a, T>
 where
