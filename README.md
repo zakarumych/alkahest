@@ -6,21 +6,28 @@
 [![MIT/Apache](https://img.shields.io/badge/license-MIT%2FApache-blue.svg?style=for-the-badge)](COPYING)
 ![loc](https://img.shields.io/tokei/lines/github/zakarumych/alkahest?style=for-the-badge)
 
-*Alkahest* is serialization library aimed for packet writing and reading in hot path.
-For this purpose *Alkahest* avoids allocations and reads data only on demand.
+*Alkahest* is blazing-fast, zero-deps, zero-overhead, zero-unsafe schema-based serialization library.
 
-Key differences of *Alkahest* from other popular serialization crates is zero-overhead serialization and zero-copy lazy deserialization.\
-For example to serialize value sequence it is not necessary to construct expensive type with allocations such as vectors.\
-Instead sequences are serialized directly from iterators. On deserialization an iterator is returned to the user, which does not parse any element before it is requested.
-Which means that data that is not accessed - not parsed either.
+# Schema and Serialize traits.
 
-*Alkahest* works similarly to *FlatBuffers*,\
-but does not require using another language for data scheme definition and running external tool,\
-and supports generic schemas.
+`Schema` trait is used to define types to serve as data schemas.
+The esiest way to define new schema is to derive `Schema` trait for a type.
+It can be derived for both structs and enums, but no unions. Generics are supported.
+The only constrain is that all fields must also implement `Schema`.
+User should use trait bounds to ensure that field types with generics implement `Schema`.
 
-## Alkahest is very early in development.
+`Serialize<Schema>` trait is used to implement serialization according to a schema.
+Deriving `Schema` for a `UserType` will generate types with `Serialize<UserType>` implementation.
 
-If some feature is missing, feel free to create and issue and describe what should be added.
+Primitives like `bool` and integer types implement both `Schema` and can be serlalized from anything that implements `Borrow<PimitiveType>`
+`Option<T>` implements `Schema` if `T: Schema` and `Option<U>` implments `Serialize<Option<T>>` if `U: Serialize<T>`.
+There's also three ouf-of-the-box schema types:
+  * `Seq<T>` - defines a schema as sequence of schemas `T`.
+    Any `IntoIterator` type can be used to serialize into `Seq<T>` whenever item type can be serialized to `T`.
+    This is major difference from other popular serialization libraries where collection types are used.
+    With `Seq<T>` there's no need to allocate a collection and put values for serialization there.
+  * `Bytes` - sequence of bytes. Similar to `Seq<u8>`, but can be accessed directly.
+  * `Str` - sequence of bytes that is also valud UTF-8 string. Can be accessed as `str`.
 
 # Benchmarking
 
