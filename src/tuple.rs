@@ -60,7 +60,14 @@ macro_rules! impl_for_tuple {
 
             #[inline(always)]
             fn access<'__a>(input: &'__a [u8]) -> ($(Access<'__a, $a>,)+) {
-                ($(<$a as Schema>::access(input),)+)
+                #![allow(unused_assignments)]
+
+                let mut offset = 0;
+                ($({
+                    let cur = offset;
+                    offset += <$a as Schema>::header();
+                    <$a as Schema>::access(&input[cur..])
+                },)+)
             }
         }
 
