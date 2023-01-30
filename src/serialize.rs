@@ -7,8 +7,9 @@ pub trait Serialize<T: Schema + ?Sized> {
     /// Writes metadata at the end of the buffer.
     /// Writes payload at the beginning of the buffer.
     ///
-    /// If serialized successfully `Ok((payload, metadata))` is returned
-    /// with payload size and offset of the metadata written.
+    /// If serialized successfully `Ok((payload, metadata))` is returned.
+    /// Where `payload` is size of the payload in bytes written to the beginning of the buffer.
+    /// And `metadata` is start of the metadata in bytes written to the end of the buffer.
     ///
     /// Implementations *must* write data according to the schema.
     /// Doing otherwise may result in errors during deserialization.
@@ -26,58 +27,10 @@ pub trait Serialize<T: Schema + ?Sized> {
         Self: Sized,
     {
         match self.serialize(0, &mut []) {
-            Ok((payload, metadata)) => {
-                debug_assert_eq!(
-                    metadata, 0,
-                    "`Serialize::serialize` returned `Ok((_, metadata))` where `metadata` offset exceeds buffer size"
-                );
-                debug_assert_eq!(
-                    payload, 0,
-                    "`Serialize::serialize` returned `Ok((payload, _))` where `payload` size exceeds buffer size"
-                );
-                0
-            }
+            Ok((_payload, _metadata)) => 0,
             Err(size) => size,
         }
     }
-}
-
-/// Serializes data into bytes slice.
-/// Returns number of bytes written.
-///
-/// # Panics
-///
-/// Panics if value doesn't fit into bytes.
-///
-/// # Examples
-///
-/// ```
-/// use alkahest::{Schema, Serialize, serialize, Seq};
-///
-/// #[derive(Schema)]
-/// struct MySchema {
-///   a: u8,
-///   b: u16,
-///   c: Seq<u32>,
-/// }
-///
-/// let mut buffer = [0u8; 1 + 2 + 4 * 2 + 4 * 3]; // a - 1 byte, b - 2 bytes, c - 2 u32s for header + 3 u32s
-///
-/// let size = serialize::<MySchema, _>(MySchemaSerialize {
-///   a: 1,
-///   b: 2,
-///   c: 3..6,
-/// }, &mut buffer).unwrap();
-///
-/// assert_eq!(size, buffer.len());
-/// ```
-#[inline(always)]
-pub fn serialize<T, S>(serializable: S, output: &mut [u8]) -> Result<usize, usize>
-where
-    T: Schema,
-    S: Serialize<T>,
-{
-    todo!()
 }
 
 /// Wraps output buffer and provides methods for serializing data.
@@ -92,7 +45,7 @@ pub struct Serializer<'a> {
     // size of the payload
     payload: usize,
 
-    // offset of the metadata
+    // start of the metadata
     metadata: usize,
 }
 
@@ -106,22 +59,27 @@ impl<'a> Serializer<'a> {
         }
     }
 
+    #[inline(always)]
+    pub fn written(&self) -> usize {
+        self.payload + (self.output.len() - self.metadata)
+    }
+
     /// Serialize a value according to specified schema.
     /// Value is written to the output buffer associated with this serializer.
     /// Serializer takes care of moving data around if necessary.
     #[inline]
-    pub fn serialize<S, T>(&mut self, value: T) -> Result<(), usize>
+    pub fn put<S, T>(&mut self, value: T) -> Result<(), usize>
     where
-        S: Schema,
+        S: Schema + ?Sized,
         T: Serialize<S>,
     {
         match value.serialize(
             self.offset + self.payload,
             &mut self.output[self.payload..self.metadata],
         ) {
-            Ok((metadata, payload)) => {
+            Ok((payload, metadata)) => {
+                self.metadata = self.payload + metadata;
                 self.payload += payload;
-                self.metadata -= metadata;
                 Ok(())
             }
             Err(size) => Err(size),
@@ -130,41 +88,34 @@ impl<'a> Serializer<'a> {
 
     /// Returns offset of the output buffer from the "start".
     /// Metadata should use this offset to point to the payload location.
-    #[inline]
+    #[inline(always)]
     pub fn offset(&self) -> usize {
         self.offset + self.payload
     }
 
-    /// Finishes serialization.
-    /// Performs final metadata move in the buffer to the end of the payload.
-    /// Returns size of the metadata and payload.
-    #[inline]
-    fn flush(self) -> usize {
-        let Self {
-            output,
-            payload,
-            metadata,
-            ..
-        } = self;
-
-        // Copy last `metadata` bytes to the end of `payload`
-        output.copy_within(metadata.., payload);
-        self.payload + (output.len() - metadata)
+    /// Flushes metadata to the end of the payload.
+    #[inline(always)]
+    pub fn flush(&mut self) {
+        self.output.copy_within(self.metadata.., self.payload);
+        self.payload += self.output.len() - self.metadata;
+        self.metadata = self.output.len();
     }
 
-    /// Finishes serialization without moving metadata
-    /// to the end of the payload.
-    ///
-    /// Returns size of the payload and offset of the metadata.
-    #[inline]
-    fn finish(self) -> (usize, usize) {
-        let Self {
-            output,
-            payload,
-            metadata,
-            ..
-        } = self;
-
-        (payload, metadata)
+    /// Ends writing to the output buffer.
+    /// Returns payload size and start of the metadata.
+    #[inline(always)]
+    pub fn finish(self) -> (usize, usize) {
+        (self.payload, self.metadata)
     }
+}
+
+pub fn serialize<S, T>(value: T, output: &mut [u8]) -> Result<usize, usize>
+where
+    S: Schema + ?Sized,
+    T: Serialize<S>,
+{
+    let mut serializer = Serializer::new(0, output);
+    serializer.put(value)?;
+    serializer.flush();
+    Ok(serializer.finish().0)
 }

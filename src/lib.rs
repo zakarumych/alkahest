@@ -44,18 +44,23 @@ macro_rules! cold_panic {
 mod deserialize;
 // mod option;
 mod primitive;
-// mod reference;
+mod reference;
 mod schema;
 // mod seq;
 mod serialize;
 // mod str;
-// mod tuple;
 mod size;
+mod tuple;
 
-// // pub use self::{schema::{Access, Schema}, serialize::Serialize};
+pub use self::{
+    deserialize::{Deserialize, DeserializeError, Deserializer},
+    reference::Ref,
+    schema::Schema,
+    serialize::{serialize, Serialize, Serializer},
+};
 
-// #[cfg(feature = "derive")]
-// pub use alkahest_proc::Schema;
+#[cfg(feature = "derive")]
+pub use alkahest_proc::{Deserialize, Schema, Serialize};
 
 // pub use self::{
 //     bytes::{Bytes, BytesHeader},
@@ -109,28 +114,33 @@ mod size;
 //     T::access(input)
 // }
 
-// #[doc(hidden)]
-// pub mod private {
-//     use core::mem::size_of;
+#[doc(hidden)]
+pub mod private {
+    pub use {bool, u32, u8, usize, Result};
 
-//     pub use {bool, u32, u8, usize, Result};
+    use core::marker::PhantomData;
 
-//     pub const VARIANT_SIZE: usize = size_of::<u32>();
+    pub use crate::{Deserialize, DeserializeError, Deserializer, Schema, Serialize, Serializer};
 
-//     #[inline(always)]
-//     pub fn write_variant_index(
-//         variant: u32,
-//         output: &mut [u8],
-//         offset: usize,
-//     ) -> (&mut [u8], usize) {
-//         output[..VARIANT_SIZE].copy_from_slice(&variant.to_le_bytes());
-//         (&mut output[VARIANT_SIZE..], offset - VARIANT_SIZE)
-//     }
+    pub struct WithSchema<S> {
+        marker: PhantomData<fn() -> S>,
+    }
 
-//     #[inline(always)]
-//     pub fn read_variant_index(input: &[u8]) -> (&[u8], u32) {
-//         let (head, tail) = input.split_at(VARIANT_SIZE);
-//         let variant = u32::from_le_bytes(head.try_into().unwrap());
-//         (tail, variant)
-//     }
-// }
+    impl<S> WithSchema<S>
+    where
+        S: Schema,
+    {
+        pub fn put<T>(self, ser: &mut Serializer, value: T) -> Result<(), usize>
+        where
+            T: Serialize<S>,
+        {
+            ser.put::<S, T>(value)
+        }
+    }
+
+    pub fn with_schema<S, F>(_: impl FnOnce(&S) -> &F) -> WithSchema<F> {
+        WithSchema {
+            marker: PhantomData,
+        }
+    }
+}

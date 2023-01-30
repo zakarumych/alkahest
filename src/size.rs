@@ -1,6 +1,10 @@
 use core::{mem::size_of, num::TryFromIntError};
 
-use crate::{deserialize::Deserialize, schema::Schema, serialize::Serialize};
+use crate::{
+    deserialize::{Deserialize, DeserializeError},
+    schema::Schema,
+    serialize::Serialize,
+};
 
 pub type FixedUsizeType = u32;
 
@@ -64,32 +68,33 @@ impl From<FixedUsize> for FixedUsizeType {
 impl Schema for FixedUsize {}
 
 impl Serialize<FixedUsize> for FixedUsize {
+    #[inline(always)]
     fn serialize(self, offset: usize, output: &mut [u8]) -> Result<(usize, usize), usize> {
         <FixedUsizeType as Serialize<FixedUsizeType>>::serialize(self.0, offset, output)
     }
 }
 
 impl Serialize<FixedUsize> for &'_ FixedUsize {
+    #[inline(always)]
     fn serialize(self, offset: usize, output: &mut [u8]) -> Result<(usize, usize), usize> {
         <FixedUsizeType as Serialize<FixedUsizeType>>::serialize(self.0, offset, output)
     }
 }
 
-impl Serialize<FixedUsize> for &'_ mut FixedUsize {
-    fn serialize(self, offset: usize, output: &mut [u8]) -> Result<(usize, usize), usize> {
-        <FixedUsizeType as Serialize<FixedUsizeType>>::serialize(self.0, offset, output)
-    }
-}
+impl Deserialize<'_, FixedUsize> for FixedUsize {
+    #[inline(always)]
+    fn deserialize(input: &[u8]) -> Result<(Self, usize), DeserializeError> {
+        let (value, size) = <FixedUsizeType as Deserialize<FixedUsizeType>>::deserialize(input)?;
 
-impl Deserialize<FixedUsize> for FixedUsize {
-    fn deserialize(input: &[u8]) -> Result<Self, crate::deserialize::DeserializeError> {
-        <FixedUsizeType as Deserialize<FixedUsizeType>>::deserialize(input).map(FixedUsize)
+        if value > usize::MAX as FixedUsizeType {
+            return Err(DeserializeError::InvalidSize(value));
+        }
+
+        Ok((FixedUsize(value), size))
     }
 
-    fn deserialize_in_place(
-        &mut self,
-        input: &[u8],
-    ) -> Result<(), crate::deserialize::DeserializeError> {
+    #[inline(always)]
+    fn deserialize_in_place(&mut self, input: &[u8]) -> Result<usize, DeserializeError> {
         <FixedUsizeType as Deserialize<FixedUsizeType>>::deserialize_in_place(&mut self.0, input)
     }
 }

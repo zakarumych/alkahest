@@ -2,7 +2,14 @@
 //! This module provides schema for serializing unsized types through a reference.
 //!
 
-use core::marker::PhantomData;
+use core::{marker::PhantomData, mem::size_of};
+
+use crate::{
+    deserialize::{Deserialize, DeserializeError, Deserializer},
+    schema::Schema,
+    serialize::{Serialize, Serializer},
+    size::FixedUsize,
+};
 
 /// `Ref` is a schema wrapper.
 /// It serializes the value in dynamic payload
@@ -11,28 +18,53 @@ use core::marker::PhantomData;
 /// The `slice` type is unsized type that uses length metadata.
 /// Structures allows last field to be of unsized type. In this case
 /// metadata of the field inherited by the struct.
-pub struct Ref<T: ?Sized> {
-    marker: PhantomData<fn() -> T>,
+pub struct Ref<S: ?Sized> {
+    marker: PhantomData<fn() -> S>,
 }
 
-impl<T> Schema for Ref<T> where T: Schema {}
+impl<S: ?Sized> Schema for Ref<S> where S: Schema {}
 
 impl<S, T> Serialize<Ref<S>> for T
 where
+    S: Schema + ?Sized,
     T: Serialize<S>,
 {
     #[inline(always)]
     fn serialize(self, offset: usize, output: &mut [u8]) -> Result<(usize, usize), usize> {
         let mut ser = Serializer::new(offset, output);
-        if let Err(size) = ser.serialize(self) {
+        if let Err(size) = ser.put(self) {
             return Err(size + size_of::<FixedUsize>());
         }
-        let size = ser.flush();
-        let mut ser = Serializer::new(offset + size, &mut output[size..]);
-        if let Err(ref_size) = ser.serialize(FixedUsize::truncate(offset + size)) {
-            return Err(ref_size + size);
+
+        ser.flush();
+
+        let address = FixedUsize::truncated(ser.offset());
+        if let Err(size) = ser.put::<FixedUsize, _>(address) {
+            return Err(size + ser.written());
         }
-        let (payload, metadata) = ser.finish();
-        Ok((payload, metadata))
+
+        Ok(ser.finish())
+    }
+}
+
+impl<'a, S, T> Deserialize<'a, Ref<S>> for T
+where
+    S: Schema + ?Sized,
+    T: Deserialize<'a, S>,
+{
+    fn deserialize(input: &'a [u8]) -> Result<(Self, usize), DeserializeError> {
+        let mut des = Deserializer::new(input);
+        let address = des.deserialize::<FixedUsize, FixedUsize>()?;
+
+        let (value, _) = T::deserialize(&input[..address.into()])?;
+        Ok((value, des.end()))
+    }
+
+    fn deserialize_in_place(&mut self, input: &'a [u8]) -> Result<usize, DeserializeError> {
+        let mut des = Deserializer::new(input);
+        let address = des.deserialize::<FixedUsize, FixedUsize>()?;
+
+        T::deserialize_in_place(self, &input[..address.into()])?;
+        Ok(des.end())
     }
 }

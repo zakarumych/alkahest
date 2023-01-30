@@ -1,51 +1,21 @@
-use alkahest::{access, serialize, Schema, Seq};
+use alkahest::{serialize, Ref, Schema, Serialize};
+
+#[derive(Schema)]
+pub struct TestStruct {
+    pub a: u32,
+    pub b: Ref<u32>,
+}
+
+#[derive(Serialize)]
+#[alkahest(schema(TestStruct))]
+pub struct TestStructSerialize {
+    pub a: u32,
+    pub b: u32,
+}
 
 fn main() {
-    #[derive(Schema)]
-    pub struct TestStruct<T: Schema> {
-        pub a: u32,
-        pub b: T,
-    }
+    let mut buffer = [0; 1024];
+    let size = serialize::<TestStruct, _>(TestStructSerialize { a: 1, b: 2 }, &mut buffer).unwrap();
 
-    let mut bytes = [0u8; 105];
-
-    let size = serialize::<TestStruct<bool>, _>(TestStructSerialize { a: 11, b: true }, &mut bytes)
-        .unwrap();
-
-    let test = access::<TestStruct<bool>>(&bytes);
-
-    println!("{:#?}", test.a);
-    println!("{:#?}", test.b);
-
-    // println!("{:#?}", test.c);
-
-    // for d in test.d {
-    //     println!("{:#?}", d);
-    // }
-
-    // #[derive(Schema)]
-    // #[allow(dead_code)]
-    // enum TestEnum<T: Schema> {
-    //     Foo,
-    //     Bar(T),
-    //     Baz { val: f32 },
-    //     Fuss { val: T, var: Seq<u32> },
-    // }
-
-    // let size = alkahest::serialize::<TestEnum<u64>, _>(
-    //     TestEnumFussSerialize { val: 4, var: 0..4 },
-    //     &mut bytes,
-    // )
-    // .unwrap();
-
-    // let test = alkahest::access::<TestEnum<u64>>(&bytes);
-
-    // match test {
-    //     TestEnumAccess::Foo => println!("Foo"),
-    //     TestEnumAccess::Bar(val) => println!("Bar({})", val),
-    //     TestEnumAccess::Baz { val } => println!("Bar{{val: {}}}", val),
-    //     TestEnumAccess::Fuss { val, var } => {
-    //         println!("Fuss{{val: {}, var: {:?}}}", val, var)
-    //     }
-    // }
+    println!("{:?}", &buffer[..size])
 }

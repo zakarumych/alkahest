@@ -1,43 +1,51 @@
-use crate::schema::{Access, Schema, Serialize};
+use crate::{
+    deserialize::{Deserialize, DeserializeError, Deserializer},
+    schema::Schema,
+    serialize::{Serialize, Serializer},
+};
 
-impl Schema for () {
-    type Access<'a> = ();
-
-    #[inline(always)]
-    fn header() -> usize {
-        0
-    }
-
-    #[inline(always)]
-    fn access<'a>(_input: &'a [u8]) -> Access<'a, Self> {}
-}
+impl Schema for () {}
 
 impl Serialize<()> for () {
-    type Header = ();
-
     #[inline(always)]
-    fn serialize_body(self, _output: &mut [u8]) -> Result<((), usize), usize> {
-        Ok(((), 0))
+    fn serialize(self, _offset: usize, _output: &mut [u8]) -> Result<(usize, usize), usize> {
+        Ok((0, 0))
     }
 
     #[inline(always)]
-    fn serialize_header(_header: (), _output: &mut [u8], _offset: usize) -> bool {
-        true
+    fn size(self) -> usize {
+        0
     }
 }
 
 impl Serialize<()> for &'_ () {
-    type Header = ();
+    #[inline(always)]
+    fn serialize(self, _offset: usize, _output: &mut [u8]) -> Result<(usize, usize), usize> {
+        Ok((0, 0))
+    }
 
     #[inline(always)]
-    fn serialize_body(self, _output: &mut [u8]) -> Result<((), usize), usize> {
+    fn size(self) -> usize {
+        0
+    }
+}
+
+impl Deserialize<'_, ()> for () {
+    fn deserialize(_input: &'_ [u8]) -> Result<((), usize), DeserializeError> {
         Ok(((), 0))
     }
 
-    #[inline(always)]
-    fn serialize_header(_header: (), _output: &mut [u8], _offset: usize) -> bool {
-        true
+    fn deserialize_in_place(&mut self, _input: &'_ [u8]) -> Result<usize, DeserializeError> {
+        Ok(0)
     }
+}
+
+macro_rules! inverse {
+    () => {};
+    ($head:block $($tail:block)*) => {
+        inverse!($($tail)*);
+        $head
+    };
 }
 
 macro_rules! impl_for_tuple {
@@ -46,100 +54,41 @@ macro_rules! impl_for_tuple {
         where
             $($a: Schema,)+
         {
-            type Access<'__a> = ($(Access<'__a, $a>,)+);
-
-            #[inline(always)]
-            fn header() -> usize {
-                0 $(+ <$a as Schema>::header())+
-            }
-
-            #[inline(always)]
-            fn has_body() -> bool {
-                false $(|| <$a as Schema>::has_body())+
-            }
-
-            #[inline(always)]
-            fn access<'__a>(input: &'__a [u8]) -> ($(Access<'__a, $a>,)+) {
-                #![allow(unused_assignments)]
-
-                let mut offset = 0;
-                ($({
-                    let cur = offset;
-                    offset += <$a as Schema>::header();
-                    <$a as Schema>::access(&input[cur..])
-                },)+)
-            }
         }
 
         impl<$($a),+ , $($b),+> Serialize<($($a,)+)> for ($($b,)+)
         where
             $($a: Schema, $b: Serialize<$a>,)+
         {
-            type Header = ($(
-                (<$b as Serialize<$a>>::Header, usize),
-            )+);
-
             #[inline]
-            fn serialize_header(header: Self::Header, output: &mut [u8], offset: usize) -> bool {
+            fn serialize(self, offset: usize, output: &mut [u8]) -> Result<(usize, usize), usize> {
                 #![allow(non_snake_case)]
 
-                let header_size = 0 $(+ <$a as Schema>::header())+;
-
-                if output.len() < header_size {
-                    return false;
-                }
-
-                let ($($b,)+) = header;
-
-                let mut total_offset = offset;
-                let mut output = output;
-                $(
-                    let (header, element_offset) = $b;
-
-                    let (head, tail) = output.split_at_mut(<$a as Schema>::header());
-                    output = tail;
-
-                    <$b as Serialize<$a>>::serialize_header(header, head, total_offset + element_offset);
-                    total_offset -= <$a as Schema>::header();
-                )+
-
-                let _ = (output, total_offset);
-                true
-            }
-
-            #[inline]
-            fn serialize_body(self, output: &mut [u8]) -> Result<(Self::Header, usize), usize> {
-                #![allow(non_snake_case)]
+                let mut ser = Serializer::new(offset, output);
 
                 let ($($b,)+) = self;
-                let ($(mut $a,)+) = ($({let _ = $b; (None, 0)},)+);
 
-                let mut written = 0;
                 let mut exhausted = false;
+                let mut needs_more = 0;
                 $(
-                    let offset = written;
                     if !exhausted {
-                        match <$b as Serialize<$a>>::serialize_body($b, &mut output[offset..]) {
-                            Ok((header, size)) => {
-                                $a = (Some(header), offset);
-                                written += size;
-                            }
+                        match ser.put($b) {
+                            Ok(()) => {}
                             Err(size) => {
                                 exhausted = true;
-                                written += size;
+                                needs_more += size;
                             }
                         }
                     } else {
-                        let size = <$b as Serialize<$a>>::body_size($b);
-                        written += size;
+                        let size = <$b as Serialize<$a>>::size($b);
+                        needs_more += size;
                     }
                 )+
 
                 if exhausted {
-                    Err(written)
+                    Err(ser.written() + needs_more)
                 } else {
-                    let header = ($(($a.0.unwrap(), $a.1),)+);
-                    Ok((header, written))
+                    Ok(ser.finish())
                 }
             }
         }
@@ -148,21 +97,47 @@ macro_rules! impl_for_tuple {
         where
             $($a: Schema, &'a $b: Serialize<$a>,)+
         {
-            type Header = ($(
-                (<&'a $b as Serialize<$a>>::Header, usize),
-            )+);
-
-            #[inline(always)]
-            fn serialize_header(header: Self::Header, output: &mut [u8], offset: usize) -> bool {
-                <($(&'a $b,)+) as Serialize<($($a,)+)>>::serialize_header(header, output, offset)
-            }
-
             #[inline]
-            fn serialize_body(self, output: &mut [u8]) -> Result<(Self::Header, usize), usize> {
+            fn serialize(self, offset: usize, output: &mut [u8]) -> Result<(usize, usize), usize> {
                 #![allow(non_snake_case)]
+
                 let ($($b,)+) = self;
                 let me = ($($b,)+);
-                <($(&'a $b,)+) as Serialize<($($a,)+)>>::serialize_body(me, output)
+                <($(&'a $b,)+) as Serialize<($($a,)+)>>::serialize(me, offset, output)
+            }
+        }
+
+        impl<'__a, $($a),+ , $($b),+> Deserialize<'__a, ($($a,)+)> for ($($b,)+)
+        where
+            $($a: Schema, $b: Deserialize<'__a, $a>,)+
+        {
+            #[inline(always)]
+            fn deserialize(input: &'__a [u8]) -> Result<(($($b,)+), usize), DeserializeError> {
+                #![allow(non_snake_case)]
+
+                let mut des = Deserializer::new(input);
+                $(let $b;)+
+
+                inverse!($({
+                    $b = des.deserialize::<$b, $a>()?;
+                })+);
+
+                let value = ($($b,)+);
+                Ok((value, des.end()))
+            }
+
+            #[inline(always)]
+            fn deserialize_in_place(&mut self, input: &'__a [u8]) -> Result<usize, DeserializeError> {
+                #![allow(non_snake_case)]
+
+                let mut des = Deserializer::new(input);
+                let ($($b,)+) = self;
+
+                inverse!($({
+                    des.deserialize_in_place::<$b, $a>($b)?;
+                })+);
+
+                Ok(des.end())
             }
         }
     };
