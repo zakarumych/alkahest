@@ -13,29 +13,29 @@ description = "Fantastic serialization library with zero-overhead serialization 
 [features]
 #alloc = []
 #owned = ["alloc"] # Enables full deserialization into owned types.
-derive = ["alkahest-proc"]
+# derive = ["alkahest-proc"]
 #big = [] # Enables 64-bit sizes and offsets. Makes format incompatible with 32-bit sized data.
 
 # default = ["owned"]
 
 [dependencies]
-alkahest-proc = { version = "=0.2.0", path = "proc", optional = true }
+# alkahest-proc = { version = "=0.2.0", path = "proc", optional = true }
 
-[dev-dependencies]
-criterion = "0.4"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-bincode = "1.3"
-rkyv = "0.7"
+# [dev-dependencies]
+# criterion = "0.4"
+# serde = { version = "1.0", features = ["derive"] }
+# serde_json = "1.0"
+# bincode = "1.3"
+# rkyv = "0.7"
 
-[[example]]
-name = "test"
-required-features = ["derive"]
+# [[example]]
+# name = "test"
+# required-features = ["derive"]
 
-[[bench]]
-name = "benchmark"
-harness = false
-required-features = ["derive"]
+# [[bench]]
+# name = "benchmark"
+# harness = false
+# required-features = ["derive"]
 
 [workspace]
 members = ["proc"]

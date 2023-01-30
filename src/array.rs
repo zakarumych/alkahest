@@ -1,4 +1,7 @@
-use crate::schema::{Access, Schema, Serialize};
+use crate::{
+    schema::{Access, Schema},
+    serialize::Serialize,
+};
 
 impl<T, const N: usize> Schema for [T; N]
 where

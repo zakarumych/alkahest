@@ -1,4 +1,6 @@
+use proc_easy::EasyAttributes;
 use proc_macro2::TokenStream;
+use syn::spanned::Spanned;
 
 fn field_param(idx: usize, ident: &Option<syn::Ident>) -> syn::Ident {
     match ident {
@@ -7,8 +9,27 @@ fn field_param(idx: usize, ident: &Option<syn::Ident>) -> syn::Ident {
     }
 }
 
+proc_easy::easy_argument! {
+    struct RefSelf {
+        ref_token: syn::Token![ref],
+        self_token: syn::Token![self],
+    }
+}
+
+proc_easy::easy_attributes! {
+    @(alkahest)
+    struct SchemaAttributes {
+        serialize_self: Option<syn::Token![self]>,
+        serialize_self_ref: Option<RefSelf>,
+    }
+}
+
 pub fn derive_schema(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
     let input = syn::parse::<syn::DeriveInput>(input)?;
+
+    let attrs = SchemaAttributes::parse(&input.attrs, input.span())?;
+    let serialize_self = attrs.serialize_self.is_some();
+    let serialize_self_ref = attrs.serialize_self_ref.is_some();
 
     let data = input.data;
 
@@ -16,6 +37,8 @@ pub fn derive_schema(input: proc_macro::TokenStream) -> syn::Result<TokenStream>
         vis: input.vis,
         ident: input.ident,
         generics: input.generics,
+        serialize_self,
+        serialize_self_ref,
     };
 
     match data {
@@ -32,6 +55,8 @@ struct Input {
     vis: syn::Visibility,
     ident: syn::Ident,
     generics: syn::Generics,
+    serialize_self: bool,
+    serialize_self_ref: bool,
 }
 
 fn derive_schema_struct(input: Input, data: syn::DataStruct) -> syn::Result<TokenStream> {
@@ -39,6 +64,8 @@ fn derive_schema_struct(input: Input, data: syn::DataStruct) -> syn::Result<Toke
         vis,
         ident,
         generics,
+        serialize_self,
+        serialize_self_ref,
     } = input;
 
     let has_fields = !data.fields.is_empty();
@@ -142,6 +169,91 @@ fn derive_schema_struct(input: Input, data: syn::DataStruct) -> syn::Result<Toke
         }),
     };
 
+    let mut impl_serialize_self_generics = generics.clone();
+    impl_serialize_self_generics
+        .where_clause
+        .get_or_insert_with(|| syn::WhereClause {
+            where_token: Default::default(),
+            predicates: syn::punctuated::Punctuated::new(),
+        })
+        .predicates
+        .extend(data.fields.iter().map(|field| -> syn::WherePredicate {
+            let ty = &field.ty;
+            syn::parse_quote! { #ty: ::alkahest::Serialize<#ty> }
+        }));
+
+    let (
+        impl_serialize_self_impl_generics,
+        _impl_serialize_self_type_generics,
+        impl_serialize_self_where_clause,
+    ) = impl_serialize_self_generics.split_for_impl();
+
+    let impl_serialize_self_header_arguments = match has_fields {
+        false => syn::PathArguments::None,
+        true => syn::PathArguments::AngleBracketed(syn::AngleBracketedGenericArguments {
+            colon2_token: None,
+            lt_token: <syn::Token![<]>::default(),
+            args: {
+                data.fields
+                    .iter()
+                    .map(|field| {
+                        let ty = &field.ty;
+                        syn::GenericArgument::Type(
+                            syn::parse_quote!{(<#ty as ::alkahest::Serialize<#ty>>::Header, ::alkahest::private::usize)}
+                        )
+                    })
+                    .collect()
+            },
+            gt_token: <syn::Token![>]>::default(),
+        }),
+    };
+
+    let mut impl_serialize_self_ref_generics = generics.clone();
+    impl_serialize_self_ref_generics
+        .lt_token
+        .get_or_insert_with(Default::default);
+    impl_serialize_self_ref_generics
+        .gt_token
+        .get_or_insert_with(Default::default);
+    impl_serialize_self_ref_generics
+        .params
+        .push(syn::parse_quote! { '__s });
+    impl_serialize_self_ref_generics
+        .where_clause
+        .get_or_insert_with(|| syn::WhereClause {
+            where_token: Default::default(),
+            predicates: syn::punctuated::Punctuated::new(),
+        })
+        .predicates
+        .extend(data.fields.iter().map(|field| -> syn::WherePredicate {
+            let ty = &field.ty;
+            syn::parse_quote! { &'__s #ty: ::alkahest::Serialize<#ty> }
+        }));
+
+    let (
+        impl_serialize_self_ref_impl_generics,
+        _impl_serialize_self_ref_type_generics,
+        impl_serialize_self_ref_where_clause,
+    ) = impl_serialize_self_ref_generics.split_for_impl();
+
+    let impl_serialize_self_ref_header_arguments = match has_fields {
+        false => syn::PathArguments::None,
+        true => syn::PathArguments::AngleBracketed(syn::AngleBracketedGenericArguments {
+            colon2_token: None,
+            lt_token: Default::default(),
+            args: {
+                data.fields
+                    .iter()
+                    .map(|field| -> syn::GenericArgument {
+                        let ty = &field.ty;
+                        syn::parse_quote!{(<&'__s #ty as ::alkahest::Serialize<#ty>>::Header, ::alkahest::private::usize)}
+                    })
+                    .collect()
+            },
+            gt_token: Default::default(),
+        }),
+    };
+
     let fields_ty = data
         .fields
         .iter()
@@ -169,7 +281,7 @@ fn derive_schema_struct(input: Input, data: syn::DataStruct) -> syn::Result<Toke
                 .map(|field| field.ident.as_ref().unwrap())
                 .collect::<Vec<_>>();
 
-            Ok(quote::quote! {
+            let mut tokens = quote::quote! {
                 #vis struct #access_ident #access_generics {
                     #(#fields_vis #fields_ident: <#fields_ty as ::alkahest::Schema>::Access<'__a>,)*
                 }
@@ -271,7 +383,151 @@ fn derive_schema_struct(input: Input, data: syn::DataStruct) -> syn::Result<Toke
                         }
                     }
                 }
-            })
+            };
+
+            if serialize_self {
+                tokens.extend(quote::quote!{
+                    #[allow(non_camel_case_types)]
+                    impl #impl_serialize_self_impl_generics ::alkahest::Serialize<Self> for #ident #type_generics #impl_serialize_self_where_clause {
+                        type Header = #serialize_ident #impl_serialize_self_header_arguments;
+
+                        #[inline]
+                        fn serialize_header(header: Self::Header, output: &mut [::alkahest::private::u8], offset: ::alkahest::private::usize) -> ::alkahest::private::bool {
+                            let header_size = <#ident #type_generics as ::alkahest::Schema>::header();
+
+                            if output.len() < header_size {
+                                return false;
+                            }
+
+                            let mut total_offset = offset;
+                            let mut output = output;
+                            #(
+                                let (field_header, field_offset) = header.#fields_ident;
+                                let header_size = <#fields_ty as ::alkahest::Schema>::header();
+
+                                let (head, tail) = output.split_at_mut(header_size);
+                                output = tail;
+
+                                <#fields_ty as ::alkahest::Serialize<#fields_ty>>::serialize_header(field_header, head, total_offset + field_offset);
+                                total_offset -= header_size;
+                            )*
+
+                            let _ = (output, total_offset);
+                            true
+                        }
+
+                        #[inline]
+                        fn serialize_body(self, output: &mut [::alkahest::private::u8]) -> ::alkahest::private::Result<(Self::Header, ::alkahest::private::usize), ::alkahest::private::usize> {
+                            let mut headers_opt = #serialize_ident {
+                                #(#fields_ident: None,)*
+                            };
+
+                            let mut written = 0;
+                            let mut exhausted = false;
+                            #(
+                                let offset = written;
+                                if !exhausted {
+                                    match <#fields_ty as ::alkahest::Serialize<#fields_ty>>::serialize_body(self.#fields_ident, &mut output[offset..]) {
+                                        Ok((header, size)) => {
+                                            headers_opt.#fields_ident = Some((header, offset));
+                                            written += size;
+                                        }
+                                        Err(size) => {
+                                            exhausted = true;
+                                            written += size;
+                                        }
+                                    }
+                                } else {
+                                    let size = <#fields_ty as ::alkahest::Serialize<#fields_ty>>::body_size(self.#fields_ident);
+                                    written += size;
+                                }
+                            )*
+
+                            if exhausted {
+                                Err(written)
+                            } else {
+                                let header = #serialize_ident {
+                                    #(#fields_ident: headers_opt.#fields_ident.unwrap(),)*
+                                };
+                                Ok((header, written))
+                            }
+                        }
+                    }
+                });
+            }
+
+            if serialize_self_ref {
+                tokens.extend(quote::quote!{
+                    #[allow(non_camel_case_types)]
+                    impl #impl_serialize_self_ref_impl_generics ::alkahest::Serialize<#ident #type_generics> for &'__s #ident #type_generics #impl_serialize_self_ref_where_clause {
+                        type Header = #serialize_ident #impl_serialize_self_ref_header_arguments;
+
+                        #[inline]
+                        fn serialize_header(header: Self::Header, output: &mut [::alkahest::private::u8], offset: ::alkahest::private::usize) -> ::alkahest::private::bool {
+                            let header_size = <#ident #type_generics as ::alkahest::Schema>::header();
+
+                            if output.len() < header_size {
+                                return false;
+                            }
+
+                            let mut total_offset = offset;
+                            let mut output = output;
+                            #(
+                                let (field_header, field_offset) = header.#fields_ident;
+                                let header_size = <#fields_ty as ::alkahest::Schema>::header();
+
+                                let (head, tail) = output.split_at_mut(header_size);
+                                output = tail;
+
+                                <&'__s #fields_ty as ::alkahest::Serialize<#fields_ty>>::serialize_header(field_header, head, total_offset + field_offset);
+                                total_offset -= header_size;
+                            )*
+
+                            let _ = (output, total_offset);
+                            true
+                        }
+
+                        #[inline]
+                        fn serialize_body(self, output: &mut [::alkahest::private::u8]) -> ::alkahest::private::Result<(Self::Header, ::alkahest::private::usize), ::alkahest::private::usize> {
+                            let mut headers_opt = #serialize_ident {
+                                #(#fields_ident: None,)*
+                            };
+
+                            let mut written = 0;
+                            let mut exhausted = false;
+                            #(
+                                let offset = written;
+                                if !exhausted {
+                                    match <&'__s #fields_ty as ::alkahest::Serialize<#fields_ty>>::serialize_body(&self.#fields_ident, &mut output[offset..]) {
+                                        Ok((header, size)) => {
+                                            headers_opt.#fields_ident = Some((header, offset));
+                                            written += size;
+                                        }
+                                        Err(size) => {
+                                            exhausted = true;
+                                            written += size;
+                                        }
+                                    }
+                                } else {
+                                    let size = <&'__s #fields_ty as ::alkahest::Serialize<#fields_ty>>::body_size(&self.#fields_ident);
+                                    written += size;
+                                }
+                            )*
+
+                            if exhausted {
+                                Err(written)
+                            } else {
+                                let header = #serialize_ident {
+                                    #(#fields_ident: headers_opt.#fields_ident.unwrap(),)*
+                                };
+                                Ok((header, written))
+                            }
+                        }
+                    }
+                });
+            }
+
+            Ok(tokens)
         }
         syn::Fields::Unnamed(_) => {
             let fileds_idx = (0..data.fields.len())
@@ -432,6 +688,8 @@ fn derive_schema_enum(input: Input, data: syn::DataEnum) -> syn::Result<TokenStr
         vis,
         ident,
         generics,
+        serialize_self: _,
+        serialize_self_ref: _,
     } = input;
 
     let has_fields = data
