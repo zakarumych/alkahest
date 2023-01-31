@@ -40,3 +40,10 @@
 /// of serialized data and deserialized values.
 /// It can't result in undefined behavior.
 pub trait Schema {}
+
+/// Trait similar to `Schema` implemented by types
+/// for which size is known in advance.
+pub trait SizedSchema: Schema {
+    /// Size in bytes that needs to serialize value with this schema.
+    const SIZE: usize;
+}

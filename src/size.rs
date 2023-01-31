@@ -2,7 +2,7 @@ use core::{mem::size_of, num::TryFromIntError};
 
 use crate::{
     deserialize::{Deserialize, DeserializeError},
-    schema::Schema,
+    schema::{Schema, SizedSchema},
     serialize::Serialize,
 };
 
@@ -66,6 +66,9 @@ impl From<FixedUsize> for FixedUsizeType {
 }
 
 impl Schema for FixedUsize {}
+impl SizedSchema for FixedUsize {
+    const SIZE: usize = size_of::<FixedUsizeType>();
+}
 
 impl Serialize<FixedUsize> for FixedUsize {
     #[inline(always)]
@@ -83,18 +86,21 @@ impl Serialize<FixedUsize> for &'_ FixedUsize {
 
 impl Deserialize<'_, FixedUsize> for FixedUsize {
     #[inline(always)]
-    fn deserialize(input: &[u8]) -> Result<(Self, usize), DeserializeError> {
-        let (value, size) = <FixedUsizeType as Deserialize<FixedUsizeType>>::deserialize(input)?;
-
+    fn deserialize(len: usize, input: &[u8]) -> Result<Self, DeserializeError> {
+        let value = <FixedUsizeType as Deserialize<FixedUsizeType>>::deserialize(len, input)?;
         if value > usize::MAX as FixedUsizeType {
             return Err(DeserializeError::InvalidSize(value));
         }
 
-        Ok((FixedUsize(value), size))
+        Ok(FixedUsize(value))
     }
 
     #[inline(always)]
-    fn deserialize_in_place(&mut self, input: &[u8]) -> Result<usize, DeserializeError> {
-        <FixedUsizeType as Deserialize<FixedUsizeType>>::deserialize_in_place(&mut self.0, input)
+    fn deserialize_in_place(&mut self, len: usize, input: &[u8]) -> Result<(), DeserializeError> {
+        <FixedUsizeType as Deserialize<FixedUsizeType>>::deserialize_in_place(
+            &mut self.0,
+            len,
+            input,
+        )
     }
 }

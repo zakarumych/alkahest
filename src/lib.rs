@@ -26,6 +26,9 @@
 
 extern crate self as alkahest;
 
+#[cfg(feature = "alloc")]
+extern crate alloc;
+
 #[cfg(feature = "panicking")]
 #[macro_export]
 macro_rules! cold_panic {
@@ -39,7 +42,7 @@ macro_rules! cold_panic {
     }};
 }
 
-// mod array;
+mod array;
 // mod bytes;
 mod deserialize;
 // mod option;
@@ -50,69 +53,19 @@ mod schema;
 mod serialize;
 // mod str;
 mod size;
+mod slice;
 mod tuple;
 
 pub use self::{
-    deserialize::{Deserialize, DeserializeError, Deserializer},
+    deserialize::{deserialize, Deserialize, DeserializeError, Deserializer},
     reference::Ref,
     schema::Schema,
-    serialize::{serialize, Serialize, Serializer},
+    serialize::{serialize, serialized_size, Serialize, Serializer},
+    slice::SliceIter,
 };
 
 #[cfg(feature = "derive")]
 pub use alkahest_proc::{Deserialize, Schema, Serialize};
-
-// pub use self::{
-//     bytes::{Bytes, BytesHeader},
-//     seq::{Seq, SeqAccess, SeqHeader, SeqIter},
-//     str::Str,
-// };
-
-// /// Calculates size of serialized data.
-// ///
-// /// # Examples
-// ///
-// /// ```
-// /// use alkahest::{Schema, Serialize, bytes_size, Seq};
-// ///
-// /// #[derive(Schema)]
-// /// struct MySchema {
-// ///   a: u8,
-// ///   b: u16,
-// ///   c: Seq<u32>,
-// /// }
-// ///
-// /// let expected_size = 1 + 2 + 4 * 2 + 4 * 3; // a - 1 byte, b - 2 bytes, c - 2 u32s for header + 3 u32s
-// ///
-// /// let size = bytes_size::<MySchema, _>(MySchemaSerialize {
-// ///   a: 1,
-// ///   b: 2,
-// ///   c: 3..6,
-// /// });
-// ///
-// /// assert_eq!(size, expected_size);
-// /// ```
-// #[inline(always)]
-// pub fn bytes_size<T, S>(serializable: S) -> usize
-// where
-//     T: schema::Schema,
-//     S: Serialize<T>,
-// {
-//     T::header() + serializable.body_size()
-// }
-
-// /// Access data from byte slice.
-// ///
-// /// Returns value that can be used to traverse data according to specified schema down to primitive types.
-// ///
-// // TODO: Add fallible version of this function - `try_access`.
-// #[inline(always)]
-// pub fn access<'a, T>(input: &'a [u8]) -> Access<'a, T>
-// where
-//     T: Schema,
-// {
-//     T::access(input)
-// }
 
 #[doc(hidden)]
 pub mod private {
@@ -130,11 +83,11 @@ pub mod private {
     where
         S: Schema,
     {
-        pub fn put<T>(self, ser: &mut Serializer, value: T) -> Result<(), usize>
+        pub fn serialize_value<T>(self, ser: &mut Serializer, value: T) -> Result<(), usize>
         where
             T: Serialize<S>,
         {
-            ser.put::<S, T>(value)
+            ser.serialize_value::<S, T>(value)
         }
     }
 

@@ -1,6 +1,6 @@
 use crate::{
     deserialize::{Deserialize, DeserializeError, Deserializer},
-    schema::Schema,
+    schema::{Schema, SizedSchema},
     serialize::{Serialize, Serializer},
 };
 
@@ -31,34 +31,46 @@ impl Serialize<()> for &'_ () {
 }
 
 impl Deserialize<'_, ()> for () {
-    fn deserialize(_input: &'_ [u8]) -> Result<((), usize), DeserializeError> {
-        Ok(((), 0))
+    fn deserialize(len: usize, _input: &'_ [u8]) -> Result<(), DeserializeError> {
+        if len != 0 {
+            return Err(DeserializeError::WrongLength);
+        }
+        Ok(())
     }
 
-    fn deserialize_in_place(&mut self, _input: &'_ [u8]) -> Result<usize, DeserializeError> {
-        Ok(0)
+    fn deserialize_in_place(
+        &mut self,
+        len: usize,
+        _input: &'_ [u8],
+    ) -> Result<(), DeserializeError> {
+        if len != 0 {
+            return Err(DeserializeError::WrongLength);
+        }
+        Ok(())
     }
-}
-
-macro_rules! inverse {
-    () => {};
-    ($head:block $($tail:block)*) => {
-        inverse!($($tail)*);
-        $head
-    };
 }
 
 macro_rules! impl_for_tuple {
-    ([$($a:ident),+ $(,)?] [$($b:ident),+ $(,)?]) => {
-        impl<$($a),+> Schema for ($($a,)+)
+    ([$at:ident $(, $a:ident)* $(,)?] [$bt:ident $(,$b:ident)* $(,)?]) => {
+        impl<$($a,)* $at> Schema for ($($a,)* $at,)
         where
-            $($a: Schema,)+
+            $($a: SizedSchema,)*
+            $at: Schema + ?Sized,
         {
         }
 
-        impl<$($a),+ , $($b),+> Serialize<($($a,)+)> for ($($b,)+)
+        impl<$($a,)* $at> SizedSchema for ($($a,)* $at,)
         where
-            $($a: Schema, $b: Serialize<$a>,)+
+            $($a: SizedSchema,)*
+            $at: SizedSchema + ?Sized,
+        {
+            const SIZE: usize = 0 $( + <$a as SizedSchema>::SIZE)*;
+        }
+
+        impl<$($a,)* $at, $($b,)* $bt> Serialize<($($a,)* $at,)> for ($($b,)* $bt,)
+        where
+            $($a: SizedSchema, $b: Serialize<$a>,)*
+            $at: Schema + ?Sized, $bt: Serialize<$at>,
         {
             #[inline]
             fn serialize(self, offset: usize, output: &mut [u8]) -> Result<(usize, usize), usize> {
@@ -66,13 +78,13 @@ macro_rules! impl_for_tuple {
 
                 let mut ser = Serializer::new(offset, output);
 
-                let ($($b,)+) = self;
+                let ($($b,)* $bt,) = self;
 
                 let mut exhausted = false;
                 let mut needs_more = 0;
                 $(
                     if !exhausted {
-                        match ser.put($b) {
+                        match ser.serialize_value::<$a, $b>($b) {
                             Ok(()) => {}
                             Err(size) => {
                                 exhausted = true;
@@ -83,7 +95,20 @@ macro_rules! impl_for_tuple {
                         let size = <$b as Serialize<$a>>::size($b);
                         needs_more += size;
                     }
-                )+
+                )*
+
+                if !exhausted {
+                    match ser.serialize_value::<$at, $bt>($bt) {
+                        Ok(()) => {}
+                        Err(size) => {
+                            exhausted = true;
+                            needs_more += size;
+                        }
+                    }
+                } else {
+                    let size = <$bt as Serialize<$at>>::size($bt);
+                    needs_more += size;
+                }
 
                 if exhausted {
                     Err(ser.written() + needs_more)
@@ -93,51 +118,67 @@ macro_rules! impl_for_tuple {
             }
         }
 
-        impl<'a, $($a),+ , $($b),+> Serialize<($($a,)+)> for &'a ($($b,)+)
+        impl<'a, $($a,)* $at, $($b,)* $bt> Serialize<($($a,)* $at,)> for &'a ($($b,)* $bt,)
         where
-            $($a: Schema, &'a $b: Serialize<$a>,)+
+            $($a: SizedSchema, &'a $b: Serialize<$a>,)*
+            $at: Schema + ?Sized, $bt: ?Sized, &'a $bt: Serialize<$at>,
         {
             #[inline]
             fn serialize(self, offset: usize, output: &mut [u8]) -> Result<(usize, usize), usize> {
                 #![allow(non_snake_case)]
 
-                let ($($b,)+) = self;
-                let me = ($($b,)+);
-                <($(&'a $b,)+) as Serialize<($($a,)+)>>::serialize(me, offset, output)
+                let ($($b,)* $bt,) = self;
+                let me = ($($b,)* $bt,);
+                <($(&'a $b,)* &'a $bt,) as Serialize<($($a,)* $at,)>>::serialize(me, offset, output)
             }
         }
 
-        impl<'__a, $($a),+ , $($b),+> Deserialize<'__a, ($($a,)+)> for ($($b,)+)
+        impl<'__a, $($a,)* $at, $($b,)* $bt> Deserialize<'__a, ($($a,)* $at,)> for ($($b,)* $bt,)
         where
-            $($a: Schema, $b: Deserialize<'__a, $a>,)+
+            $($a: SizedSchema, $b: Deserialize<'__a, $a>,)*
+            $at: Schema + ?Sized, $bt: Deserialize<'__a, $at>,
         {
             #[inline(always)]
-            fn deserialize(input: &'__a [u8]) -> Result<(($($b,)+), usize), DeserializeError> {
+            fn deserialize(len: usize, input: &'__a [u8]) -> Result<($($b,)* $bt,), DeserializeError> {
                 #![allow(non_snake_case)]
 
+                let tuple_no_tail_size: usize = 0$( + <$a as SizedSchema>::SIZE)*;
+                if tuple_no_tail_size > len {
+                    return Err(DeserializeError::WrongLength);
+                }
+
                 let mut des = Deserializer::new(input);
-                $(let $b;)+
+                $(let $b;)*
 
-                inverse!($({
-                    $b = des.deserialize::<$b, $a>()?;
-                })+);
+                $(
+                    $b = des.deserialize_sized::<$a, $b>()?;
+                )*
 
-                let value = ($($b,)+);
-                Ok((value, des.end()))
+                let $bt = des.deserialize(len - tuple_no_tail_size)?;
+
+                let value = ($($b,)* $bt,);
+                Ok(value)
             }
 
             #[inline(always)]
-            fn deserialize_in_place(&mut self, input: &'__a [u8]) -> Result<usize, DeserializeError> {
+            fn deserialize_in_place(&mut self, len: usize, input: &'__a [u8]) -> Result<(), DeserializeError> {
                 #![allow(non_snake_case)]
 
+                let tuple_no_tail_size: usize = 0$( + <$a as SizedSchema>::SIZE)*;
+                if tuple_no_tail_size > len {
+                    return Err(DeserializeError::WrongLength);
+                }
+
                 let mut des = Deserializer::new(input);
-                let ($($b,)+) = self;
+                let ($($b,)* $bt,) = self;
 
-                inverse!($({
-                    des.deserialize_in_place::<$b, $a>($b)?;
-                })+);
+                $(
+                    des.deserialize_in_place_sized::<$a, $b>($b)?;
+                )*
 
-                Ok(des.end())
+                des.deserialize_in_place::<$at, $bt>($bt, len - tuple_no_tail_size)?;
+
+                Ok(())
             }
         }
     };

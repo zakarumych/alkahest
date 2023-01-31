@@ -1,143 +1,139 @@
 use crate::{
-    schema::{Access, Schema},
+    schema::{Schema, SizedSchema},
     serialize::Serialize,
+    Deserialize, DeserializeError, Deserializer, Serializer,
 };
 
-impl<T, const N: usize> Schema for [T; N]
+impl<S, const N: usize> Schema for [S; N] where S: SizedSchema {}
+impl<S, const N: usize> SizedSchema for [S; N]
 where
-    T: Schema,
+    S: SizedSchema,
 {
-    type Access<'a> = [<T as Schema>::Access<'a>; N];
-
-    #[inline(always)]
-    fn header() -> usize {
-        N * T::header()
-    }
-
-    #[inline(always)]
-    fn has_body() -> bool {
-        T::has_body()
-    }
-
-    #[inline(always)]
-    fn access<'a>(mut input: &'a [u8]) -> Access<'a, Self> {
-        [(); N].map(|()| {
-            let data = input;
-            input = &input[T::header()..];
-            <T as Schema>::access(data)
-        })
-    }
+    const SIZE: usize = N * S::SIZE;
 }
 
-impl<T, U, const N: usize> Serialize<[T; N]> for [U; N]
+impl<S, T, const N: usize> Serialize<[S; N]> for [T; N]
 where
-    T: Schema,
-    U: Serialize<T>,
+    S: SizedSchema,
+    T: Serialize<S>,
 {
-    type Header = [(<U as Serialize<T>>::Header, usize); N];
-
     #[inline]
-    fn serialize_header(header: Self::Header, output: &mut [u8], offset: usize) -> bool {
-        let header_size = <T as Schema>::header() * N;
+    fn serialize(self, offset: usize, output: &mut [u8]) -> Result<(usize, usize), usize> {
+        let mut ser = Serializer::new(offset, output);
 
-        if output.len() < header_size {
-            return false;
-        }
-
-        let mut total_offset = offset;
-        let mut output = output;
-
-        for (header, element_offset) in header {
-            let (head, tail) = output.split_at_mut(<T as Schema>::header());
-            output = tail;
-
-            <U as Serialize<T>>::serialize_header(header, head, total_offset + element_offset);
-            total_offset -= <T as Schema>::header();
-        }
-
-        let _ = (output, total_offset);
-        true
-    }
-
-    #[inline]
-    fn serialize_body(self, output: &mut [u8]) -> Result<(Self::Header, usize), usize> {
-        let mut written = 0;
+        let mut needs_more = 0;
         let mut exhausted = false;
 
-        let headers = self.map(|elem| {
-            let offset = written;
+        self.into_iter().for_each(|elem: T| {
             if !exhausted {
-                match <U as Serialize<T>>::serialize_body(elem, &mut output[offset..]) {
-                    Ok((header, size)) => {
-                        written += size;
-                        Some((header, offset))
-                    }
-                    Err(size) => {
-                        exhausted = true;
-                        written += size;
-                        None
-                    }
+                if let Err(size) = ser.serialize_value::<S, T>(elem) {
+                    exhausted = true;
+                    needs_more += size;
                 }
             } else {
-                let size = <U as Serialize<T>>::body_size(elem);
-                written += size;
-                None
+                let size = <T as Serialize<S>>::size(elem);
+                needs_more += size;
             }
         });
 
         if exhausted {
-            Err(written)
+            Err(ser.written() + needs_more)
         } else {
-            let headers = headers.map(Option::unwrap);
-            Ok((headers, written))
+            Ok(ser.finish())
         }
+    }
+
+    #[inline]
+    fn size(self) -> usize {
+        self.into_iter()
+            .fold(0, |acc, elem: T| acc + <T as Serialize<S>>::size(elem))
     }
 }
 
-impl<'a, T, U, const N: usize> Serialize<[T; N]> for &'a [U; N]
+impl<'a, S, T, const N: usize> Serialize<[S; N]> for &'a [T; N]
 where
-    T: Schema,
-    &'a U: Serialize<T>,
+    S: SizedSchema,
+    &'a T: Serialize<S>,
 {
-    type Header = [(<&'a U as Serialize<T>>::Header, usize); N];
-
     #[inline]
-    fn serialize_header(header: Self::Header, output: &mut [u8], offset: usize) -> bool {
-        <[&'a U; N] as Serialize<[T; N]>>::serialize_header(header, output, offset)
-    }
+    fn serialize(self, offset: usize, output: &mut [u8]) -> Result<(usize, usize), usize> {
+        let mut ser = Serializer::new(offset, output);
 
-    #[inline]
-    fn serialize_body(self, output: &mut [u8]) -> Result<(Self::Header, usize), usize> {
-        let mut written = 0;
+        let mut needs_more = 0;
         let mut exhausted = false;
 
-        let headers = self.map_ref(|elem| {
-            let offset = written;
+        self.iter().for_each(|elem: &'a T| {
             if !exhausted {
-                match <&'a U as Serialize<T>>::serialize_body(elem, &mut output[offset..]) {
-                    Ok((header, size)) => {
-                        written += size;
-                        Some((header, offset))
-                    }
-                    Err(size) => {
-                        exhausted = true;
-                        written += size;
-                        None
-                    }
+                if let Err(size) = ser.serialize_value::<S, &'a T>(elem) {
+                    exhausted = true;
+                    needs_more += size;
                 }
             } else {
-                let size = <&'a U as Serialize<T>>::body_size(elem);
-                written += size;
-                None
+                let size = <&'a T as Serialize<S>>::size(elem);
+                needs_more += size;
             }
         });
 
         if exhausted {
-            Err(written)
+            Err(ser.written() + needs_more)
         } else {
-            let headers = headers.map(Option::unwrap);
-            Ok((headers, written))
+            Ok(ser.finish())
         }
+    }
+
+    #[inline]
+    fn size(self) -> usize {
+        self.into_iter()
+            .fold(0, |acc, elem: &T| acc + <&T as Serialize<S>>::size(elem))
+    }
+}
+
+impl<'a, S, T, const N: usize> Deserialize<'a, [S; N]> for [T; N]
+where
+    S: SizedSchema,
+    T: Deserialize<'a, S>,
+{
+    #[inline(always)]
+    fn deserialize(len: usize, input: &'a [u8]) -> Result<Self, DeserializeError> {
+        if len != S::SIZE * N {
+            return Err(DeserializeError::WrongLength);
+        }
+
+        if input.len() < S::SIZE * N {
+            return Err(DeserializeError::OutOfBounds);
+        }
+
+        let mut des = Deserializer::new(input);
+
+        let mut opts = [(); N].map(|_| None);
+        opts.iter_mut().try_for_each(|slot| {
+            *slot = Some(des.deserialize_sized::<S, T>()?);
+            Ok(())
+        })?;
+
+        let value = opts.map(|slot| slot.unwrap());
+        Ok(value)
+    }
+
+    #[inline(always)]
+    fn deserialize_in_place(
+        &mut self,
+        len: usize,
+        input: &'a [u8],
+    ) -> Result<(), DeserializeError> {
+        if len != S::SIZE * N {
+            return Err(DeserializeError::WrongLength);
+        }
+
+        if input.len() < S::SIZE * N {
+            return Err(DeserializeError::OutOfBounds);
+        }
+
+        let mut des = Deserializer::new(input);
+        self.iter_mut()
+            .try_for_each(|elem| des.deserialize_in_place_sized::<S, T>(elem))?;
+
+        Ok(())
     }
 }
 

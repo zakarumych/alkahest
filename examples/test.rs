@@ -1,21 +1,16 @@
-use alkahest::{serialize, Ref, Schema, Serialize};
-
-#[derive(Schema)]
-pub struct TestStruct {
-    pub a: u32,
-    pub b: Ref<u32>,
-}
-
-#[derive(Serialize)]
-#[alkahest(schema(TestStruct))]
-pub struct TestStructSerialize {
-    pub a: u32,
-    pub b: u32,
-}
+use alkahest::{deserialize, serialize, serialized_size, Ref};
 
 fn main() {
-    let mut buffer = [0; 1024];
-    let size = serialize::<TestStruct, _>(TestStructSerialize { a: 1, b: 2 }, &mut buffer).unwrap();
+    type Schema = (u32, u32, [u32]);
 
-    println!("{:?}", &buffer[..size])
+    let value = (1, 5, 2..=4);
+    let size = serialized_size::<Schema, _>(value);
+    println!("size: {}", size);
+
+    let mut buffer = vec![0; size];
+    let actual_size = serialize::<Schema, _>((1, 5, 2..=4), &mut buffer).unwrap();
+    debug_assert_eq!(actual_size, size);
+    let (test_value, _) = deserialize::<Schema, (u32, u32, Vec<u32>)>(&buffer).unwrap();
+
+    println!("{:?}", test_value);
 }

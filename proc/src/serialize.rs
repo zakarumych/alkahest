@@ -1,6 +1,6 @@
-use proc_easy::{EasyAttributes, EasyMaybe, EasyParenthesized, EasySeparated};
+use proc_easy::{EasyAttributes, EasyMaybe};
 use proc_macro2::TokenStream;
-use syn::{spanned::Spanned, GenericArgument};
+use syn::spanned::Spanned;
 
 proc_easy::easy_token!(schema);
 
@@ -72,7 +72,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         let mut ser = ::alkahest::Serializer::new(offset, output);
 
                         #(
-                            ::alkahest::private::with_schema(|s: &#schema| &s.#field_names).put(&mut ser, self.#field_names)?;
+                            ::alkahest::private::with_schema(|s: &#schema| &s.#field_names).serialize_value(&mut ser, self.#field_names)?;
                         )*
 
                         Ok(ser.finish())

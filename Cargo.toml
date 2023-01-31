@@ -11,12 +11,10 @@ readme = "README.md"
 description = "Fantastic serialization library with zero-overhead serialization and zero-copy deserialization"
 
 [features]
-#alloc = []
-#owned = ["alloc"] # Enables full deserialization into owned types.
+alloc = []
 derive = ["alkahest-proc"]
 #big = [] # Enables 64-bit sizes and offsets. Makes format incompatible with 32-bit sized data.
-
-# default = ["owned"]
+default = ["alloc"]
 
 [dependencies]
 alkahest-proc = { version = "=0.2.0", path = "proc", optional = true }
