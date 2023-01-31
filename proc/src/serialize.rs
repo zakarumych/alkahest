@@ -56,6 +56,22 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
             "Serialize cannot be derived for unions",
         )),
         syn::Data::Struct(data) => {
+            let field_checks = match data.fields {
+                syn::Fields::Named(_) => data
+                    .fields
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, field)| {
+                        quote::format_ident!(
+                            "__alkahest_check_field_idx_{}_is_{}",
+                            field.ident.as_ref().unwrap(),
+                            idx
+                        )
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            };
+
             let field_names = data
                 .fields
                 .iter()
@@ -69,6 +85,10 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
             Ok(quote::quote! {
                 impl #impl_generics ::alkahest::Serialize<#schema> for #ident #type_generics #where_clause {
                     fn serialize(self, offset: usize, output: &mut [u8]) -> Result<(usize, usize), usize> {
+                        #(
+                            <#schema>::#field_checks();
+                        )*
+
                         let mut ser = ::alkahest::Serializer::new(offset, output);
 
                         #(

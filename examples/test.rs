@@ -1,7 +1,25 @@
-use alkahest::{deserialize, serialize, serialized_size, Ref};
+use alkahest::{deserialize, serialize, serialized_size, Deserialize, Ref, Schema, Serialize};
+
+#[derive(Schema, Serialize)]
+struct X;
+
+#[derive(Schema)]
+pub struct Test<T> {
+    pub a: u32,
+    pub b: T,
+    c: X,
+}
+
+#[derive(Serialize)]
+#[alkahest(schema(Test<u32>))]
+pub struct Test2 {
+    pub a: u32,
+    pub b: u32,
+    c: X,
+}
 
 fn main() {
-    type Schema = (u32, u32, [u32]);
+    type Schema = (u32, u32, Ref<[u32]>);
 
     let value = (1, 5, 2..=4);
     let size = serialized_size::<Schema, _>(value);
