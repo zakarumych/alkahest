@@ -21,26 +21,20 @@ where
     fn serialize(self, offset: usize, output: &mut [u8]) -> Result<(usize, usize), usize> {
         let mut ser = Serializer::new(offset, output);
 
-        let mut needs_more = 0;
-        let mut exhausted = false;
+        let mut err = Ok::<(), usize>(());
 
         self.into_iter().for_each(|elem: T| {
-            if !exhausted {
-                if let Err(size) = ser.serialize_value::<S, T>(elem) {
-                    exhausted = true;
-                    needs_more += size;
-                }
+            if let Err(size) = err {
+                err = Err(size + <T as Serialize<S>>::size(elem));
             } else {
-                let size = <T as Serialize<S>>::size(elem);
-                needs_more += size;
+                if let Err(size) = ser.serialize_value::<S, T>(elem) {
+                    err = Err(size);
+                }
             }
         });
 
-        if exhausted {
-            Err(ser.written() + needs_more)
-        } else {
-            Ok(ser.finish())
-        }
+        err?;
+        Ok(ser.finish())
     }
 
     #[inline]
@@ -59,26 +53,20 @@ where
     fn serialize(self, offset: usize, output: &mut [u8]) -> Result<(usize, usize), usize> {
         let mut ser = Serializer::new(offset, output);
 
-        let mut needs_more = 0;
-        let mut exhausted = false;
+        let mut err = Ok::<(), usize>(());
 
         self.iter().for_each(|elem: &'a T| {
-            if !exhausted {
-                if let Err(size) = ser.serialize_value::<S, &'a T>(elem) {
-                    exhausted = true;
-                    needs_more += size;
-                }
+            if let Err(size) = err {
+                err = Err(size + <&'a T as Serialize<S>>::size(elem));
             } else {
-                let size = <&'a T as Serialize<S>>::size(elem);
-                needs_more += size;
+                if let Err(size) = ser.serialize_value::<S, &'a T>(elem) {
+                    err = Err(size);
+                }
             }
         });
 
-        if exhausted {
-            Err(ser.written() + needs_more)
-        } else {
-            Ok(ser.finish())
-        }
+        err?;
+        Ok(ser.finish())
     }
 
     #[inline]
@@ -103,7 +91,7 @@ where
             return Err(DeserializeError::OutOfBounds);
         }
 
-        let mut des = Deserializer::new(input);
+        let mut des = Deserializer::new(len, input);
 
         let mut opts = [(); N].map(|_| None);
         opts.iter_mut().try_for_each(|slot| {
@@ -112,6 +100,7 @@ where
         })?;
 
         let value = opts.map(|slot| slot.unwrap());
+        des.finish_expected();
         Ok(value)
     }
 
@@ -129,9 +118,10 @@ where
             return Err(DeserializeError::OutOfBounds);
         }
 
-        let mut des = Deserializer::new(input);
+        let mut des = Deserializer::new(len, input);
         self.iter_mut()
             .try_for_each(|elem| des.deserialize_in_place_sized::<S, T>(elem))?;
+        des.finish_expected();
 
         Ok(())
     }

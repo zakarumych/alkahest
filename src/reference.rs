@@ -48,10 +48,15 @@ where
         let size = FixedUsize::truncated(size);
 
         if let Err(size) = ser.serialize_self([address, size]) {
-            return Err(size + ser.written());
+            return Err(size);
         }
 
         Ok(ser.finish())
+    }
+
+    #[inline(always)]
+    fn size(self) -> usize {
+        size_of::<[FixedUsize; 2]>() + <T as Serialize<S>>::size(self)
     }
 }
 
@@ -61,17 +66,15 @@ where
     T: Deserialize<'a, S>,
 {
     fn deserialize(len: usize, input: &'a [u8]) -> Result<Self, DeserializeError> {
-        if len != size_of::<[FixedUsize; 2]>() {
-            return Err(DeserializeError::WrongLength);
-        }
-
-        let mut des = Deserializer::new(input);
+        let mut des = Deserializer::new(len, input);
         let [address, size] = des.deserialize_self::<[FixedUsize; 2]>()?;
+        des.finish_expected();
 
         let ref_input = &input[..usize::from(address)];
 
-        let mut des = Deserializer::new(ref_input);
+        let mut des = Deserializer::new(size.into(), ref_input);
         let value = des.deserialize::<S, T>(size.into())?;
+        des.finish_expected();
         Ok(value)
     }
 
@@ -84,14 +87,16 @@ where
             return Err(DeserializeError::WrongLength);
         }
 
-        let mut des = Deserializer::new(input);
+        let mut des = Deserializer::new(len, input);
         let address = des.deserialize_self::<FixedUsize>()?;
         let size = des.deserialize_self::<FixedUsize>()?;
+        des.finish_expected();
 
         let ref_input = &input[..usize::from(address)];
 
-        let mut des = Deserializer::new(ref_input);
+        let mut des = Deserializer::new(size.into(), ref_input);
         des.deserialize_in_place::<S, T>(self, size.into())?;
+        des.finish_expected();
         Ok(())
     }
 }

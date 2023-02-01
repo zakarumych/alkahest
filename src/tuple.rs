@@ -80,41 +80,33 @@ macro_rules! impl_for_tuple {
 
                 let ($($b,)* $bt,) = self;
 
-                let mut exhausted = false;
-                let mut needs_more = 0;
+                let mut err = Ok::<(), usize>(());
                 $(
-                    if !exhausted {
+                    if let Err(size) = err {
+                        err = Err(size + <$b as Serialize<$a>>::size($b));
+                    } else {
                         match ser.serialize_value::<$a, $b>($b) {
                             Ok(()) => {}
                             Err(size) => {
-                                exhausted = true;
-                                needs_more += size;
+                                err = Err(size);
                             }
                         }
-                    } else {
-                        let size = <$b as Serialize<$a>>::size($b);
-                        needs_more += size;
                     }
                 )*
 
-                if !exhausted {
+                if let Err(size) = err {
+                    err = Err(size + <$bt as Serialize<$at>>::size($bt));
+                } else {
                     match ser.serialize_value::<$at, $bt>($bt) {
                         Ok(()) => {}
                         Err(size) => {
-                            exhausted = true;
-                            needs_more += size;
+                            err = Err(size);
                         }
                     }
-                } else {
-                    let size = <$bt as Serialize<$at>>::size($bt);
-                    needs_more += size;
                 }
 
-                if exhausted {
-                    Err(ser.written() + needs_more)
-                } else {
-                    Ok(ser.finish())
-                }
+                err?;
+                Ok(ser.finish())
             }
         }
 
@@ -147,14 +139,14 @@ macro_rules! impl_for_tuple {
                     return Err(DeserializeError::WrongLength);
                 }
 
-                let mut des = Deserializer::new(input);
+                let mut des = Deserializer::new(len, input);
                 $(let $b;)*
 
                 $(
                     $b = des.deserialize_sized::<$a, $b>()?;
                 )*
 
-                let $bt = des.deserialize(len - tuple_no_tail_size)?;
+                let $bt = des.deserialize_rest()?;
 
                 let value = ($($b,)* $bt,);
                 Ok(value)
@@ -169,14 +161,14 @@ macro_rules! impl_for_tuple {
                     return Err(DeserializeError::WrongLength);
                 }
 
-                let mut des = Deserializer::new(input);
+                let mut des = Deserializer::new(len, input);
                 let ($($b,)* $bt,) = self;
 
                 $(
                     des.deserialize_in_place_sized::<$a, $b>($b)?;
                 )*
 
-                des.deserialize_in_place::<$at, $bt>($bt, len - tuple_no_tail_size)?;
+                des.deserialize_in_place_rest::<$at, $bt>($bt)?;
 
                 Ok(())
             }

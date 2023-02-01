@@ -64,8 +64,7 @@ impl<'a> Serializer<'a> {
     }
 
     #[inline(always)]
-    #[must_use]
-    pub fn written(&self) -> usize {
+    fn written(&self) -> usize {
         self.payload + (self.output.len() - self.metadata)
     }
 
@@ -87,7 +86,7 @@ impl<'a> Serializer<'a> {
                 self.payload += payload;
                 Ok(())
             }
-            Err(size) => Err(size),
+            Err(size) => Err(size + self.written()),
         }
     }
 
@@ -140,7 +139,9 @@ where
     }
 
     let mut ser = Serializer::new(HEADER_SIZE, &mut output[HEADER_SIZE..]);
-    ser.serialize_value::<S, T>(value)?;
+
+    ser.serialize_value::<S, T>(value)
+        .map_err(|size| size + HEADER_SIZE)?;
     let (address, size) = ser.flush();
 
     output[..FIELD_SIZE].copy_from_slice(&FixedUsize::truncated(address).to_le_bytes());

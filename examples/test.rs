@@ -1,34 +1,40 @@
-use alkahest::{deserialize, serialize, serialized_size, Deserialize, Ref, Schema, Serialize};
+use alkahest::{
+    deserialize, serialize, serialized_size, Deserialize, Schema, Serialize, SizedSchema,
+};
 
-#[derive(Schema, Serialize)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, SizedSchema, Serialize, Deserialize,
+)]
 struct X;
 
-#[derive(Schema)]
-pub struct Test<T> {
-    pub a: u32,
-    pub b: T,
-    c: X,
-}
-
-#[derive(Serialize)]
-#[alkahest(schema(Test<u32>))]
-pub struct Test2 {
-    pub a: u32,
-    pub b: u32,
-    c: X,
+#[derive(Clone, Debug, Schema, Serialize, Deserialize)]
+struct Test {
+    a: u32,
+    b: X,
+    c: Vec<u32>,
 }
 
 fn main() {
-    type Schema = (u32, u32, Ref<[u32]>);
+    let value = Test {
+        a: 1,
+        b: X,
+        c: vec![2, 3],
+    };
 
-    let value = (1, 5, 2..=4);
-    let size = serialized_size::<Schema, _>(value);
+    let size = serialized_size::<Test, _>(&value);
     println!("size: {}", size);
 
     let mut buffer = vec![0; size];
-    let actual_size = serialize::<Schema, _>((1, 5, 2..=4), &mut buffer).unwrap();
-    debug_assert_eq!(actual_size, size);
-    let (test_value, _) = deserialize::<Schema, (u32, u32, Vec<u32>)>(&buffer).unwrap();
 
-    println!("{:?}", test_value);
+    let size = serialize::<Test, _>(&value, &mut buffer).unwrap();
+    assert_eq!(size, buffer.len());
+
+    let (value, size) = deserialize::<Test, Test>(&buffer).unwrap();
+    assert_eq!(size, buffer.len());
+
+    assert_eq!(value.a, 1);
+    // assert_eq!(value.b, X);
+    assert_eq!(value.c, vec![2, 3]);
+
+    println!("{:?}", value);
 }

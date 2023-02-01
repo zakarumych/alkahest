@@ -1,5 +1,6 @@
 extern crate proc_macro;
 
+mod attrs;
 mod deserialize;
 mod schema;
 mod serialize;
@@ -12,7 +13,19 @@ use proc_macro::TokenStream;
 /// All fields must implement `Schema`.
 #[proc_macro_derive(Schema, attributes(alkahest))]
 pub fn derive_schema(input: TokenStream) -> TokenStream {
-    match schema::derive(input) {
+    match schema::derive(input, false) {
+        Ok(tokens) => tokens.into(),
+        Err(err) => err.to_compile_error().into(),
+    }
+}
+
+/// Proc-macro to derive `SizedSchema` trait for user-defined type.
+///
+/// This macro requires that type is either `struct` or `enum`.
+/// All fields must implement `Schema`.
+#[proc_macro_derive(SizedSchema, attributes(alkahest))]
+pub fn derive_sized_schema(input: TokenStream) -> TokenStream {
+    match schema::derive(input, true) {
         Ok(tokens) => tokens.into(),
         Err(err) => err.to_compile_error().into(),
     }

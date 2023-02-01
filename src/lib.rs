@@ -29,17 +29,60 @@ extern crate self as alkahest;
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
-#[cfg(feature = "panicking")]
+/// This macro allows to define new schema types
+/// as an alias to existing schema types.
+///
+/// `Serialize` and `Deserialize` implementation
+/// will use aliased schema.
 #[macro_export]
-macro_rules! cold_panic {
-    ($($arg:tt)*) => {{
-        #[cold]
-        #[inline(never)]
-        fn do_cold_panic() -> ! {
-            panic!($($arg)*);
+macro_rules! schema_alias {
+    ($(+[$($p:tt)*])? $a:ty as $b:ty $(where $($wc:tt)*)?) => {
+        impl $(< $($p)* >)? $crate::Schema for $a
+        where
+            $b: $crate::Schema
+            $($($wc)*)?
+        {}
+
+        impl< $($($p)*,)? __Serializable > $crate::Serialize<$a> for __Serializable
+        where
+            $b: $crate::Schema,
+            Self: $crate::Serialize<$b>,
+        {
+            fn serialize(self, offset: $crate::private::usize, output: &mut [$crate::private::u8]) -> $crate::private::Result<($crate::private::usize, $crate::private::usize), $crate::private::usize> {
+                <Self as $crate::Serialize<$b>>::serialize(self, offset, output)
+            }
+
+            fn size(self) -> $crate::private::usize {
+                <Self as $crate::Serialize<$b>>::size(self)
+            }
         }
-        do_cold_panic()
-    }};
+
+        impl<'__de,  $($($p)*,)? __Deserializable > $crate::Deserialize<'__de, $a> for __Deserializable
+        where
+            $b: $crate::Schema,
+            Self: $crate::Deserialize<'__de, $b>,
+        {
+            fn deserialize(len: $crate::private::usize, input: &'__de [$crate::private::u8]) -> $crate::private::Result<Self, $crate::DeserializeError> {
+                <Self as $crate::Deserialize<'__de, $b>>::deserialize(len, input)
+            }
+
+            fn deserialize_in_place(&mut self, len: $crate::private::usize, input: &'__de [$crate::private::u8]) -> $crate::private::Result<(), $crate::DeserializeError> {
+                <Self as $crate::Deserialize<'__de, $b>>::deserialize_in_place(self, len, input)
+            }
+        }
+    };
+
+    (@sized $(+[$($p:tt)*])? $a:ty as $b:ty $(where $($wc:tt)*)?) => {
+        schema_alias!($(+[$($p)*])? $a as $b $(where $($wc)*)?);
+
+        impl $(< $($p)* >)? $crate::SizedSchema for $a
+        where
+            $b: $crate::SizedSchema
+            $(where $($wc)*)?
+        {
+            const SIZE: $crate::private::usize = <$b as $crate::SizedSchema>::SIZE;
+        }
+    };
 }
 
 mod array;
@@ -56,16 +99,19 @@ mod size;
 mod slice;
 mod tuple;
 
+#[cfg(feature = "alloc")]
+mod vec;
+
 pub use self::{
     deserialize::{deserialize, Deserialize, DeserializeError, Deserializer},
     reference::Ref,
-    schema::Schema,
+    schema::{Schema, SizedSchema},
     serialize::{serialize, serialized_size, Serialize, Serializer},
     slice::SliceIter,
 };
 
 #[cfg(feature = "derive")]
-pub use alkahest_proc::{Deserialize, Schema, Serialize};
+pub use alkahest_proc::{Deserialize, Schema, Serialize, SizedSchema};
 
 #[doc(hidden)]
 pub mod private {
@@ -73,15 +119,16 @@ pub mod private {
 
     use core::marker::PhantomData;
 
+    use crate::SizedSchema;
     pub use crate::{Deserialize, DeserializeError, Deserializer, Schema, Serialize, Serializer};
 
-    pub struct WithSchema<S> {
-        marker: PhantomData<fn() -> S>,
+    pub struct WithSchema<S: ?Sized> {
+        marker: PhantomData<fn(&S) -> &S>,
     }
 
     impl<S> WithSchema<S>
     where
-        S: Schema,
+        S: Schema + ?Sized,
     {
         pub fn serialize_value<T>(self, ser: &mut Serializer, value: T) -> Result<(), usize>
         where
@@ -89,9 +136,38 @@ pub mod private {
         {
             ser.serialize_value::<S, T>(value)
         }
+
+        pub fn size_value<T>(self, value: T) -> usize
+        where
+            T: Serialize<S>,
+        {
+            <T as Serialize<S>>::size(value)
+        }
+
+        pub fn deserialize_sized<'de, T>(
+            self,
+            des: &mut Deserializer<'de>,
+        ) -> Result<T, DeserializeError>
+        where
+            S: SizedSchema,
+            T: Deserialize<'de, S>,
+        {
+            des.deserialize_sized::<S, T>()
+        }
+
+        pub fn deserialize_rest<'de, T>(
+            self,
+            des: &mut Deserializer<'de>,
+        ) -> Result<T, DeserializeError>
+        where
+            S: Schema,
+            T: Deserialize<'de, S>,
+        {
+            des.deserialize_rest::<S, T>()
+        }
     }
 
-    pub fn with_schema<S, F>(_: impl FnOnce(&S) -> &F) -> WithSchema<F> {
+    pub fn with_schema<S: ?Sized, F: ?Sized>(_: impl FnOnce(&S) -> &F) -> WithSchema<F> {
         WithSchema {
             marker: PhantomData,
         }
