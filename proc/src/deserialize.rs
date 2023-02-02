@@ -1,13 +1,9 @@
 use proc_macro2::TokenStream;
 
-use crate::attrs::{parse_attributes, Args};
+use crate::attrs::{parse_attributes, Args, Schema};
 
 struct Config {
-    schema_type: syn::Type,
-
-    /// Additional generics required to implement `Serialize<#schema_type_type>`
-    /// Specified in attributes or inferred when schema is `Self`.
-    schema_generics: syn::Generics,
+    schema: Schema,
 
     /// Signals if fields should be checked to match on schema.
     /// `false` if `schema` is inferred to `Self`.
@@ -24,15 +20,11 @@ impl Config {
         let non_exhaustive = args.non_exhaustive.is_some();
         match args.deserialize.or(args.common) {
             None => {
-                let schema_generics = if data.fields.is_empty() {
-                    Default::default()
-                } else {
-                    // Add predicates that fields implement
-                    // `SizedSchema + Serialize<#field_type>`
-                    // Except that last one if `non_exhaustive` is not set.
-
-                    let count = data.fields.len();
-                    let predicates = data.fields.iter().enumerate().map(|(idx, field)| -> syn::WherePredicate {
+                // Add predicates that fields implement
+                // `SizedSchema + Deserialize<'de, #field_type>`
+                // Except that last one if `non_exhaustive` is not set.
+                let count = data.fields.len();
+                let predicates = data.fields.iter().enumerate().map(|(idx, field)| -> syn::WherePredicate {
                         let ty = &field.ty;
 
                         if non_exhaustive || idx + 1 < count {
@@ -43,30 +35,38 @@ impl Config {
                         }
                     }).collect();
 
-                    syn::Generics {
-                        lt_token: None,
-                        params: Default::default(),
-                        gt_token: None,
-                        where_clause: Some(syn::WhereClause {
-                            where_token: Default::default(),
-                            predicates,
-                        }),
-                    }
+                // Add `'de` generic parameter
+                let generics = syn::Generics {
+                    lt_token: Some(Default::default()),
+                    params: std::iter::once(syn::GenericParam::Lifetime(syn::parse_quote!('de)))
+                        .collect(),
+                    gt_token: Some(Default::default()),
+                    where_clause: Some(syn::WhereClause {
+                        where_token: Default::default(),
+                        predicates,
+                    }),
                 };
 
                 Config {
-                    schema_type: syn::parse_quote!(Self),
-                    schema_generics,
+                    schema: Schema {
+                        ty: syn::parse_quote!(Self),
+                        generics,
+                    },
                     check_fields: false,
                     non_exhaustive,
                 }
             }
-            Some(schema) => Config {
-                schema_type: schema.ty,
-                schema_generics: schema.generics,
-                check_fields: true,
-                non_exhaustive,
-            },
+            Some(mut schema) => {
+                // If no parameters specified, add `'de` parameter
+                if schema.generics.params.is_empty() {
+                    schema.generics.params.push(syn::parse_quote!('de));
+                }
+                Config {
+                    schema,
+                    check_fields: true,
+                    non_exhaustive,
+                }
+            }
         }
     }
 }
@@ -84,31 +84,24 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
         )),
         syn::Data::Struct(data) => {
             let Config {
-                schema_type,
-                schema_generics,
+                schema,
                 check_fields,
                 non_exhaustive,
             } = Config::for_struct(args, &data);
 
+            let schema_type = &schema.ty;
+
             let mut deserialize_generics = input.generics.clone();
 
             deserialize_generics.lt_token =
-                deserialize_generics.lt_token.or(schema_generics.lt_token);
+                deserialize_generics.lt_token.or(schema.generics.lt_token);
             deserialize_generics.gt_token =
-                deserialize_generics.gt_token.or(schema_generics.gt_token);
+                deserialize_generics.gt_token.or(schema.generics.gt_token);
             deserialize_generics
                 .params
-                .extend(schema_generics.params.into_iter());
-            deserialize_generics
-                .params
-                .push(syn::GenericParam::Lifetime(syn::LifetimeDef {
-                    attrs: Vec::new(),
-                    lifetime: syn::Lifetime::new("'de", proc_macro2::Span::call_site()),
-                    colon_token: None,
-                    bounds: Default::default(),
-                }));
+                .extend(schema.generics.params.into_iter());
 
-            if let Some(where_clause) = schema_generics.where_clause {
+            if let Some(where_clause) = schema.generics.where_clause {
                 deserialize_generics
                     .make_where_clause()
                     .predicates

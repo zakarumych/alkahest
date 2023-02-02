@@ -3,8 +3,8 @@ use proc_macro2::TokenStream;
 use crate::attrs::{parse_attributes, Args, Schema};
 
 struct Config {
-    schema: Option<Schema>,
     reference: Option<Schema>,
+    no_reference: Option<Schema>,
 
     variant: Option<syn::Ident>,
 
@@ -22,43 +22,52 @@ impl Config {
     ) -> Self {
         let (_, type_generics, _) = generics.split_for_impl();
 
-        match (args.serialize.or(args.common), args.reference) {
-            (None, None) if generics.params.is_empty() => Config {
-                schema: Some(Schema {
+        match (args.serialize.or(args.common), args.no_reference) {
+            (None, Some(None)) if generics.params.is_empty() => Config {
+                reference: None,
+                no_reference: Some(Schema {
                     ty: syn::parse_quote!(Self),
                     generics: Default::default(),
                 }),
-                reference: None,
                 variant: None,
                 check_fields: false,
             },
-            (None, Some(None)) if generics.params.is_empty() => Config {
-                schema: Some(Schema {
-                    ty: syn::parse_quote!(Self),
-                    generics: Default::default(),
-                }),
+            (None, None) if generics.params.is_empty() => Config {
                 reference: Some(Schema {
                     ty: syn::parse_quote!(#ident #type_generics),
                     generics: syn::Generics {
                         lt_token: Some(Default::default()),
-                        params: syn::parse_quote!('__ser),
+                        params: syn::parse_quote!('ser),
                         gt_token: Some(Default::default()),
+                        where_clause: None,
+                    },
+                }),
+                no_reference: Some(Schema {
+                    ty: syn::parse_quote!(Self),
+                    generics: syn::Generics {
+                        lt_token: None,
+                        params: Default::default(),
+                        gt_token: None,
                         where_clause: None,
                     },
                 }),
                 variant: None,
                 check_fields: false,
             },
-            (None, reference @ (None | Some(None))) => {
+            (None, Some(None)) => {
                 // Add predicates that fields implement
-                // `T: Schema + Serialize<T>`
+                // `T: Schema` and `T: Serialize<T>`
                 let predicates = data
                     .fields
                     .iter()
                     .map(|field| -> syn::WherePredicate {
                         let ty = &field.ty;
-                        syn::parse_quote! { #ty: ::alkahest::Schema + ::alkahest::Serialize<#ty> }
+                        syn::parse_quote! { #ty: ::alkahest::Schema }
                     })
+                    .chain(data.fields.iter().map(|field| -> syn::WherePredicate {
+                        let ty = &field.ty;
+                        syn::parse_quote! { #ty: ::alkahest::Serialize<#ty> }
+                    }))
                     .collect();
 
                 let generics = syn::Generics {
@@ -71,91 +80,122 @@ impl Config {
                     }),
                 };
 
-                let schema = Schema {
+                Config {
+                    reference: None,
+                    no_reference: Some(Schema {
+                        ty: syn::parse_quote!(Self),
+                        generics,
+                    }),
+                    variant: None,
+                    check_fields: true,
+                }
+            }
+            (None, None) => {
+                // Add predicates that fields implement
+                // `T: Schema` and `&T: Serialize<T>`
+                let predicates = data
+                    .fields
+                    .iter()
+                    .map(|field| -> syn::WherePredicate {
+                        let ty = &field.ty;
+                        syn::parse_quote! { #ty: ::alkahest::Schema }
+                    })
+                    .chain(data.fields.iter().map(|field| -> syn::WherePredicate {
+                        let ty = &field.ty;
+                        syn::parse_quote! { &'ser #ty: ::alkahest::Serialize<#ty> }
+                    }))
+                    .collect();
+
+                let generics = syn::Generics {
+                    lt_token: Some(Default::default()),
+                    params: syn::parse_quote!('ser),
+                    gt_token: Some(Default::default()),
+                    where_clause: Some(syn::WhereClause {
+                        where_token: Default::default(),
+                        predicates,
+                    }),
+                };
+
+                let reference = Schema {
+                    ty: syn::parse_quote!(#ident #type_generics),
+                    generics,
+                };
+
+                // Add predicates that fields implement
+                // `T: Schema` and `T: Serialize<T>`
+                let predicates = data
+                    .fields
+                    .iter()
+                    .map(|field| -> syn::WherePredicate {
+                        let ty = &field.ty;
+                        syn::parse_quote! { #ty: ::alkahest::Schema }
+                    })
+                    .chain(data.fields.iter().map(|field| -> syn::WherePredicate {
+                        let ty = &field.ty;
+                        syn::parse_quote! { #ty: ::alkahest::Serialize<#ty> }
+                    }))
+                    .collect();
+
+                let generics = syn::Generics {
+                    lt_token: None,
+                    params: Default::default(),
+                    gt_token: None,
+                    where_clause: Some(syn::WhereClause {
+                        where_token: Default::default(),
+                        predicates,
+                    }),
+                };
+
+                let no_reference = Schema {
                     ty: syn::parse_quote!(Self),
                     generics,
                 };
 
-                let reference = match &reference {
-                    None => None,
-                    Some(None) => {
-                        // Add predicates that fields implement
-                        // `T: Schema` and `&T: Serialize<T>`
-                        let predicates = data
-                            .fields
-                            .iter()
-                            .map(|field| -> syn::WherePredicate {
-                                let ty = &field.ty;
-                                syn::parse_quote! { #ty: ::alkahest::Schema }
-                            })
-                            .chain(data.fields.iter().map(|field| -> syn::WherePredicate {
-                                let ty = &field.ty;
-                                syn::parse_quote! { &'__ser #ty: ::alkahest::Serialize<#ty> }
-                            }))
-                            .collect();
-
-                        let generics = syn::Generics {
-                            lt_token: Some(Default::default()),
-                            params: syn::parse_quote!('__ser),
-                            gt_token: Some(Default::default()),
-                            where_clause: Some(syn::WhereClause {
-                                where_token: Default::default(),
-                                predicates,
-                            }),
-                        };
-
-                        Some(Schema {
-                            ty: syn::parse_quote!(#ident #type_generics),
-                            generics,
-                        })
-                    }
-                    Some(Some(_)) => unreachable!(),
-                };
-
                 Config {
-                    schema: Some(schema),
-                    reference,
+                    reference: Some(reference),
+                    no_reference: Some(no_reference),
                     variant: args.variant,
                     check_fields: false,
                 }
             }
-            (Some(schema), Some(None)) => {
-                let mut reference = schema.clone();
-                reference
-                    .generics
-                    .lt_token
-                    .get_or_insert(Default::default());
-                reference
-                    .generics
-                    .gt_token
-                    .get_or_insert(Default::default());
-                reference.generics.params.push(syn::parse_quote!('__ser));
-
-                Config {
-                    schema: Some(schema),
-                    reference: Some(reference),
-                    variant: args.variant,
-                    check_fields: true,
-                }
-            }
-            (None, Some(Some(reference))) => Config {
-                schema: None,
-                reference: Some(reference),
-                variant: args.variant,
-                check_fields: true,
-            },
-            (Some(schema), None) => Config {
-                schema: Some(schema),
+            (None, Some(Some(no_reference))) => Config {
+                no_reference: Some(no_reference),
                 reference: None,
                 variant: args.variant,
                 check_fields: true,
             },
-            (Some(schema), Some(Some(reference))) => Config {
-                schema: Some(schema),
-                reference: Some(reference),
-                variant: args.variant,
-                check_fields: true,
-            },
+            (Some(mut reference), None | Some(None)) => {
+                if reference.generics.params.is_empty() {
+                    reference.generics.lt_token = Some(Default::default());
+                    reference.generics.gt_token = Some(Default::default());
+                    reference
+                        .generics
+                        .params
+                        .push(syn::GenericParam::Lifetime(syn::parse_quote!('ser)));
+                }
+                Config {
+                    reference: Some(reference.clone()),
+                    no_reference: None,
+                    variant: args.variant,
+                    check_fields: true,
+                }
+            }
+            (Some(mut reference), Some(Some(no_reference))) => {
+                if reference.generics.params.is_empty() {
+                    reference.generics.lt_token = Some(Default::default());
+                    reference.generics.gt_token = Some(Default::default());
+                    reference
+                        .generics
+                        .params
+                        .push(syn::GenericParam::Lifetime(syn::parse_quote!('ser)));
+                }
+                Config {
+                    reference: Some(reference),
+                    no_reference: Some(no_reference),
+                    variant: args.variant,
+                    check_fields: true,
+                }
+            }
         }
     }
 }
@@ -211,10 +251,10 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 })
                 .collect::<Vec<_>>();
 
-            match (cfg.schema, cfg.reference) {
+            match (cfg.reference, cfg.no_reference) {
                 (None, None) => unreachable!(),
-                (None, Some(schema)) => {
-                    let schema_type = &schema.ty;
+                (Some(reference), None) => {
+                    let schema_type = &reference.ty;
                     let check_field_count = if cfg.check_fields {
                         quote::quote! {
                             let _: [(); #field_count] = <#schema_type>::__alkahest_schema_field_count();
@@ -225,11 +265,13 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
 
                     let mut generics = input.generics.clone();
 
-                    generics.lt_token = generics.lt_token.or(schema.generics.lt_token);
-                    generics.gt_token = generics.gt_token.or(schema.generics.gt_token);
-                    generics.params.extend(schema.generics.params.into_iter());
+                    generics.lt_token = generics.lt_token.or(reference.generics.lt_token);
+                    generics.gt_token = generics.gt_token.or(reference.generics.gt_token);
+                    generics
+                        .params
+                        .extend(reference.generics.params.into_iter());
 
-                    if let Some(where_clause) = schema.generics.where_clause {
+                    if let Some(where_clause) = reference.generics.where_clause {
                         generics
                             .make_where_clause()
                             .predicates
@@ -237,9 +279,8 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                     }
 
                     let (impl_generics, _type_generics, where_clause) = generics.split_for_impl();
-
-                    return Ok(quote::quote! {
-                        impl #impl_generics ::alkahest::Serialize<#schema_type> for &'__ser #ident #type_generics #where_clause {
+                    Ok(quote::quote! {
+                        impl #impl_generics ::alkahest::Serialize<#schema_type> for &'ser #ident #type_generics #where_clause {
                             fn serialize(self, offset: ::alkahest::private::usize, output: &mut [::alkahest::private::u8]) -> ::alkahest::private::Result<(::alkahest::private::usize, ::alkahest::private::usize), ::alkahest::private::usize> {
                                 use ::alkahest::private::Result;
 
@@ -259,7 +300,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                 #(
                                     let with_schema = ::alkahest::private::with_schema(|s: &#schema_type| &s.#field_names);
                                     if let Result::Err(size) = err {
-                                        err = Result::Err(size + with_schema.size_value(self.#field_names));
+                                        err = Result::Err(size + with_schema.size_value(&self.#field_names));
                                     } else {
                                         if let Result::Err(size) = with_schema.serialize_value(&mut ser, &self.#field_names) {
                                             err = Result::Err(size);
@@ -283,20 +324,17 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         }
 
                         impl #impl_generics ::alkahest::Serialize<#schema_type> for #ident #type_generics #where_clause {
-                            #[inline(always)]
                             fn serialize(self, offset: ::alkahest::private::usize, output: &mut [::alkahest::private::u8]) -> ::alkahest::private::Result<(::alkahest::private::usize, ::alkahest::private::usize), ::alkahest::private::usize> {
-                                <&Self as ::alkahest::Serialize<#schema_type>>::serialize(&self, offset, output)
+                                todo!()
                             }
-
-                            #[inline(always)]
                             fn size(self) -> ::alkahest::private::usize {
-                                <&Self as ::alkahest::Serialize<#schema_type>>::size(&self)
+                                todo!()
                             }
                         }
-                    });
+                    })
                 }
-                (Some(schema), reference) => {
-                    let schema_type = &schema.ty;
+                (reference, Some(no_reference)) => {
+                    let schema_type = &no_reference.ty;
                     let check_field_count = if cfg.check_fields {
                         quote::quote! {
                             let _: [(); #field_count] = <#schema_type>::__alkahest_schema_field_count();
@@ -307,11 +345,13 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
 
                     let mut generics = input.generics.clone();
 
-                    generics.lt_token = generics.lt_token.or(schema.generics.lt_token);
-                    generics.gt_token = generics.gt_token.or(schema.generics.gt_token);
-                    generics.params.extend(schema.generics.params.into_iter());
+                    generics.lt_token = generics.lt_token.or(no_reference.generics.lt_token);
+                    generics.gt_token = generics.gt_token.or(no_reference.generics.gt_token);
+                    generics
+                        .params
+                        .extend(no_reference.generics.params.into_iter());
 
-                    if let Some(where_clause) = schema.generics.where_clause {
+                    if let Some(where_clause) = no_reference.generics.where_clause {
                         generics
                             .make_where_clause()
                             .predicates
@@ -369,8 +409,8 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         let schema_type = &reference.ty;
                         generics = input.generics.clone();
 
-                        generics.lt_token = generics.lt_token.or(schema.generics.lt_token);
-                        generics.gt_token = generics.gt_token.or(schema.generics.gt_token);
+                        generics.lt_token = generics.lt_token.or(reference.generics.lt_token);
+                        generics.gt_token = generics.gt_token.or(reference.generics.gt_token);
                         generics
                             .params
                             .extend(reference.generics.params.into_iter());
@@ -386,7 +426,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                             generics.split_for_impl();
 
                         tokens.extend(quote::quote! {
-                            impl #impl_generics ::alkahest::Serialize<#schema_type> for &'__ser #ident #type_generics #where_clause {
+                            impl #impl_generics ::alkahest::Serialize<#schema_type> for &'ser #ident #type_generics #where_clause {
                                 fn serialize(self, offset: ::alkahest::private::usize, output: &mut [::alkahest::private::u8]) -> ::alkahest::private::Result<(::alkahest::private::usize, ::alkahest::private::usize), ::alkahest::private::usize> {
                                     use ::alkahest::private::Result;
 

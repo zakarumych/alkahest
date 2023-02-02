@@ -21,7 +21,7 @@ pub fn derive(input: proc_macro::TokenStream, sized: bool) -> syn::Result<TokenS
         .serialize
         .or(args.deserialize)
         .or(args.common)
-        .or(args.reference.flatten())
+        .or(args.no_reference.flatten())
     {
         return Err(syn::Error::new_spanned(
             schema.ty,
