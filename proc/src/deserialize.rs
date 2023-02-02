@@ -1,17 +1,17 @@
 use proc_macro2::TokenStream;
 
-use crate::attrs::{parse_attributes, Args, Schema};
+use crate::attrs::{parse_attributes, Args, Formula};
 
 struct Config {
-    schema: Schema,
+    formula: Formula,
 
-    /// Signals if fields should be checked to match on schema.
-    /// `false` if `schema` is inferred to `Self`.
+    /// Signals if fields should be checked to match on formula.
+    /// `false` if `formula` is inferred to `Self`.
     check_fields: bool,
 
     /// Signals that it can deserialize
-    /// schemas with appended fields.
-    /// This requires that last field is `SizedSchema`
+    /// formulas with appended fields.
+    /// This requires that last field is `SizedFormula`
     non_exhaustive: bool,
 }
 
@@ -21,17 +21,17 @@ impl Config {
         match args.deserialize.or(args.common) {
             None => {
                 // Add predicates that fields implement
-                // `SizedSchema + Deserialize<'de, #field_type>`
+                // `SizedFormula + Deserialize<'de, #field_type>`
                 // Except that last one if `non_exhaustive` is not set.
                 let count = data.fields.len();
                 let predicates = data.fields.iter().enumerate().map(|(idx, field)| -> syn::WherePredicate {
                         let ty = &field.ty;
 
                         if non_exhaustive || idx + 1 < count {
-                            syn::parse_quote! { #ty: ::alkahest::SizedSchema + ::alkahest::Deserialize<'de, #ty> }
+                            syn::parse_quote! { #ty: ::alkahest::Formula + ::alkahest::Deserialize<'de, #ty> }
                         } else {
                             debug_assert_eq!(idx + 1, count);
-                            syn::parse_quote! { #ty: ::alkahest::Schema + ::alkahest::Deserialize<'de, #ty> }
+                            syn::parse_quote! { #ty: ::alkahest::UnsizedFormula + ::alkahest::Deserialize<'de, #ty> }
                         }
                     }).collect();
 
@@ -48,7 +48,7 @@ impl Config {
                 };
 
                 Config {
-                    schema: Schema {
+                    formula: Formula {
                         ty: syn::parse_quote!(Self),
                         generics,
                     },
@@ -56,13 +56,13 @@ impl Config {
                     non_exhaustive,
                 }
             }
-            Some(mut schema) => {
+            Some(mut formula) => {
                 // If no parameters specified, add `'de` parameter
-                if schema.generics.params.is_empty() {
-                    schema.generics.params.push(syn::parse_quote!('de));
+                if formula.generics.params.is_empty() {
+                    formula.generics.params.push(syn::parse_quote!('de));
                 }
                 Config {
-                    schema,
+                    formula,
                     check_fields: true,
                     non_exhaustive,
                 }
@@ -84,24 +84,24 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
         )),
         syn::Data::Struct(data) => {
             let Config {
-                schema,
+                formula,
                 check_fields,
                 non_exhaustive,
             } = Config::for_struct(args, &data);
 
-            let schema_type = &schema.ty;
+            let formula_type = &formula.ty;
 
             let mut deserialize_generics = input.generics.clone();
 
             deserialize_generics.lt_token =
-                deserialize_generics.lt_token.or(schema.generics.lt_token);
+                deserialize_generics.lt_token.or(formula.generics.lt_token);
             deserialize_generics.gt_token =
-                deserialize_generics.gt_token.or(schema.generics.gt_token);
+                deserialize_generics.gt_token.or(formula.generics.gt_token);
             deserialize_generics
                 .params
-                .extend(schema.generics.params.into_iter());
+                .extend(formula.generics.params.into_iter());
 
-            if let Some(where_clause) = schema.generics.where_clause {
+            if let Some(where_clause) = formula.generics.where_clause {
                 deserialize_generics
                     .make_where_clause()
                     .predicates
@@ -114,7 +114,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                     .iter()
                     .map(|field| {
                         quote::format_ident!(
-                            "__alkahest_schema_field_{}_idx_is",
+                            "__alkahest_formula_field_{}_idx_is",
                             field.ident.as_ref().unwrap(),
                         )
                     })
@@ -157,7 +157,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
             let field_count = data.fields.len();
             let check_field_count = if check_fields {
                 quote::quote! {
-                    let _: [(); #field_count] = <#schema_type>::__alkahest_schema_field_count();
+                    let _: [(); #field_count] = <#formula_type>::__alkahest_formula_field_count();
                 }
             } else {
                 quote::quote! {}
@@ -167,22 +167,22 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
             let (impl_deserialize_generics, _type_deserialize_generics, where_serialize_clause) =
                 deserialize_generics.split_for_impl();
             Ok(quote::quote! {
-                impl #impl_deserialize_generics ::alkahest::Deserialize<'de, #schema_type> for #ident #type_generics #where_serialize_clause {
+                impl #impl_deserialize_generics ::alkahest::Deserialize<'de, #formula_type> for #ident #type_generics #where_serialize_clause {
                     fn deserialize(len: ::alkahest::private::usize, input: &'de [::alkahest::private::u8]) -> ::alkahest::private::Result<Self, ::alkahest::DeserializeError> {
                         // Checks compilation of code in the block.
                         #[allow(unused)]
                         let _ = || {
-                            #(let _: [(); #field_check_idxs] = <#schema_type>::#field_check_names();)*
+                            #(let _: [(); #field_check_idxs] = <#formula_type>::#field_check_names();)*
                         };
                         #check_field_count
 
                         let mut des = ::alkahest::Deserializer::new(len, input);
 
                         #(
-                            let #field_names_no_last = ::alkahest::private::with_schema(|s: &#schema_type| &s.#field_names_no_last).deserialize_sized(&mut des)?;
+                            let #field_names_no_last = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names_no_last).deserialize_sized(&mut des)?;
                         )*
                         #(
-                            let #last_field_name = ::alkahest::private::with_schema(|s: &#schema_type| &s.#last_field_name).deserialize_rest(&mut des)?;
+                            let #last_field_name = ::alkahest::private::with_formula(|s: &#formula_type| &s.#last_field_name).deserialize_rest(&mut des)?;
                         )*
                         #(
                             #consume_tail

@@ -1,15 +1,18 @@
 use core::mem::size_of;
 
-use crate::{schema::Schema, size::FixedUsize};
+use crate::{
+    formula::{FormulaAlias, UnsizedFormula},
+    size::FixedUsize,
+};
 
 /// Trait for types that can be serialized
-/// into raw bytes with specified `S: `[`Schema`].
+/// into raw bytes with specified `S: `[`Formula`].
 ///
-/// Implementations *must* write data according to the schema.
+/// Implementations *must* write data according to the formula.
 /// Doing otherwise may result in errors during deserialization.
 /// Where errors may be both failures to deserialize and
 /// incorrect deserialized values.
-pub trait Serialize<T: Schema + ?Sized> {
+pub trait Serialize<T: UnsizedFormula + ?Sized> {
     /// Serializes value into output buffer.
     /// Writes data to "heap" and "stack".
     /// "Heap" grows from the beginning of the buffer.
@@ -68,13 +71,13 @@ impl<'a> Serializer<'a> {
         self.payload + (self.output.len() - self.metadata)
     }
 
-    /// Serialize a value according to specified schema.
+    /// Serialize a value according to specified formula.
     /// Value is written to the output buffer associated with this serializer.
     /// Serializer takes care of moving data around if necessary.
     #[inline]
     pub fn serialize_value<S, T>(&mut self, value: T) -> Result<(), usize>
     where
-        S: Schema + ?Sized,
+        S: UnsizedFormula + ?Sized,
         T: Serialize<S>,
     {
         match value.serialize(
@@ -90,13 +93,13 @@ impl<'a> Serializer<'a> {
         }
     }
 
-    /// Serialize a value according to specified schema.
+    /// Serialize a value according to specified formula.
     /// Value is written to the output buffer associated with this serializer.
     /// Serializer takes care of moving data around if necessary.
     #[inline]
     pub fn serialize_self<T>(&mut self, value: T) -> Result<(), usize>
     where
-        T: Schema + Serialize<T>,
+        T: UnsizedFormula + Serialize<T>,
     {
         self.serialize_value::<T, T>(value)
     }
@@ -131,7 +134,7 @@ impl<'a> Serializer<'a> {
 
 pub fn serialize<S, T>(value: T, output: &mut [u8]) -> Result<usize, usize>
 where
-    S: Schema + ?Sized,
+    S: UnsizedFormula + ?Sized,
     T: Serialize<S>,
 {
     if output.len() < HEADER_SIZE {
@@ -153,7 +156,7 @@ where
 
 pub fn serialized_size<S, T>(value: T) -> usize
 where
-    S: Schema + ?Sized,
+    S: UnsizedFormula + ?Sized,
     T: Serialize<S>,
 {
     <T as Serialize<S>>::size(value) + HEADER_SIZE
@@ -161,3 +164,18 @@ where
 
 const FIELD_SIZE: usize = size_of::<FixedUsize>();
 const HEADER_SIZE: usize = FIELD_SIZE * 2;
+
+impl<T, S, A> Serialize<S> for T
+where
+    S: FormulaAlias<Alias = A>,
+    A: UnsizedFormula,
+    T: Serialize<A>,
+{
+    fn serialize(self, offset: usize, output: &mut [u8]) -> Result<(usize, usize), usize> {
+        <T as Serialize<A>>::serialize(self, offset, output)
+    }
+
+    fn size(self) -> usize {
+        <T as Serialize<A>>::size(self)
+    }
+}

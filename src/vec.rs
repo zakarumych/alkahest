@@ -2,15 +2,20 @@ use alloc::vec::Vec;
 
 use crate::{
     deserialize::{Deserialize, DeserializeError, Deserializer},
+    formula::{Formula, FormulaAlias},
     reference::Ref,
-    schema::SizedSchema,
 };
 
-schema_alias!(@sized +[S] Vec<S> as Ref<[S]>);
+impl<S> FormulaAlias for Vec<S>
+where
+    S: Formula,
+{
+    type Alias = Ref<[S]>;
+}
 
 impl<'a, S, T> Deserialize<'a, [S]> for Vec<T>
 where
-    S: SizedSchema,
+    S: Formula,
     T: Deserialize<'a, S>,
 {
     fn deserialize(len: usize, input: &'a [u8]) -> Result<Self, DeserializeError> {
@@ -53,7 +58,7 @@ where
 
 impl<'a, S, T, const N: usize> Deserialize<'a, [S; N]> for Vec<T>
 where
-    S: SizedSchema,
+    S: Formula,
     T: Deserialize<'a, S>,
 {
     fn deserialize(len: usize, input: &'a [u8]) -> Result<Self, DeserializeError> {

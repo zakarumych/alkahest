@@ -2,7 +2,7 @@ use core::{borrow::Borrow, mem::size_of};
 
 use crate::{
     deserialize::{Deserialize, DeserializeError},
-    schema::{Schema, SizedSchema},
+    formula::{Formula, UnsizedFormula},
     serialize::Serialize,
 };
 
@@ -15,8 +15,8 @@ macro_rules! impl_primitive {
     };
 
     (impl $ty:ty) => {
-        impl Schema for $ty {}
-        impl SizedSchema for $ty {
+        impl UnsizedFormula for $ty {}
+        impl Formula for $ty {
             const SIZE: usize = size_of::<$ty>();
         }
 
@@ -88,8 +88,8 @@ impl_primitive! {
     f64,
 }
 
-impl Schema for bool {}
-impl SizedSchema for bool {
+impl UnsizedFormula for bool {}
+impl Formula for bool {
     const SIZE: usize = 1;
 }
 

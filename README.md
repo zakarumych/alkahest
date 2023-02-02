@@ -6,23 +6,23 @@
 [![MIT/Apache](https://img.shields.io/badge/license-MIT%2FApache-blue.svg?style=for-the-badge)](COPYING)
 ![loc](https://img.shields.io/tokei/lines/github/zakarumych/alkahest?style=for-the-badge)
 
-*Alkahest* is blazing-fast, zero-deps, zero-overhead, zero-unsafe schema-based serialization library.
+*Alkahest* is blazing-fast, zero-deps, zero-overhead, zero-unsafe formula-based serialization library.
 
-# Schema and Serialize traits.
+# Formula and Serialize traits.
 
-`Schema` trait is used to define types to serve as data schemas.
-The esiest way to define new schema is to derive `Schema` trait for a type.
+`Formula` trait is used to define types to serve as data formulas.
+The esiest way to define new formula is to derive `Formula` trait for a type.
 It can be derived for both structs and enums, but no unions. Generics are supported.
-The only constrain is that all fields must also implement `Schema`.
-User should use trait bounds to ensure that field types with generics implement `Schema`.
+The only constrain is that all fields must also implement `Formula`.
+User should use trait bounds to ensure that field types with generics implement `Formula`.
 
-`Serialize<Schema>` trait is used to implement serialization according to a schema.
-Deriving `Schema` for a `UserType` will generate types with `Serialize<UserType>` implementation.
+`Serialize<Formula>` trait is used to implement serialization according to a formula.
+Deriving `Formula` for a `UserType` will generate types with `Serialize<UserType>` implementation.
 
-Primitives like `bool` and integer types implement both `Schema` and can be serlalized from anything that implements `Borrow<PimitiveType>`
-`Option<T>` implements `Schema` if `T: Schema` and `Option<U>` implments `Serialize<Option<T>>` if `U: Serialize<T>`.
-There's also three ouf-of-the-box schema types:
-  * `Seq<T>` - defines a schema as sequence of schemas `T`.
+Primitives like `bool` and integer types implement both `Formula` and can be serlalized from anything that implements `Borrow<PimitiveType>`
+`Option<T>` implements `Formula` if `T: Formula` and `Option<U>` implments `Serialize<Option<T>>` if `U: Serialize<T>`.
+There's also three ouf-of-the-box formula types:
+  * `Seq<T>` - defines a formula as sequence of formulas `T`.
     Any `IntoIterator` type can be used to serialize into `Seq<T>` whenever item type can be serialized to `T`.
     This is major difference from other popular serialization libraries where collection types are used.
     With `Seq<T>` there's no need to allocate a collection and put values for serialization there.

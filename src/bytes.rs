@@ -1,11 +1,11 @@
 use core::mem::size_of;
 
 use crate::{
-    schema::{Schema, Serialize},
+    formula::{Formula, Serialize},
     FixedUsize,
 };
 
-/// `Schema` for runtime sized bytes array.
+/// `Formula` for runtime sized bytes array.
 ///
 /// Packed from `impl `[`AsRef`]`<[u8]>`.
 /// Unpacks into `&[`[`u8`]`]`.
@@ -16,7 +16,7 @@ use crate::{
 /// [`Str`]: crate::Str
 pub enum Bytes {}
 
-impl Schema for Bytes {
+impl Formula for Bytes {
     type Access<'a> = &'a [u8];
 
     #[inline(always)]

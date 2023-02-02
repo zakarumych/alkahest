@@ -2,30 +2,31 @@ extern crate proc_macro;
 
 mod attrs;
 mod deserialize;
-mod schema;
+mod formula;
 mod serialize;
 
 use proc_macro::TokenStream;
 
-/// Proc-macro to derive `Schema` trait for user-defined type.
+/// Proc-macro to derive `Formula` trait for user-defined type.
 ///
 /// This macro requires that type is either `struct` or `enum`.
-/// All fields must implement `Schema`.
-#[proc_macro_derive(Schema, attributes(alkahest))]
-pub fn derive_schema(input: TokenStream) -> TokenStream {
-    match schema::derive(input, false) {
+/// All fields must implement `Formula`.
+#[proc_macro_derive(Formula, attributes(alkahest))]
+pub fn derive_formula(input: TokenStream) -> TokenStream {
+    match formula::derive(input, true) {
         Ok(tokens) => tokens.into(),
         Err(err) => err.to_compile_error().into(),
     }
 }
 
-/// Proc-macro to derive `SizedSchema` trait for user-defined type.
+/// Proc-macro to derive `UnsizedFormula` trait for user-defined type.
 ///
 /// This macro requires that type is either `struct` or `enum`.
-/// All fields must implement `Schema`.
-#[proc_macro_derive(SizedSchema, attributes(alkahest))]
-pub fn derive_sized_schema(input: TokenStream) -> TokenStream {
-    match schema::derive(input, true) {
+/// All fields must except the last must implement `Formula`
+/// and the last field must implement `UnsizedFormula`.
+#[proc_macro_derive(UnsizedFormula, attributes(alkahest))]
+pub fn derive_unsized_formula(input: TokenStream) -> TokenStream {
+    match formula::derive(input, false) {
         Ok(tokens) => tokens.into(),
         Err(err) => err.to_compile_error().into(),
     }

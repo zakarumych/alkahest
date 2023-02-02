@@ -1,19 +1,19 @@
-use crate::{Access, Schema, Serialize};
+use crate::{Access, Formula, Serialize};
 
-impl<T> Schema for Option<T>
+impl<T> Formula for Option<T>
 where
-    T: Schema,
+    T: Formula,
 {
     type Access<'a> = Option<Access<'a, T>>;
 
     #[inline(always)]
     fn header() -> usize {
-        1 + <T as Schema>::header()
+        1 + <T as Formula>::header()
     }
 
     #[inline(always)]
     fn has_body() -> bool {
-        <T as Schema>::has_body()
+        <T as Formula>::has_body()
     }
 
     #[inline(always)]
@@ -21,14 +21,14 @@ where
         if input[0] == 0 {
             None
         } else {
-            Some(<T as Schema>::access(&input[1..]))
+            Some(<T as Formula>::access(&input[1..]))
         }
     }
 }
 
 impl<T, U> Serialize<Option<T>> for Option<U>
 where
-    T: Schema,
+    T: Formula,
     U: Serialize<T>,
 {
     type Header = Option<U::Header>;
@@ -59,7 +59,7 @@ where
 
     #[inline(always)]
     fn serialize_header(header: Option<U::Header>, output: &mut [u8], offset: usize) -> bool {
-        if output.len() < <Option<T> as Schema>::header() {
+        if output.len() < <Option<T> as Formula>::header() {
             return false;
         }
 

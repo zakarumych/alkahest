@@ -1,9 +1,9 @@
 use crate::{
     bytes::{Bytes, BytesHeader},
-    schema::{Schema, Serialize},
+    formula::{Formula, Serialize},
 };
 
-/// `Schema` for strings.
+/// `Formula` for strings.
 ///
 /// Serialized from `impl `[`AsRef`]`<str>`.
 /// Access into `&[str]`.
@@ -14,22 +14,22 @@ use crate::{
 /// [`Bytes`]: Bytes
 pub enum Str {}
 
-impl Schema for Str {
+impl Formula for Str {
     type Access<'a> = &'a str;
 
     #[inline(always)]
     fn header() -> usize {
-        <Bytes as Schema>::header()
+        <Bytes as Formula>::header()
     }
 
     #[inline(always)]
     fn has_body() -> bool {
-        <Bytes as Schema>::has_body()
+        <Bytes as Formula>::has_body()
     }
 
     #[inline(always)]
     fn access<'a>(input: &'a [u8]) -> &'a str {
-        let bytes = <Bytes as Schema>::access(input);
+        let bytes = <Bytes as Formula>::access(input);
         core::str::from_utf8(bytes).expect("invalid utf8")
     }
 }

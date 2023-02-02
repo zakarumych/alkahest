@@ -1,10 +1,10 @@
 use crate::{
     deserialize::{Deserialize, DeserializeError, Deserializer},
-    schema::{Schema, SizedSchema},
+    formula::{Formula, UnsizedFormula},
     serialize::{Serialize, Serializer},
 };
 
-impl Schema for () {}
+impl UnsizedFormula for () {}
 
 impl Serialize<()> for () {
     #[inline(always)]
@@ -52,25 +52,25 @@ impl Deserialize<'_, ()> for () {
 
 macro_rules! impl_for_tuple {
     ([$at:ident $(, $a:ident)* $(,)?] [$bt:ident $(,$b:ident)* $(,)?]) => {
-        impl<$($a,)* $at> Schema for ($($a,)* $at,)
+        impl<$($a,)* $at> UnsizedFormula for ($($a,)* $at,)
         where
-            $($a: SizedSchema,)*
-            $at: Schema + ?Sized,
+            $($a: Formula,)*
+            $at: UnsizedFormula + ?Sized,
         {
         }
 
-        impl<$($a,)* $at> SizedSchema for ($($a,)* $at,)
+        impl<$($a,)* $at> Formula for ($($a,)* $at,)
         where
-            $($a: SizedSchema,)*
-            $at: SizedSchema + ?Sized,
+            $($a: Formula,)*
+            $at: Formula + ?Sized,
         {
-            const SIZE: usize = 0 $( + <$a as SizedSchema>::SIZE)*;
+            const SIZE: usize = 0 $( + <$a as Formula>::SIZE)*;
         }
 
         impl<$($a,)* $at, $($b,)* $bt> Serialize<($($a,)* $at,)> for ($($b,)* $bt,)
         where
-            $($a: SizedSchema, $b: Serialize<$a>,)*
-            $at: Schema + ?Sized, $bt: Serialize<$at>,
+            $($a: Formula, $b: Serialize<$a>,)*
+            $at: UnsizedFormula + ?Sized, $bt: Serialize<$at>,
         {
             #[inline]
             fn serialize(self, offset: usize, output: &mut [u8]) -> Result<(usize, usize), usize> {
@@ -112,8 +112,8 @@ macro_rules! impl_for_tuple {
 
         impl<'a, $($a,)* $at, $($b,)* $bt> Serialize<($($a,)* $at,)> for &'a ($($b,)* $bt,)
         where
-            $($a: SizedSchema, &'a $b: Serialize<$a>,)*
-            $at: Schema + ?Sized, $bt: ?Sized, &'a $bt: Serialize<$at>,
+            $($a: Formula, &'a $b: Serialize<$a>,)*
+            $at: UnsizedFormula + ?Sized, $bt: ?Sized, &'a $bt: Serialize<$at>,
         {
             #[inline]
             fn serialize(self, offset: usize, output: &mut [u8]) -> Result<(usize, usize), usize> {
@@ -127,14 +127,14 @@ macro_rules! impl_for_tuple {
 
         impl<'__a, $($a,)* $at, $($b,)* $bt> Deserialize<'__a, ($($a,)* $at,)> for ($($b,)* $bt,)
         where
-            $($a: SizedSchema, $b: Deserialize<'__a, $a>,)*
-            $at: Schema + ?Sized, $bt: Deserialize<'__a, $at>,
+            $($a: Formula, $b: Deserialize<'__a, $a>,)*
+            $at: UnsizedFormula + ?Sized, $bt: Deserialize<'__a, $at>,
         {
             #[inline(always)]
             fn deserialize(len: usize, input: &'__a [u8]) -> Result<($($b,)* $bt,), DeserializeError> {
                 #![allow(non_snake_case)]
 
-                let tuple_no_tail_size: usize = 0$( + <$a as SizedSchema>::SIZE)*;
+                let tuple_no_tail_size: usize = 0$( + <$a as Formula>::SIZE)*;
                 if tuple_no_tail_size > len {
                     return Err(DeserializeError::WrongLength);
                 }
@@ -156,7 +156,7 @@ macro_rules! impl_for_tuple {
             fn deserialize_in_place(&mut self, len: usize, input: &'__a [u8]) -> Result<(), DeserializeError> {
                 #![allow(non_snake_case)]
 
-                let tuple_no_tail_size: usize = 0$( + <$a as SizedSchema>::SIZE)*;
+                let tuple_no_tail_size: usize = 0$( + <$a as Formula>::SIZE)*;
                 if tuple_no_tail_size > len {
                     return Err(DeserializeError::WrongLength);
                 }

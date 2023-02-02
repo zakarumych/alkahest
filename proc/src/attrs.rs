@@ -5,49 +5,49 @@ use syn::{
     spanned::Spanned,
 };
 
-proc_easy::easy_token!(noref);
+proc_easy::easy_token!(owned);
 proc_easy::easy_token!(serialize);
 proc_easy::easy_token!(deserialize);
 proc_easy::easy_token!(non_exhaustive);
 
 proc_easy::easy_parse! {
-    struct SchemaParams {
+    struct FormulaParams {
         token: syn::Token![for],
         generics: syn::Generics,
     }
 }
 
-struct SchemaRef {
-    params: Option<SchemaParams>,
+struct FormulaRef {
+    params: Option<FormulaParams>,
     ty: syn::Type,
     where_clause: Option<syn::WhereClause>,
 }
 
-impl From<SchemaRef> for Schema {
-    fn from(schema: SchemaRef) -> Self {
-        let mut generics = schema
+impl From<FormulaRef> for Formula {
+    fn from(formula: FormulaRef) -> Self {
+        let mut generics = formula
             .params
             .map(|params| params.generics)
             .unwrap_or_default();
 
-        if let Some(where_clause) = schema.where_clause {
+        if let Some(where_clause) = formula.where_clause {
             generics.make_where_clause().predicates = where_clause.predicates;
         }
 
         Self {
-            ty: schema.ty,
+            ty: formula.ty,
             generics,
         }
     }
 }
 
-impl EasyToken for SchemaRef {
+impl EasyToken for FormulaRef {
     fn display() -> &'static str {
-        "Schema type"
+        "Formula type"
     }
 }
 
-impl EasyPeek for SchemaRef {
+impl EasyPeek for FormulaRef {
     fn peek_stream(stream: ParseStream) -> bool {
         stream.peek(syn::Token![for]) || stream.peek(syn::Token![<]) || stream.peek(syn::Ident)
     }
@@ -59,7 +59,7 @@ impl EasyPeek for SchemaRef {
     }
 }
 
-impl Parse for SchemaRef {
+impl Parse for FormulaRef {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let params = if input.peek(syn::Token![for]) {
             Some(input.parse()?)
@@ -83,7 +83,7 @@ impl Parse for SchemaRef {
     }
 }
 
-impl Spanned for SchemaRef {
+impl Spanned for FormulaRef {
     fn span(&self) -> Span {
         let mut span = self.ty.span();
 
@@ -108,23 +108,23 @@ proc_easy::easy_argument! {
 
 proc_easy::easy_argument_tuple! {
     struct NoReferenceRef {
-        noref_token: noref,
-        schema: Option<SchemaRef>,
+        token: owned,
+        formula: Option<FormulaRef>,
     }
 }
 
 proc_easy::easy_argument_tuple! {
     struct SerializeArg {
         token: serialize,
-        no_reference: Option<NoReferenceRef>,
-        schema: Option<SchemaRef>,
+        owned: Option<NoReferenceRef>,
+        formula: Option<FormulaRef>,
     }
 }
 
 proc_easy::easy_argument_tuple! {
     struct DeserializeArg {
         token: deserialize,
-        schema: Option<SchemaRef>,
+        formula: Option<FormulaRef>,
         non_exhaustive: Option<non_exhaustive>,
     }
 }
@@ -133,26 +133,26 @@ proc_easy::easy_attributes! {
     @(alkahest)
     struct Attrs {
         non_exhaustive: Option<non_exhaustive>,
-        no_reference: Option<NoReferenceRef>,
+        owned: Option<NoReferenceRef>,
         serialize: Vec<SerializeArg>,
         deserialize: Vec<DeserializeArg>,
         variant: Option<Variant>,
-        schema: Option<SchemaRef>,
+        formula: Option<FormulaRef>,
     }
 }
 
 #[derive(Clone)]
-pub struct Schema {
+pub struct Formula {
     pub ty: syn::Type,
     pub generics: syn::Generics,
 }
 
 pub struct Args {
     pub non_exhaustive: Option<non_exhaustive>,
-    pub no_reference: Option<Option<Schema>>,
-    pub common: Option<Schema>,
-    pub serialize: Option<Schema>,
-    pub deserialize: Option<Schema>,
+    pub owned: Option<Option<Formula>>,
+    pub common: Option<Formula>,
+    pub serialize: Option<Formula>,
+    pub deserialize: Option<Formula>,
     pub variant: Option<syn::Ident>,
 }
 
@@ -161,42 +161,42 @@ pub fn parse_attributes(attrs: &[syn::Attribute]) -> syn::Result<Args> {
 
     let mut serialize_opt = None;
     let mut deserialize_opt = None;
-    let common_opt = attrs.schema.map(Schema::from);
+    let common_opt = attrs.formula.map(Formula::from);
     let mut non_exhaustive_opt = attrs.non_exhaustive;
-    let mut no_reference_opt = attrs.no_reference;
+    let mut owned_opt = attrs.owned;
 
     for serialize in attrs.serialize {
-        if let Some(schema) = serialize.schema {
+        if let Some(formula) = serialize.formula {
             if common_opt.is_some() {
                 return Err(syn::Error::new(
-                    schema.span(),
-                    "Common schema reference already specified",
+                    formula.span(),
+                    "Common formula reference already specified",
                 ));
             }
-            serialize_opt = Some(Schema::from(schema));
+            serialize_opt = Some(Formula::from(formula));
         }
 
-        if let Some(no_reference) = serialize.no_reference {
-            if no_reference_opt.is_some() {
+        if let Some(owned) = serialize.owned {
+            if owned_opt.is_some() {
                 return Err(syn::Error::new(
-                    no_reference.name_span(),
+                    owned.name_span(),
                     "Reference already specified",
                 ));
             }
 
-            no_reference_opt = Some(no_reference);
+            owned_opt = Some(owned);
         }
     }
 
     for deserialize in attrs.deserialize {
-        if let Some(schema) = deserialize.schema {
+        if let Some(formula) = deserialize.formula {
             if common_opt.is_some() {
                 return Err(syn::Error::new(
-                    schema.span(),
-                    "Common schema reference already specified",
+                    formula.span(),
+                    "Common formula reference already specified",
                 ));
             }
-            deserialize_opt = Some(Schema::from(schema));
+            deserialize_opt = Some(Formula::from(formula));
         }
 
         if let Some(non_exhaustive) = deserialize.non_exhaustive {
@@ -216,7 +216,7 @@ pub fn parse_attributes(attrs: &[syn::Attribute]) -> syn::Result<Args> {
         serialize: serialize_opt,
         deserialize: deserialize_opt,
         non_exhaustive: non_exhaustive_opt,
-        no_reference: no_reference_opt.map(|noref| noref.schema.map(Schema::from)),
+        owned: owned_opt.map(|owned| owned.formula.map(Formula::from)),
         variant: attrs.variant.map(|v| v.variant),
     })
 }

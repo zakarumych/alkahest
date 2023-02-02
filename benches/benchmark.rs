@@ -1,16 +1,16 @@
-use alkahest::{Schema, Seq, Serialize};
+use alkahest::{Seq, Serialize, UnsizedFormula};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
-#[derive(Schema)]
-#[allow(dead_code)] // Values of schema type are never constructed. TODO: Generate code to silence this working for enums.
-enum TestSchema {
+#[derive(Formula)]
+#[allow(dead_code)] // Values of formula type are never constructed. TODO: Generate code to silence this working for enums.
+enum TestFormula {
     Foo { a: u32, b: u32 },
     Bar { c: Seq<u32>, d: Seq<Seq<u32>> },
 }
 
-enum TestSchemaHeader<'a> {
-    Foo(<TestSchemaFooSerialize<u32, u32> as Serialize<TestSchema>>::Header),
-    Bar(<TestSchemaBarSerialize<&'a [u32], &'a [Vec<u32>]> as Serialize<TestSchema>>::Header),
+enum TestFormulaHeader<'a> {
+    Foo(<TestFormulaFooSerialize<u32, u32> as Serialize<TestFormula>>::Header),
+    Bar(<TestFormulaBarSerialize<&'a [u32], &'a [Vec<u32>]> as Serialize<TestFormula>>::Header),
 }
 
 #[derive(serde::Serialize, serde::Deserialize, rkyv::Archive, rkyv::Serialize)]
@@ -19,29 +19,29 @@ enum TestData {
     Bar { c: Vec<u32>, d: Vec<Vec<u32>> },
 }
 
-impl<'a> alkahest::Serialize<TestSchema> for &'a TestData {
-    type Header = TestSchemaHeader<'a>;
+impl<'a> alkahest::Serialize<TestFormula> for &'a TestData {
+    type Header = TestFormulaHeader<'a>;
 
     fn serialize_body(self, output: &mut [u8]) -> Result<(Self::Header, usize), usize> {
         match *self {
             TestData::Foo { a, b } => {
-                let (header, size) = TestSchemaFooSerialize { a, b }.serialize_body(output)?;
-                Ok((TestSchemaHeader::Foo(header), size))
+                let (header, size) = TestFormulaFooSerialize { a, b }.serialize_body(output)?;
+                Ok((TestFormulaHeader::Foo(header), size))
             }
             TestData::Bar { ref c, ref d } => {
-                let (header, size) = TestSchemaBarSerialize { c, d }.serialize_body(output)?;
-                Ok((TestSchemaHeader::Bar(header), size))
+                let (header, size) = TestFormulaBarSerialize { c, d }.serialize_body(output)?;
+                Ok((TestFormulaHeader::Bar(header), size))
             }
         }
     }
 
-    fn serialize_header(header: TestSchemaHeader<'a>, output: &mut [u8], offset: usize) -> bool {
+    fn serialize_header(header: TestFormulaHeader<'a>, output: &mut [u8], offset: usize) -> bool {
         match header {
-            TestSchemaHeader::Foo(header) => {
-                TestSchemaFooSerialize::<u32, u32>::serialize_header(header, output, offset)
+            TestFormulaHeader::Foo(header) => {
+                TestFormulaFooSerialize::<u32, u32>::serialize_header(header, output, offset)
             }
-            TestSchemaHeader::Bar(header) => {
-                TestSchemaBarSerialize::<&'a [u32], &'a [Vec<u32>]>::serialize_header(
+            TestFormulaHeader::Bar(header) => {
+                TestFormulaBarSerialize::<&'a [u32], &'a [Vec<u32>]>::serialize_header(
                     header, output, offset,
                 )
             }
@@ -50,7 +50,7 @@ impl<'a> alkahest::Serialize<TestSchema> for &'a TestData {
 }
 
 fn ser_alkahest(bytes: &mut [u8], data: &TestData) {
-    alkahest::serialize::<TestSchema, _>(data, bytes).unwrap();
+    alkahest::serialize::<TestFormula, _>(data, bytes).unwrap();
 }
 
 fn ser_json(bytes: &mut [u8], data: &TestData) {
@@ -71,12 +71,12 @@ fn ser_rkyv(bytes: &mut [u8], data: &TestData) {
 }
 
 fn de_alkahest(bytes: &[u8]) {
-    match alkahest::access::<TestSchema>(bytes) {
-        TestSchemaAccess::Foo { a, b } => {
+    match alkahest::access::<TestFormula>(bytes) {
+        TestFormulaAccess::Foo { a, b } => {
             black_box(a);
             black_box(b);
         }
-        TestSchemaAccess::Bar { c, d } => {
+        TestFormulaAccess::Bar { c, d } => {
             c.into_iter().for_each(|c| {
                 black_box(c);
             });
@@ -154,7 +154,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
     let mut bytes = [0u8; 1024];
 
-    let alkahest_vec = alkahest_to_vec::<TestSchema, _>(&data);
+    let alkahest_vec = alkahest_to_vec::<TestFormula, _>(&data);
     let json_vec = serde_json::to_vec(&data).unwrap();
     let bincode_vec = bincode::serialize(&data).unwrap();
 
@@ -200,7 +200,7 @@ criterion_main!(benches);
 
 pub fn alkahest_to_vec<'a, T, P>(data: P) -> Vec<u8>
 where
-    T: Schema,
+    T: UnsizedFormula,
     P: alkahest::Serialize<T>,
 {
     let mut bytes = Vec::new();

@@ -1,14 +1,15 @@
 use core::marker::PhantomData;
 
 use crate::{
-    schema::SizedSchema, Deserialize, DeserializeError, Deserializer, Schema, Serialize, Serializer,
+    formula::Formula, Deserialize, DeserializeError, Deserializer, Serialize, Serializer,
+    UnsizedFormula,
 };
 
-impl<S> Schema for [S] where S: SizedSchema {}
+impl<S> UnsizedFormula for [S] where S: Formula {}
 
 impl<S, T, I> Serialize<[S]> for I
 where
-    S: SizedSchema,
+    S: Formula,
     I: IntoIterator<Item = T>,
     T: Serialize<S>,
 {
@@ -50,7 +51,7 @@ pub struct SliceIter<'a, S, T = S> {
 
 impl<'a, S, T> Deserialize<'a, [S]> for SliceIter<'a, S, T>
 where
-    S: SizedSchema,
+    S: Formula,
     T: Deserialize<'a, S>,
 {
     #[inline]
@@ -80,7 +81,7 @@ where
 
 impl<'a, S, T, const N: usize> Deserialize<'a, [S; N]> for SliceIter<'a, S, T>
 where
-    S: SizedSchema,
+    S: Formula,
     T: Deserialize<'a, S>,
 {
     #[inline]
@@ -109,7 +110,7 @@ where
 
 impl<'a, S, T> Iterator for SliceIter<'a, S, T>
 where
-    S: SizedSchema,
+    S: Formula,
     T: Deserialize<'a, S>,
 {
     type Item = Result<T, DeserializeError>;

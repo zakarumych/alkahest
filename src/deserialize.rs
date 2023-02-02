@@ -1,7 +1,7 @@
 use core::mem::size_of;
 
 use crate::{
-    schema::{Schema, SizedSchema},
+    formula::{Formula, UnsizedFormula},
     size::{FixedUsize, FixedUsizeType},
 };
 
@@ -18,8 +18,8 @@ pub enum DeserializeError {
 }
 
 /// Trait for types that can be deserialized
-/// from raw bytes with specified `S: `[`Schema`].
-pub trait Deserialize<'de, S: Schema + ?Sized> {
+/// from raw bytes with specified `S: `[`Formula`].
+pub trait Deserialize<'de, S: UnsizedFormula + ?Sized> {
     /// Deserializes value from bytes slice.
     /// Returns deserialized value and the number of bytes consumed from
     /// the and of input.
@@ -56,7 +56,7 @@ impl<'de> Deserializer<'de> {
 
     pub fn deserialize<S, T>(&mut self, len: usize) -> Result<T, DeserializeError>
     where
-        S: Schema + ?Sized,
+        S: UnsizedFormula + ?Sized,
         T: Deserialize<'de, S>,
     {
         if len > self.len {
@@ -71,14 +71,14 @@ impl<'de> Deserializer<'de> {
 
     pub fn deserialize_self<T>(&mut self) -> Result<T, DeserializeError>
     where
-        T: Deserialize<'de, T> + SizedSchema,
+        T: Deserialize<'de, T> + Formula,
     {
         self.deserialize::<T, T>(T::SIZE)
     }
 
     pub fn deserialize_sized<S, T>(&mut self) -> Result<T, DeserializeError>
     where
-        S: SizedSchema + ?Sized,
+        S: Formula + ?Sized,
         T: Deserialize<'de, S>,
     {
         self.deserialize::<S, T>(S::SIZE)
@@ -86,7 +86,7 @@ impl<'de> Deserializer<'de> {
 
     pub fn deserialize_rest<S, T>(&mut self) -> Result<T, DeserializeError>
     where
-        S: Schema + ?Sized,
+        S: UnsizedFormula + ?Sized,
         T: Deserialize<'de, S>,
     {
         self.deserialize::<S, T>(self.len)
@@ -98,7 +98,7 @@ impl<'de> Deserializer<'de> {
         len: usize,
     ) -> Result<(), DeserializeError>
     where
-        S: Schema + ?Sized,
+        S: UnsizedFormula + ?Sized,
         T: Deserialize<'de, S>,
     {
         if len > self.len {
@@ -118,7 +118,7 @@ impl<'de> Deserializer<'de> {
         place: &mut T,
     ) -> Result<(), DeserializeError>
     where
-        S: SizedSchema + ?Sized,
+        S: Formula + ?Sized,
         T: Deserialize<'de, S>,
     {
         self.deserialize_in_place::<S, T>(place, S::SIZE)
@@ -126,14 +126,14 @@ impl<'de> Deserializer<'de> {
 
     pub fn deserialize_in_place_self<T>(&mut self, place: &mut T) -> Result<(), DeserializeError>
     where
-        T: SizedSchema + Deserialize<'de, T>,
+        T: Formula + Deserialize<'de, T>,
     {
         self.deserialize_in_place::<T, T>(place, T::SIZE)
     }
 
     pub fn deserialize_in_place_rest<S, T>(&mut self, place: &mut T) -> Result<(), DeserializeError>
     where
-        S: Schema + ?Sized,
+        S: UnsizedFormula + ?Sized,
         T: Deserialize<'de, S>,
     {
         self.deserialize_in_place::<S, T>(place, self.len)
@@ -158,7 +158,7 @@ impl<'de> Deserializer<'de> {
 
 pub fn deserialize<'de, S, T>(input: &'de [u8]) -> Result<(T, usize), DeserializeError>
 where
-    S: Schema + ?Sized,
+    S: UnsizedFormula + ?Sized,
     T: Deserialize<'de, S>,
 {
     const FIELD_SIZE: usize = size_of::<FixedUsize>();

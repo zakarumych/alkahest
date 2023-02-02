@@ -2,7 +2,7 @@ use core::{mem::size_of, num::TryFromIntError};
 
 use crate::{
     deserialize::{Deserialize, DeserializeError},
-    schema::{Schema, SizedSchema},
+    formula::{Formula, UnsizedFormula},
     serialize::Serialize,
 };
 
@@ -65,8 +65,8 @@ impl From<FixedUsize> for FixedUsizeType {
     }
 }
 
-impl Schema for FixedUsize {}
-impl SizedSchema for FixedUsize {
+impl UnsizedFormula for FixedUsize {}
+impl Formula for FixedUsize {
     const SIZE: usize = size_of::<FixedUsizeType>();
 }
 

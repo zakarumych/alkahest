@@ -1,50 +1,48 @@
 use alkahest::{
-    deserialize, serialize, serialized_size, Deserialize, Schema, Serialize, SizedSchema,
+    deserialize, serialize, serialized_size, Deserialize, Formula, Ref, Serialize, UnsizedFormula,
 };
 
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, SizedSchema, Serialize, Deserialize,
-)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Formula, Serialize, Deserialize)]
 struct X;
 
-#[derive(Schema)]
+#[derive(Formula)]
 struct Test<T: ?Sized> {
     a: u32,
     b: X,
     c: T,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-#[alkahest(serialize(for<'ser, U> Test<[U]> where U: SizedSchema + 'ser, T: 'ser, &'ser T: Serialize<U>))]
-#[alkahest(serialize(noref(for<U> Test<[U]> where U: SizedSchema, T: Serialize<U>)))]
-#[alkahest(deserialize(for<'de, U> Test<[U]> where U: SizedSchema, T: Deserialize<'de, U>))]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[alkahest(serialize(for<'ser, U: ?Sized> Test<U> where U: UnsizedFormula + 'ser, T: 'ser, &'ser T: Serialize<U>))]
+#[alkahest(serialize(owned(for<U: ?Sized> Test<U> where U: UnsizedFormula, T: Serialize<U>)))]
+#[alkahest(deserialize(for<'de, U: ?Sized> Test<U> where U: UnsizedFormula, T: Deserialize<'de, U>))]
 struct TestS<T> {
     a: u32,
     b: X,
-    c: Vec<T>,
+    c: T,
 }
 
 fn main() {
     let value = TestS {
         a: 1,
         b: X,
-        c: vec![2, 3],
+        c: vec![2..4, 4..6],
     };
 
-    let size = serialized_size::<Test<[u32]>, _>(&value);
+    let size = serialized_size::<Test<[Ref<[u32]>]>, _>(value.clone());
     println!("size: {}", size);
 
     let mut buffer = vec![0; size];
 
-    let size = serialize::<Test<[u32]>, _>(&value, &mut buffer).unwrap();
+    let size = serialize::<Test<[Ref<[u32]>]>, _>(value, &mut buffer).unwrap();
     assert_eq!(size, buffer.len());
 
-    let (value, size) = deserialize::<Test<[u32]>, TestS<u32>>(&buffer).unwrap();
+    let (value, size) = deserialize::<Test<[Ref<[u32]>]>, TestS<Vec<Vec<u32>>>>(&buffer).unwrap();
     assert_eq!(size, buffer.len());
 
     assert_eq!(value.a, 1);
     assert_eq!(value.b, X);
-    assert_eq!(value.c, vec![2, 3]);
+    assert_eq!(value.c, vec![vec![2, 3], vec![4, 5]]);
 
     println!("{:?}", value);
 }

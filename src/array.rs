@@ -1,20 +1,20 @@
 use crate::{
-    schema::{Schema, SizedSchema},
+    formula::{Formula, UnsizedFormula},
     serialize::Serialize,
     Deserialize, DeserializeError, Deserializer, Serializer,
 };
 
-impl<S, const N: usize> Schema for [S; N] where S: SizedSchema {}
-impl<S, const N: usize> SizedSchema for [S; N]
+impl<S, const N: usize> UnsizedFormula for [S; N] where S: Formula {}
+impl<S, const N: usize> Formula for [S; N]
 where
-    S: SizedSchema,
+    S: Formula,
 {
     const SIZE: usize = N * S::SIZE;
 }
 
 impl<S, T, const N: usize> Serialize<[S; N]> for [T; N]
 where
-    S: SizedSchema,
+    S: Formula,
     T: Serialize<S>,
 {
     #[inline]
@@ -46,7 +46,7 @@ where
 
 impl<'a, S, T, const N: usize> Serialize<[S; N]> for &'a [T; N]
 where
-    S: SizedSchema,
+    S: Formula,
     &'a T: Serialize<S>,
 {
     #[inline]
@@ -78,7 +78,7 @@ where
 
 impl<'a, S, T, const N: usize> Deserialize<'a, [S; N]> for [T; N]
 where
-    S: SizedSchema,
+    S: Formula,
     T: Deserialize<'a, S>,
 {
     #[inline(always)]

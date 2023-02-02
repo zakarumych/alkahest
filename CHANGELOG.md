@@ -8,6 +8,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.0] - 2021-07-20
 
-Implemented writing and reading packets with typed schema.
-Implement schemas for primitives and sequences.
-Implement proc-macro to derive schemas for structures and enums.
+Implemented writing and reading packets with typed formula.
+Implement formulas for primitives and sequences.
+Implement proc-macro to derive formulas for structures and enums.

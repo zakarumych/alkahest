@@ -5,9 +5,9 @@ use core::{
     mem::size_of,
 };
 
-use crate::{Access, FixedUsize, Schema, Serialize};
+use crate::{Access, FixedUsize, Formula, Serialize};
 
-/// `Schema` for runtime sized sequence of `T`.
+/// `Formula` for runtime sized sequence of `T`.
 pub enum Seq<T> {
     Uninhabited {
         void: Infallible,
@@ -16,16 +16,16 @@ pub enum Seq<T> {
 }
 
 /// Access sequence.
-pub struct SeqAccess<'a, T: Schema> {
+pub struct SeqAccess<'a, T: Formula> {
     len: usize,
     input: &'a [u8],
     marker: PhantomData<[Access<'a, T>]>,
 }
 
-impl<T> Copy for SeqAccess<'_, T> where T: Schema {}
+impl<T> Copy for SeqAccess<'_, T> where T: Formula {}
 impl<T> Clone for SeqAccess<'_, T>
 where
-    T: Schema,
+    T: Formula,
 {
     #[inline(always)]
     fn clone(&self) -> Self {
@@ -35,7 +35,7 @@ where
 
 impl<'a, T> IntoIterator for SeqAccess<'a, T>
 where
-    T: Schema,
+    T: Formula,
 {
     type IntoIter = SeqIter<'a, T>;
     type Item = Access<'a, T>;
@@ -48,7 +48,7 @@ where
 
 impl<'a, T> SeqAccess<'a, T>
 where
-    T: Schema,
+    T: Formula,
 {
     #[inline(always)]
     pub fn iter(&self) -> SeqIter<'a, T> {
@@ -62,7 +62,7 @@ where
 
 impl<'a, T> Debug for SeqAccess<'a, T>
 where
-    T: Schema,
+    T: Formula,
     Access<'a, T>: Debug,
 {
     #[inline(always)]
@@ -71,9 +71,9 @@ where
     }
 }
 
-impl<T> Schema for Seq<T>
+impl<T> Formula for Seq<T>
 where
-    T: Schema,
+    T: Formula,
 {
     type Access<'a> = SeqAccess<'a, T>;
 
@@ -110,7 +110,7 @@ pub struct SeqHeader {
 
 impl<I, T, U> Serialize<Seq<T>> for I
 where
-    T: Schema,
+    T: Formula,
     I: IntoIterator<Item = U>,
     I::IntoIter: ExactSizeIterator<Item = U>,
     U: Serialize<T>,
@@ -176,7 +176,7 @@ where
     }
 }
 
-pub struct SeqIter<'a, T: Schema> {
+pub struct SeqIter<'a, T: Formula> {
     len: usize,
     input: &'a [u8],
     marker: PhantomData<[Access<'a, T>]>,
@@ -184,7 +184,7 @@ pub struct SeqIter<'a, T: Schema> {
 
 impl<'a, T> Iterator for SeqIter<'a, T>
 where
-    T: Schema,
+    T: Formula,
 {
     type Item = Access<'a, T>;
 
@@ -208,7 +208,7 @@ where
 
 impl<'a, T> ExactSizeIterator for SeqIter<'a, T>
 where
-    T: Schema,
+    T: Formula,
 {
     #[inline(always)]
     fn len(&self) -> usize {

@@ -1,17 +1,17 @@
 //!
-//! This module provides schema for serializing unsized types through a reference.
+//! This module provides formula for serializing unsized types through a reference.
 //!
 
 use core::{marker::PhantomData, mem::size_of};
 
 use crate::{
     deserialize::{Deserialize, DeserializeError, Deserializer},
-    schema::{Schema, SizedSchema},
+    formula::{Formula, UnsizedFormula},
     serialize::{Serialize, Serializer},
     size::FixedUsize,
 };
 
-/// `Ref` is a schema wrapper.
+/// `Ref` is a formula wrapper.
 /// It serializes the value in dynamic payload
 /// and stores relative offset and the ref metadata.
 /// Metadata is required for unsized types and is `()` for all sized types.
@@ -22,17 +22,17 @@ pub struct Ref<S: ?Sized> {
     marker: PhantomData<fn() -> S>,
 }
 
-impl<S: ?Sized> Schema for Ref<S> where S: Schema {}
-impl<S: ?Sized> SizedSchema for Ref<S>
+impl<S: ?Sized> UnsizedFormula for Ref<S> where S: UnsizedFormula {}
+impl<S: ?Sized> Formula for Ref<S>
 where
-    S: Schema,
+    S: UnsizedFormula,
 {
-    const SIZE: usize = <FixedUsize as SizedSchema>::SIZE * 2;
+    const SIZE: usize = <FixedUsize as Formula>::SIZE * 2;
 }
 
 impl<S, T> Serialize<Ref<S>> for T
 where
-    S: Schema + ?Sized,
+    S: UnsizedFormula + ?Sized,
     T: Serialize<S>,
 {
     #[inline(always)]
@@ -62,7 +62,7 @@ where
 
 impl<'a, S, T> Deserialize<'a, Ref<S>> for T
 where
-    S: Schema + ?Sized,
+    S: UnsizedFormula + ?Sized,
     T: Deserialize<'a, S>,
 {
     fn deserialize(len: usize, input: &'a [u8]) -> Result<Self, DeserializeError> {

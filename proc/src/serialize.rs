@@ -1,15 +1,15 @@
 use proc_macro2::TokenStream;
 
-use crate::attrs::{parse_attributes, Args, Schema};
+use crate::attrs::{parse_attributes, Args, Formula};
 
 struct Config {
-    reference: Option<Schema>,
-    no_reference: Option<Schema>,
+    reference: Option<Formula>,
+    owned: Option<Formula>,
 
     variant: Option<syn::Ident>,
 
-    /// Signals if fields should be checked to match on schema.
-    /// `false` if `schema` is inferred to `Self`.
+    /// Signals if fields should be checked to match on formula.
+    /// `false` if `formula` is inferred to `Self`.
     check_fields: bool,
 }
 
@@ -22,10 +22,10 @@ impl Config {
     ) -> Self {
         let (_, type_generics, _) = generics.split_for_impl();
 
-        match (args.serialize.or(args.common), args.no_reference) {
+        match (args.serialize.or(args.common), args.owned) {
             (None, Some(None)) if generics.params.is_empty() => Config {
                 reference: None,
-                no_reference: Some(Schema {
+                owned: Some(Formula {
                     ty: syn::parse_quote!(Self),
                     generics: Default::default(),
                 }),
@@ -33,7 +33,7 @@ impl Config {
                 check_fields: false,
             },
             (None, None) if generics.params.is_empty() => Config {
-                reference: Some(Schema {
+                reference: Some(Formula {
                     ty: syn::parse_quote!(#ident #type_generics),
                     generics: syn::Generics {
                         lt_token: Some(Default::default()),
@@ -42,7 +42,7 @@ impl Config {
                         where_clause: None,
                     },
                 }),
-                no_reference: Some(Schema {
+                owned: Some(Formula {
                     ty: syn::parse_quote!(Self),
                     generics: syn::Generics {
                         lt_token: None,
@@ -56,13 +56,13 @@ impl Config {
             },
             (None, Some(None)) => {
                 // Add predicates that fields implement
-                // `T: Schema` and `T: Serialize<T>`
+                // `T: Formula` and `T: Serialize<T>`
                 let predicates = data
                     .fields
                     .iter()
                     .map(|field| -> syn::WherePredicate {
                         let ty = &field.ty;
-                        syn::parse_quote! { #ty: ::alkahest::Schema }
+                        syn::parse_quote! { #ty: ::alkahest::UnsizedFormula }
                     })
                     .chain(data.fields.iter().map(|field| -> syn::WherePredicate {
                         let ty = &field.ty;
@@ -82,7 +82,7 @@ impl Config {
 
                 Config {
                     reference: None,
-                    no_reference: Some(Schema {
+                    owned: Some(Formula {
                         ty: syn::parse_quote!(Self),
                         generics,
                     }),
@@ -92,13 +92,13 @@ impl Config {
             }
             (None, None) => {
                 // Add predicates that fields implement
-                // `T: Schema` and `&T: Serialize<T>`
+                // `T: Formula` and `&T: Serialize<T>`
                 let predicates = data
                     .fields
                     .iter()
                     .map(|field| -> syn::WherePredicate {
                         let ty = &field.ty;
-                        syn::parse_quote! { #ty: ::alkahest::Schema }
+                        syn::parse_quote! { #ty: ::alkahest::UnsizedFormula }
                     })
                     .chain(data.fields.iter().map(|field| -> syn::WherePredicate {
                         let ty = &field.ty;
@@ -116,19 +116,19 @@ impl Config {
                     }),
                 };
 
-                let reference = Schema {
+                let reference = Formula {
                     ty: syn::parse_quote!(#ident #type_generics),
                     generics,
                 };
 
                 // Add predicates that fields implement
-                // `T: Schema` and `T: Serialize<T>`
+                // `T: Formula` and `T: Serialize<T>`
                 let predicates = data
                     .fields
                     .iter()
                     .map(|field| -> syn::WherePredicate {
                         let ty = &field.ty;
-                        syn::parse_quote! { #ty: ::alkahest::Schema }
+                        syn::parse_quote! { #ty: ::alkahest::UnsizedFormula }
                     })
                     .chain(data.fields.iter().map(|field| -> syn::WherePredicate {
                         let ty = &field.ty;
@@ -146,20 +146,20 @@ impl Config {
                     }),
                 };
 
-                let no_reference = Schema {
+                let owned = Formula {
                     ty: syn::parse_quote!(Self),
                     generics,
                 };
 
                 Config {
                     reference: Some(reference),
-                    no_reference: Some(no_reference),
+                    owned: Some(owned),
                     variant: args.variant,
                     check_fields: false,
                 }
             }
-            (None, Some(Some(no_reference))) => Config {
-                no_reference: Some(no_reference),
+            (None, Some(Some(owned))) => Config {
+                owned: Some(owned),
                 reference: None,
                 variant: args.variant,
                 check_fields: true,
@@ -175,12 +175,12 @@ impl Config {
                 }
                 Config {
                     reference: Some(reference.clone()),
-                    no_reference: None,
+                    owned: None,
                     variant: args.variant,
                     check_fields: true,
                 }
             }
-            (Some(mut reference), Some(Some(no_reference))) => {
+            (Some(mut reference), Some(Some(owned))) => {
                 if reference.generics.params.is_empty() {
                     reference.generics.lt_token = Some(Default::default());
                     reference.generics.gt_token = Some(Default::default());
@@ -191,7 +191,7 @@ impl Config {
                 }
                 Config {
                     reference: Some(reference),
-                    no_reference: Some(no_reference),
+                    owned: Some(owned),
                     variant: args.variant,
                     check_fields: true,
                 }
@@ -228,7 +228,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                     .iter()
                     .map(|field| {
                         quote::format_ident!(
-                            "__alkahest_schema_field_{}_idx_is",
+                            "__alkahest_formula_field_{}_idx_is",
                             field.ident.as_ref().unwrap(),
                         )
                     })
@@ -251,13 +251,13 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 })
                 .collect::<Vec<_>>();
 
-            match (cfg.reference, cfg.no_reference) {
+            match (cfg.reference, cfg.owned) {
                 (None, None) => unreachable!(),
                 (Some(reference), None) => {
-                    let schema_type = &reference.ty;
+                    let formula_type = &reference.ty;
                     let check_field_count = if cfg.check_fields {
                         quote::quote! {
-                            let _: [(); #field_count] = <#schema_type>::__alkahest_schema_field_count();
+                            let _: [(); #field_count] = <#formula_type>::__alkahest_formula_field_count();
                         }
                     } else {
                         quote::quote! {}
@@ -280,14 +280,14 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
 
                     let (impl_generics, _type_generics, where_clause) = generics.split_for_impl();
                     Ok(quote::quote! {
-                        impl #impl_generics ::alkahest::Serialize<#schema_type> for &'ser #ident #type_generics #where_clause {
+                        impl #impl_generics ::alkahest::Serialize<#formula_type> for &'ser #ident #type_generics #where_clause {
                             fn serialize(self, offset: ::alkahest::private::usize, output: &mut [::alkahest::private::u8]) -> ::alkahest::private::Result<(::alkahest::private::usize, ::alkahest::private::usize), ::alkahest::private::usize> {
                                 use ::alkahest::private::Result;
 
                                 // Checks compilation of code in the block.
                                 #[allow(unused)]
                                 let _ = || {
-                                    #(let _: [(); #field_check_ids] = <#schema_type>::#field_check_names();)*
+                                    #(let _: [(); #field_check_ids] = <#formula_type>::#field_check_names();)*
                                     #check_field_count
                                 };
 
@@ -298,11 +298,11 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                 let mut err = Result::<(), usize>::Ok(());
 
                                 #(
-                                    let with_schema = ::alkahest::private::with_schema(|s: &#schema_type| &s.#field_names);
+                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names);
                                     if let Result::Err(size) = err {
-                                        err = Result::Err(size + with_schema.size_value(&self.#field_names));
+                                        err = Result::Err(size + with_formula.size_value(&self.#field_names));
                                     } else {
-                                        if let Result::Err(size) = with_schema.serialize_value(&mut ser, &self.#field_names) {
+                                        if let Result::Err(size) = with_formula.serialize_value(&mut ser, &self.#field_names) {
                                             err = Result::Err(size);
                                         }
                                     }
@@ -316,14 +316,14 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                 #[allow(unused_mut)]
                                 let mut size = 0;
                                 #(
-                                    let with_schema = ::alkahest::private::with_schema(|s: &#schema_type| &s.#field_names);
-                                    size += with_schema.size_value(&self.#field_names);
+                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names);
+                                    size += with_formula.size_value(&self.#field_names);
                                 )*
                                 size
                             }
                         }
 
-                        impl #impl_generics ::alkahest::Serialize<#schema_type> for #ident #type_generics #where_clause {
+                        impl #impl_generics ::alkahest::Serialize<#formula_type> for #ident #type_generics #where_clause {
                             fn serialize(self, offset: ::alkahest::private::usize, output: &mut [::alkahest::private::u8]) -> ::alkahest::private::Result<(::alkahest::private::usize, ::alkahest::private::usize), ::alkahest::private::usize> {
                                 todo!()
                             }
@@ -333,11 +333,11 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         }
                     })
                 }
-                (reference, Some(no_reference)) => {
-                    let schema_type = &no_reference.ty;
+                (reference, Some(owned)) => {
+                    let formula_type = &owned.ty;
                     let check_field_count = if cfg.check_fields {
                         quote::quote! {
-                            let _: [(); #field_count] = <#schema_type>::__alkahest_schema_field_count();
+                            let _: [(); #field_count] = <#formula_type>::__alkahest_formula_field_count();
                         }
                     } else {
                         quote::quote! {}
@@ -345,13 +345,11 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
 
                     let mut generics = input.generics.clone();
 
-                    generics.lt_token = generics.lt_token.or(no_reference.generics.lt_token);
-                    generics.gt_token = generics.gt_token.or(no_reference.generics.gt_token);
-                    generics
-                        .params
-                        .extend(no_reference.generics.params.into_iter());
+                    generics.lt_token = generics.lt_token.or(owned.generics.lt_token);
+                    generics.gt_token = generics.gt_token.or(owned.generics.gt_token);
+                    generics.params.extend(owned.generics.params.into_iter());
 
-                    if let Some(where_clause) = no_reference.generics.where_clause {
+                    if let Some(where_clause) = owned.generics.where_clause {
                         generics
                             .make_where_clause()
                             .predicates
@@ -361,14 +359,14 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                     let (impl_generics, _type_generics, where_clause) = generics.split_for_impl();
 
                     let mut tokens = quote::quote! {
-                        impl #impl_generics ::alkahest::Serialize<#schema_type> for #ident #type_generics #where_clause {
+                        impl #impl_generics ::alkahest::Serialize<#formula_type> for #ident #type_generics #where_clause {
                             fn serialize(self, offset: ::alkahest::private::usize, output: &mut [::alkahest::private::u8]) -> ::alkahest::private::Result<(::alkahest::private::usize, ::alkahest::private::usize), ::alkahest::private::usize> {
                                 use ::alkahest::private::Result;
 
                                 // Checks compilation of code in the block.
                                 #[allow(unused)]
                                 let _ = || {
-                                    #(let _: [(); #field_check_ids] = <#schema_type>::#field_check_names();)*
+                                    #(let _: [(); #field_check_ids] = <#formula_type>::#field_check_names();)*
                                     #check_field_count
                                 };
 
@@ -379,11 +377,11 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                 let mut err = Result::<(), usize>::Ok(());
 
                                 #(
-                                    let with_schema = ::alkahest::private::with_schema(|s: &#schema_type| &s.#field_names);
+                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names);
                                     if let Result::Err(size) = err {
-                                        err = Result::Err(size + with_schema.size_value(self.#field_names));
+                                        err = Result::Err(size + with_formula.size_value(self.#field_names));
                                     } else {
-                                        if let Result::Err(size) = with_schema.serialize_value(&mut ser, self.#field_names) {
+                                        if let Result::Err(size) = with_formula.serialize_value(&mut ser, self.#field_names) {
                                             err = Result::Err(size);
                                         }
                                     }
@@ -397,8 +395,8 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                 #[allow(unused_mut)]
                                 let mut size = 0;
                                 #(
-                                    let with_schema = ::alkahest::private::with_schema(|s: &#schema_type| &s.#field_names);
-                                    size += with_schema.size_value(self.#field_names);
+                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names);
+                                    size += with_formula.size_value(self.#field_names);
                                 )*
                                 size
                             }
@@ -406,7 +404,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                     };
 
                     if let Some(reference) = reference {
-                        let schema_type = &reference.ty;
+                        let formula_type = &reference.ty;
                         generics = input.generics.clone();
 
                         generics.lt_token = generics.lt_token.or(reference.generics.lt_token);
@@ -426,7 +424,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                             generics.split_for_impl();
 
                         tokens.extend(quote::quote! {
-                            impl #impl_generics ::alkahest::Serialize<#schema_type> for &'ser #ident #type_generics #where_clause {
+                            impl #impl_generics ::alkahest::Serialize<#formula_type> for &'ser #ident #type_generics #where_clause {
                                 fn serialize(self, offset: ::alkahest::private::usize, output: &mut [::alkahest::private::u8]) -> ::alkahest::private::Result<(::alkahest::private::usize, ::alkahest::private::usize), ::alkahest::private::usize> {
                                     use ::alkahest::private::Result;
 
@@ -436,11 +434,11 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                     let mut err = Result::<(), usize>::Ok(());
 
                                     #(
-                                        let with_schema = ::alkahest::private::with_schema(|s: &#schema_type| &s.#field_names);
+                                        let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names);
                                         if let Result::Err(size) = err {
-                                            err = Result::Err(size + with_schema.size_value(&self.#field_names));
+                                            err = Result::Err(size + with_formula.size_value(&self.#field_names));
                                         } else {
-                                            if let Result::Err(size) = with_schema.serialize_value(&mut ser, &self.#field_names) {
+                                            if let Result::Err(size) = with_formula.serialize_value(&mut ser, &self.#field_names) {
                                                 err = Result::Err(size);
                                             }
                                         }
@@ -454,8 +452,8 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                     #[allow(unused_mut)]
                                     let mut size = 0;
                                     #(
-                                        let with_schema = ::alkahest::private::with_schema(|s: &#schema_type| &s.#field_names);
-                                        size += with_schema.size_value(&self.#field_names);
+                                        let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names);
+                                        size += with_formula.size_value(&self.#field_names);
                                     )*
                                     size
                                 }

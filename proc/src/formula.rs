@@ -12,31 +12,31 @@ pub fn derive(input: proc_macro::TokenStream, sized: bool) -> syn::Result<TokenS
         if let Some(non_exhaustive) = args.non_exhaustive {
             return Err(syn::Error::new_spanned(
                 non_exhaustive,
-                "SizedSchema cannot be non-exhaustive",
+                "SizedFormula cannot be non-exhaustive",
             ));
         }
     }
 
-    if let Some(schema) = args
+    if let Some(formula) = args
         .serialize
         .or(args.deserialize)
         .or(args.common)
-        .or(args.no_reference.flatten())
+        .or(args.owned.flatten())
     {
         return Err(syn::Error::new_spanned(
-            schema.ty,
-            "Schema type should not be specified for `Serialize` and `Deserialize` when type is also `Schema`",
+            formula.ty,
+            "Formula type should not be specified for `Serialize` and `Deserialize` when type is also `Formula`",
         ));
     }
 
     if args.variant.is_some() {
         return Err(syn::Error::new_spanned(
             input,
-            "Variant should not be specified for `Serialize` when type is also `Schema`",
+            "Variant should not be specified for `Serialize` when type is also `Formula`",
         ));
     }
 
-    let mut schema_generics = input.generics.clone();
+    let mut formula_generics = input.generics.clone();
     let all_field_types: Vec<_>;
     let field_check_names: Vec<_>;
     let field_check_ids: Vec<_>;
@@ -46,7 +46,7 @@ pub fn derive(input: proc_macro::TokenStream, sized: bool) -> syn::Result<TokenS
         syn::Data::Union(data) => {
             return Err(syn::Error::new_spanned(
                 data.union_token,
-                "Schema cannot be derived for unions",
+                "Formula cannot be derived for unions",
             ))
         }
         syn::Data::Struct(data) => {
@@ -59,7 +59,7 @@ pub fn derive(input: proc_macro::TokenStream, sized: bool) -> syn::Result<TokenS
                     .iter()
                     .map(|field| {
                         quote::format_ident!(
-                            "__alkahest_schema_field_{}_idx_is",
+                            "__alkahest_formula_field_{}_idx_is",
                             field.ident.as_ref().unwrap(),
                         )
                     })
@@ -79,10 +79,10 @@ pub fn derive(input: proc_macro::TokenStream, sized: bool) -> syn::Result<TokenS
 
     if !all_field_types.is_empty() {
         let predicates = all_field_types.iter().map(|ty| -> syn::WherePredicate {
-            syn::parse_quote_spanned! { ty.span() => #ty: ::alkahest::Schema }
+            syn::parse_quote_spanned! { ty.span() => #ty: ::alkahest::UnsizedFormula }
         });
 
-        let where_clause = schema_generics.make_where_clause();
+        let where_clause = formula_generics.make_where_clause();
         where_clause.predicates.extend(predicates);
     }
 
@@ -91,8 +91,8 @@ pub fn derive(input: proc_macro::TokenStream, sized: bool) -> syn::Result<TokenS
         syn::Data::Struct(_) => {
             let (impl_generics, type_generics, where_clause) = input.generics.split_for_impl();
 
-            let (schema_impl_generics, schema_type_generics, schema_where_clause) =
-                schema_generics.split_for_impl();
+            let (formula_impl_generics, formula_type_generics, formula_where_clause) =
+                formula_generics.split_for_impl();
 
             let mut tokens = quote::quote! {
                 impl #impl_generics #ident #type_generics #where_clause {
@@ -106,35 +106,35 @@ pub fn derive(input: proc_macro::TokenStream, sized: bool) -> syn::Result<TokenS
 
                     #[doc(hidden)]
                     #[inline(always)]
-                    pub const fn __alkahest_schema_field_count() -> [(); #field_count] {
+                    pub const fn __alkahest_formula_field_count() -> [(); #field_count] {
                         [(); #field_count]
                     }
                 }
 
-                impl #schema_impl_generics ::alkahest::Schema for #ident #schema_type_generics #schema_where_clause {}
+                impl #formula_impl_generics ::alkahest::UnsizedFormula for #ident #formula_type_generics #formula_where_clause {}
             };
 
             if sized {
-                let mut sized_schema_generics = schema_generics.clone();
+                let mut sized_formula_generics = formula_generics.clone();
 
                 if !all_field_types.is_empty() {
                     let predicates = all_field_types.iter().map(|ty| -> syn::WherePredicate {
-                        syn::parse_quote_spanned! { ty.span() => #ty: ::alkahest::SizedSchema }
+                        syn::parse_quote_spanned! { ty.span() => #ty: ::alkahest::Formula }
                     });
 
-                    let where_clause = sized_schema_generics.make_where_clause();
+                    let where_clause = sized_formula_generics.make_where_clause();
                     where_clause.predicates.extend(predicates);
                 }
 
                 let (
-                    sized_schema_impl_generics,
-                    sized_schema_type_generics,
-                    sized_schema_where_clause,
-                ) = sized_schema_generics.split_for_impl();
+                    sized_formula_impl_generics,
+                    sized_formula_type_generics,
+                    sized_formula_where_clause,
+                ) = sized_formula_generics.split_for_impl();
 
                 tokens.extend(quote::quote! {
-                    impl #sized_schema_impl_generics ::alkahest::SizedSchema for #ident #sized_schema_type_generics #sized_schema_where_clause {
-                        const SIZE: ::alkahest::private::usize = 0 #( + <#all_field_types as ::alkahest::SizedSchema>::SIZE)*;
+                    impl #sized_formula_impl_generics ::alkahest::Formula for #ident #sized_formula_type_generics #sized_formula_where_clause {
+                        const SIZE: ::alkahest::private::usize = 0 #( + <#all_field_types as ::alkahest::Formula>::SIZE)*;
                     }
                 });
             }
