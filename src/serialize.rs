@@ -1,6 +1,6 @@
 use core::mem::size_of;
 
-use crate::{formula::UnsizedFormula, size::FixedUsize};
+use crate::{formula::UnsizedFormula, size::FixedUsize, Formula};
 
 /// Trait for types that can be serialized
 /// into raw bytes with specified `F: `[`Formula`].
@@ -72,7 +72,7 @@ impl<'de> Serializer<'de> {
     /// Value is written to the output buffer associated with this serializer.
     /// Serializer takes care of moving data around if necessary.
     #[inline]
-    pub fn serialize_value<F, T>(&mut self, value: T) -> Result<(), usize>
+    pub fn serialize_unsized<F, T>(&mut self, value: T) -> Result<(), usize>
     where
         F: UnsizedFormula + ?Sized,
         T: Serialize<F>,
@@ -83,6 +83,32 @@ impl<'de> Serializer<'de> {
         ) {
             Ok((heap, stack)) => {
                 self.stack = self.heap + stack;
+                self.heap += heap;
+                Ok(())
+            }
+            Err(size) => Err(size + self.written()),
+        }
+    }
+
+    /// Serialize a value according to specified formula.
+    /// Value is written to the output buffer associated with this serializer.
+    /// Serializer takes care of moving data around if necessary.
+    #[inline]
+    pub fn serialize_sized<F, T>(&mut self, value: T) -> Result<(), usize>
+    where
+        F: Formula + ?Sized,
+        T: Serialize<F>,
+    {
+        match value.serialize(
+            self.offset + self.heap,
+            &mut self.output[self.heap..self.stack],
+        ) {
+            Ok((heap, stack)) => {
+                debug_assert!(
+                    stack <= F::SIZE,
+                    "Incorrect `Serialize` implementation consumes more than `Formula::SIZE` bytes"
+                );
+                self.stack = self.heap + stack.max(F::SIZE); // Padding.
                 self.heap += heap;
                 Ok(())
             }
@@ -107,9 +133,9 @@ impl<'de> Serializer<'de> {
     #[inline]
     pub fn serialize_self<T>(&mut self, value: T) -> Result<(), usize>
     where
-        T: UnsizedFormula + Serialize<T>,
+        T: Formula + Serialize<T>,
     {
-        self.serialize_value::<T, T>(value)
+        self.serialize_sized::<T, T>(value)
     }
 
     /// Moves "stack" to "heap".
@@ -144,7 +170,7 @@ where
 
     let mut ser = Serializer::new(HEADER_SIZE, &mut output[HEADER_SIZE..]);
 
-    ser.serialize_value::<F, T>(value)
+    ser.serialize_unsized::<F, T>(value)
         .map_err(|size| size + HEADER_SIZE)?;
     let (address, size) = ser.flush();
 

@@ -22,12 +22,12 @@ where
         let mut ser = Serializer::new(offset, output);
         match self {
             Some(value) => {
-                ser.serialize_value::<u8, u8>(1)?;
-                ser.serialize_value(value)?;
+                ser.serialize_self::<u8>(1)?;
+                ser.serialize_unsized(value)?;
                 Ok(ser.finish())
             }
             None => {
-                ser.serialize_value::<u8, u8>(0)?;
+                ser.serialize_self::<u8>(0)?;
                 ser.waste(T::SIZE)?;
                 Ok(ser.finish())
             }

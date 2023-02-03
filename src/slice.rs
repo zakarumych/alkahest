@@ -24,7 +24,7 @@ where
         for elem in self.into_iter() {
             match err {
                 None => {
-                    err = ser.serialize_value::<F, T>(elem).err();
+                    err = ser.serialize_sized::<F, T>(elem).err();
                 }
                 Some(size) => {
                     err = Some(size + <T as Serialize<F>>::size(elem));

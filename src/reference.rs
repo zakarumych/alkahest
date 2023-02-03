@@ -39,7 +39,7 @@ where
     fn serialize(self, offset: usize, output: &mut [u8]) -> Result<(usize, usize), usize> {
         let mut ser = Serializer::new(offset, output);
 
-        if let Err(size) = ser.serialize_value(self) {
+        if let Err(size) = ser.serialize_unsized(self) {
             return Err(size + size_of::<[FixedUsize; 2]>());
         }
 

@@ -95,7 +95,7 @@ macro_rules! impl_for_tuple {
                     if let Err(size) = err {
                         err = Err(size + <$b as Serialize<$a>>::size($b));
                     } else {
-                        match ser.serialize_value::<$a, $b>($b) {
+                        match ser.serialize_sized::<$a, $b>($b) {
                             Ok(()) => {}
                             Err(size) => {
                                 err = Err(size);
@@ -107,7 +107,7 @@ macro_rules! impl_for_tuple {
                 if let Err(size) = err {
                     err = Err(size + <$bt as Serialize<$at>>::size($bt));
                 } else {
-                    match ser.serialize_value::<$at, $bt>($bt) {
+                    match ser.serialize_unsized::<$at, $bt>($bt) {
                         Ok(()) => {}
                         Err(size) => {
                             err = Err(size);

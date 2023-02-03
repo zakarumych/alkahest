@@ -28,7 +28,7 @@ where
             if let Err(size) = err {
                 err = Err(size + <T as Serialize<F>>::size(elem));
             } else {
-                if let Err(size) = ser.serialize_value::<F, T>(elem) {
+                if let Err(size) = ser.serialize_sized::<F, T>(elem) {
                     err = Err(size);
                 }
             }
@@ -60,7 +60,7 @@ where
             if let Err(size) = err {
                 err = Err(size + <&'de T as Serialize<F>>::size(elem));
             } else {
-                if let Err(size) = ser.serialize_value::<F, &'de T>(elem) {
+                if let Err(size) = ser.serialize_sized::<F, &'de T>(elem) {
                     err = Err(size);
                 }
             }
