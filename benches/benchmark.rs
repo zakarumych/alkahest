@@ -8,9 +8,9 @@ enum TestFormula {
     Bar { c: Seq<u32>, d: Seq<Seq<u32>> },
 }
 
-enum TestFormulaHeader<'a> {
+enum TestFormulaHeader<'de> {
     Foo(<TestFormulaFooSerialize<u32, u32> as Serialize<TestFormula>>::Header),
-    Bar(<TestFormulaBarSerialize<&'a [u32], &'a [Vec<u32>]> as Serialize<TestFormula>>::Header),
+    Bar(<TestFormulaBarSerialize<&'de [u32], &'de [Vec<u32>]> as Serialize<TestFormula>>::Header),
 }
 
 #[derive(serde::Serialize, serde::Deserialize, rkyv::Archive, rkyv::Serialize)]
@@ -19,8 +19,8 @@ enum TestData {
     Bar { c: Vec<u32>, d: Vec<Vec<u32>> },
 }
 
-impl<'a> alkahest::Serialize<TestFormula> for &'a TestData {
-    type Header = TestFormulaHeader<'a>;
+impl<'de> alkahest::Serialize<TestFormula> for &'de TestData {
+    type Header = TestFormulaHeader<'de>;
 
     fn serialize_body(self, output: &mut [u8]) -> Result<(Self::Header, usize), usize> {
         match *self {
@@ -35,13 +35,13 @@ impl<'a> alkahest::Serialize<TestFormula> for &'a TestData {
         }
     }
 
-    fn serialize_header(header: TestFormulaHeader<'a>, output: &mut [u8], offset: usize) -> bool {
+    fn serialize_header(header: TestFormulaHeader<'de>, output: &mut [u8], offset: usize) -> bool {
         match header {
             TestFormulaHeader::Foo(header) => {
                 TestFormulaFooSerialize::<u32, u32>::serialize_header(header, output, offset)
             }
             TestFormulaHeader::Bar(header) => {
-                TestFormulaBarSerialize::<&'a [u32], &'a [Vec<u32>]>::serialize_header(
+                TestFormulaBarSerialize::<&'de [u32], &'de [Vec<u32>]>::serialize_header(
                     header, output, offset,
                 )
             }
@@ -198,7 +198,7 @@ criterion_main!(benches);
 /// Writes the alkahest into provided bytes slice.
 /// Returns number of bytes written.
 
-pub fn alkahest_to_vec<'a, T, P>(data: P) -> Vec<u8>
+pub fn alkahest_to_vec<'de, T, P>(data: P) -> Vec<u8>
 where
     T: UnsizedFormula,
     P: alkahest::Serialize<T>,

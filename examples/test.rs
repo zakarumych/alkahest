@@ -1,5 +1,5 @@
 use alkahest::{
-    deserialize, serialize, serialized_size, Deserialize, Formula, Ref, Serialize, UnsizedFormula,
+    deserialize, serialize, serialized_size, Deserialize, Formula, Serialize, UnsizedFormula,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Formula, Serialize, Deserialize)]
@@ -29,15 +29,15 @@ fn main() {
         c: vec![2..4, 4..6],
     };
 
-    let size = serialized_size::<Test<[Ref<[u32]>]>, _>(value.clone());
+    let size = serialized_size::<Test<[Vec<u32>]>, _>(value.clone());
     println!("size: {}", size);
 
     let mut buffer = vec![0; size];
 
-    let size = serialize::<Test<[Ref<[u32]>]>, _>(value, &mut buffer).unwrap();
+    let size = serialize::<Test<[Vec<u32>]>, _>(value, &mut buffer).unwrap();
     assert_eq!(size, buffer.len());
 
-    let (value, size) = deserialize::<Test<[Ref<[u32]>]>, TestS<Vec<Vec<u32>>>>(&buffer).unwrap();
+    let (value, size) = deserialize::<Test<[Vec<u32>]>, TestS<Vec<Vec<u32>>>>(&buffer).unwrap();
     assert_eq!(size, buffer.len());
 
     assert_eq!(value.a, 1);

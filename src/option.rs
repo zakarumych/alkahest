@@ -1,77 +1,76 @@
-use crate::{Access, Formula, Serialize};
+use crate::{
+    deserialize::{Deserialize, DeserializeError, Deserializer},
+    formula::{Formula, NonRefFormula, UnsizedFormula},
+    serialize::{Serialize, Serializer},
+};
 
+impl<T> UnsizedFormula for Option<T> where T: Formula {}
 impl<T> Formula for Option<T>
 where
     T: Formula,
 {
-    type Access<'a> = Option<Access<'a, T>>;
-
-    #[inline(always)]
-    fn header() -> usize {
-        1 + <T as Formula>::header()
-    }
-
-    #[inline(always)]
-    fn has_body() -> bool {
-        <T as Formula>::has_body()
-    }
-
-    #[inline(always)]
-    fn access<'a>(input: &'a [u8]) -> Access<'a, Self> {
-        if input[0] == 0 {
-            None
-        } else {
-            Some(<T as Formula>::access(&input[1..]))
-        }
-    }
+    const SIZE: usize = 1 + T::SIZE;
 }
+impl<T> NonRefFormula for Option<T> where T: Formula {}
 
 impl<T, U> Serialize<Option<T>> for Option<U>
 where
     T: Formula,
     U: Serialize<T>,
 {
-    type Header = Option<U::Header>;
-
-    #[inline(always)]
-    fn serialize_body(self, output: &mut [u8]) -> Result<(Self::Header, usize), usize> {
+    fn serialize(self, offset: usize, output: &mut [u8]) -> Result<(usize, usize), usize> {
+        let mut ser = Serializer::new(offset, output);
         match self {
-            None => Ok((None, 0)),
             Some(value) => {
-                let (header, offset) =
-                    <U as Serialize<T>>::serialize_body(value, &mut output[1..])?;
-                output[0] = 1;
-                Ok((Some(header), offset + 1))
+                ser.serialize_value::<u8, u8>(1)?;
+                ser.serialize_value(value)?;
+                Ok(ser.finish())
             }
-        }
-    }
-
-    #[inline(always)]
-    fn body_size(self) -> usize
-    where
-        Self: Sized,
-    {
-        match self {
-            None => 0,
-            Some(value) => <U as Serialize<T>>::body_size(value),
-        }
-    }
-
-    #[inline(always)]
-    fn serialize_header(header: Option<U::Header>, output: &mut [u8], offset: usize) -> bool {
-        if output.len() < <Option<T> as Formula>::header() {
-            return false;
-        }
-
-        match header {
             None => {
-                output[offset] = 0;
-                true
-            }
-            Some(header) => {
-                output[offset] = 1;
-                <U as Serialize<T>>::serialize_header(header, &mut output[1..], offset - 1)
+                ser.serialize_value::<u8, u8>(0)?;
+                ser.waste(T::SIZE)?;
+                Ok(ser.finish())
             }
         }
+    }
+}
+
+impl<'de, F, T> Deserialize<'de, Option<F>> for Option<T>
+where
+    F: Formula,
+    T: Deserialize<'de, F>,
+{
+    fn deserialize(len: usize, input: &'de [u8]) -> Result<Self, DeserializeError> {
+        let mut de = Deserializer::new(len, input)?;
+        let is_some = de.deserialize_self::<u8>()?;
+        if is_some != 0 {
+            Ok(Some(de.deserialize_sized()?))
+        } else {
+            de.consume(F::SIZE)?;
+            Ok(None)
+        }
+    }
+
+    fn deserialize_in_place(
+        &mut self,
+        len: usize,
+        input: &'de [u8],
+    ) -> Result<(), DeserializeError> {
+        let mut de = Deserializer::new(len, input)?;
+        let is_some = de.deserialize_self::<u8>()?;
+        if is_some != 0 {
+            match self {
+                Some(value) => {
+                    de.deserialize_in_place_sized::<F, T>(value)?;
+                }
+                None => {
+                    *self = Some(de.deserialize_sized()?);
+                }
+            }
+        } else {
+            de.consume(F::SIZE)?;
+            *self = None;
+        }
+        Ok(())
     }
 }

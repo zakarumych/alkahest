@@ -1,93 +1,53 @@
-use core::mem::size_of;
-
 use crate::{
-    formula::{Formula, Serialize},
-    FixedUsize,
+    deserialize::{Deserialize, DeserializeError},
+    formula::{NonRefFormula, UnsizedFormula},
+    serialize::Serialize,
 };
 
-/// `Formula` for runtime sized bytes array.
-///
-/// Packed from `impl `[`AsRef`]`<[u8]>`.
-/// Unpacks into `&[`[`u8`]`]`.
-///
-/// Serialized exactly as [`Str`] and [`Seq<u8>`].
-///
-/// [`Seq<u8>`]: crate::Seq
-/// [`Str`]: crate::Str
-pub enum Bytes {}
+/// A formula for a raw byte slices.
+/// Serializable from anything that implements `AsRef<[u8]>`.
+pub struct Bytes;
 
-impl Formula for Bytes {
-    type Access<'a> = &'a [u8];
-
-    #[inline(always)]
-    fn header() -> usize {
-        size_of::<[FixedUsize; 2]>()
-    }
-
-    #[inline(always)]
-    fn has_body() -> bool {
-        true
-    }
-
-    #[inline(always)]
-    fn access<'a>(input: &'a [u8]) -> &'a [u8] {
-        let len = &input[..size_of::<FixedUsize>()];
-        let len = FixedUsize::from_bytes(len.try_into().unwrap()).into();
-
-        let offset = &input[size_of::<FixedUsize>()..][..size_of::<FixedUsize>()];
-        let offset = FixedUsize::from_bytes(offset.try_into().unwrap()).into();
-
-        &input[offset..][..len]
-    }
-}
-
-#[repr(transparent)]
-pub struct BytesHeader {
-    len: FixedUsize,
-}
+impl UnsizedFormula for Bytes {}
+impl NonRefFormula for Bytes {}
 
 impl<T> Serialize<Bytes> for T
 where
     T: AsRef<[u8]>,
 {
-    type Header = BytesHeader;
-
     #[inline(always)]
-    fn serialize_body(self, output: &mut [u8]) -> Result<(BytesHeader, usize), usize> {
+    fn serialize(self, _offset: usize, output: &mut [u8]) -> Result<(usize, usize), usize> {
         let slice = self.as_ref();
-        let len = slice.len();
-
-        if output.len() < len {
-            return Err(len);
+        if slice.len() > output.len() {
+            return Err(slice.len());
         }
-
-        output[..len].copy_from_slice(slice);
-
-        Ok((
-            BytesHeader {
-                len: FixedUsize::truncated(len),
-            },
-            len,
-        ))
+        let at = output.len() - slice.len();
+        output[at..].copy_from_slice(slice);
+        Ok((0, slice.len()))
     }
 
     #[inline(always)]
-    fn body_size(self) -> usize {
+    fn size(self) -> usize {
         self.as_ref().len()
     }
+}
+
+impl<'de> Deserialize<'de, Bytes> for &'de [u8] {
+    #[inline(always)]
+    fn deserialize(len: usize, input: &'de [u8]) -> Result<Self, DeserializeError> {
+        if len > input.len() {
+            return Err(DeserializeError::OutOfBounds);
+        }
+        Ok(&input[input.len() - len..])
+    }
 
     #[inline(always)]
-    fn serialize_header(header: BytesHeader, output: &mut [u8], offset: usize) -> bool {
-        if output.len() < size_of::<[FixedUsize; 2]>() {
-            return false;
-        }
-
-        let offset = FixedUsize::truncated(offset);
-
-        output[..size_of::<FixedUsize>()].copy_from_slice(&header.len.to_bytes());
-        output[size_of::<FixedUsize>()..][..size_of::<FixedUsize>()]
-            .copy_from_slice(&offset.to_bytes());
-
-        true
+    fn deserialize_in_place(
+        &mut self,
+        len: usize,
+        input: &'de [u8],
+    ) -> Result<(), DeserializeError> {
+        *self = <Self as Deserialize<'de, Bytes>>::deserialize(len, input)?;
+        Ok(())
     }
 }

@@ -2,7 +2,7 @@ use core::{borrow::Borrow, mem::size_of};
 
 use crate::{
     deserialize::{Deserialize, DeserializeError},
-    formula::{Formula, UnsizedFormula},
+    formula::{Formula, NonRefFormula, UnsizedFormula},
     serialize::Serialize,
 };
 
@@ -19,6 +19,7 @@ macro_rules! impl_primitive {
         impl Formula for $ty {
             const SIZE: usize = size_of::<$ty>();
         }
+        impl NonRefFormula for $ty {}
 
         impl<T> Serialize<$ty> for T
         where
@@ -92,6 +93,7 @@ impl UnsizedFormula for bool {}
 impl Formula for bool {
     const SIZE: usize = 1;
 }
+impl NonRefFormula for bool {}
 
 impl<T> Serialize<bool> for T
 where

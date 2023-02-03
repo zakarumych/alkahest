@@ -2,24 +2,31 @@ use core::mem::size_of;
 
 use crate::{
     formula::{Formula, UnsizedFormula},
-    size::{FixedUsize, FixedUsizeType},
+    size::{FixedIsizeType, FixedUsize, FixedUsizeType},
 };
 
 #[derive(Debug)]
 pub enum DeserializeError {
-    /// The input is smaller than required to deserialize value.
+    /// Indicates that input buffer is smaller than
+    /// expected value length.
     OutOfBounds,
 
-    /// Serialized value has unexpected length.
+    /// Relative address points behind itself.
+    WrongAddress,
+
+    /// Incorrect expected value length.
     WrongLength,
 
-    /// Size value exceeds the maximum size for current architecture.
-    InvalidSize(FixedUsizeType),
+    /// Size value exceeds the maximum `usize` for current architecture.
+    InvalidUsize(FixedUsizeType),
+
+    /// Size value exceeds the maximum `isize` for current architecture.
+    InvalidIsize(FixedIsizeType),
 }
 
 /// Trait for types that can be deserialized
-/// from raw bytes with specified `S: `[`Formula`].
-pub trait Deserialize<'de, S: UnsizedFormula + ?Sized> {
+/// from raw bytes with specified `F: `[`Formula`].
+pub trait Deserialize<'de, F: UnsizedFormula + ?Sized> {
     /// Deserializes value from bytes slice.
     /// Returns deserialized value and the number of bytes consumed from
     /// the and of input.
@@ -50,14 +57,17 @@ pub struct Deserializer<'de> {
 }
 
 impl<'de> Deserializer<'de> {
-    pub fn new(len: usize, input: &'de [u8]) -> Self {
-        Deserializer { input, len }
+    pub fn new(len: usize, input: &'de [u8]) -> Result<Self, DeserializeError> {
+        if len > input.len() {
+            return Err(DeserializeError::OutOfBounds);
+        }
+        Ok(Deserializer { input, len })
     }
 
-    pub fn deserialize<S, T>(&mut self, len: usize) -> Result<T, DeserializeError>
+    pub fn deserialize<F, T>(&mut self, len: usize) -> Result<T, DeserializeError>
     where
-        S: UnsizedFormula + ?Sized,
-        T: Deserialize<'de, S>,
+        F: UnsizedFormula + ?Sized,
+        T: Deserialize<'de, F>,
     {
         if len > self.len {
             return Err(DeserializeError::OutOfBounds);
@@ -76,52 +86,50 @@ impl<'de> Deserializer<'de> {
         self.deserialize::<T, T>(T::SIZE)
     }
 
-    pub fn deserialize_sized<S, T>(&mut self) -> Result<T, DeserializeError>
+    pub fn deserialize_sized<F, T>(&mut self) -> Result<T, DeserializeError>
     where
-        S: Formula + ?Sized,
-        T: Deserialize<'de, S>,
+        F: Formula + ?Sized,
+        T: Deserialize<'de, F>,
     {
-        self.deserialize::<S, T>(S::SIZE)
+        self.deserialize::<F, T>(F::SIZE)
     }
 
-    pub fn deserialize_rest<S, T>(&mut self) -> Result<T, DeserializeError>
+    pub fn deserialize_rest<F, T>(&mut self) -> Result<T, DeserializeError>
     where
-        S: UnsizedFormula + ?Sized,
-        T: Deserialize<'de, S>,
+        F: UnsizedFormula + ?Sized,
+        T: Deserialize<'de, F>,
     {
-        self.deserialize::<S, T>(self.len)
+        self.deserialize::<F, T>(self.len)
     }
 
-    pub fn deserialize_in_place<S, T>(
+    pub fn deserialize_in_place<F, T>(
         &mut self,
         place: &mut T,
         len: usize,
     ) -> Result<(), DeserializeError>
     where
-        S: UnsizedFormula + ?Sized,
-        T: Deserialize<'de, S>,
+        F: UnsizedFormula + ?Sized,
+        T: Deserialize<'de, F> + ?Sized,
     {
         if len > self.len {
             return Err(DeserializeError::OutOfBounds);
         }
 
         T::deserialize_in_place(place, len, self.input)?;
-        let end = self.input.len() - len;
-        self.input = &self.input[..end];
-        self.len -= len;
+        self.consume(len)?;
 
         Ok(())
     }
 
-    pub fn deserialize_in_place_sized<S, T>(
+    pub fn deserialize_in_place_sized<F, T>(
         &mut self,
         place: &mut T,
     ) -> Result<(), DeserializeError>
     where
-        S: Formula + ?Sized,
-        T: Deserialize<'de, S>,
+        F: Formula + ?Sized,
+        T: Deserialize<'de, F>,
     {
-        self.deserialize_in_place::<S, T>(place, S::SIZE)
+        self.deserialize_in_place::<F, T>(place, F::SIZE)
     }
 
     pub fn deserialize_in_place_self<T>(&mut self, place: &mut T) -> Result<(), DeserializeError>
@@ -131,16 +139,29 @@ impl<'de> Deserializer<'de> {
         self.deserialize_in_place::<T, T>(place, T::SIZE)
     }
 
-    pub fn deserialize_in_place_rest<S, T>(&mut self, place: &mut T) -> Result<(), DeserializeError>
+    pub fn deserialize_in_place_rest<F, T>(&mut self, place: &mut T) -> Result<(), DeserializeError>
     where
-        S: UnsizedFormula + ?Sized,
-        T: Deserialize<'de, S>,
+        F: UnsizedFormula + ?Sized,
+        T: Deserialize<'de, F>,
     {
-        self.deserialize_in_place::<S, T>(place, self.len)
+        self.deserialize_in_place::<F, T>(place, self.len)
     }
 
+    #[inline]
+    pub fn consume(&mut self, len: usize) -> Result<(), DeserializeError> {
+        if len > self.len {
+            Err(DeserializeError::WrongLength)
+        } else {
+            let end = self.input.len() - len;
+            self.input = &self.input[..end];
+            self.len -= len;
+            Ok(())
+        }
+    }
+
+    #[inline]
     pub fn consume_tail(&mut self) {
-        self.len = 0;
+        let _ = self.consume(self.len);
     }
 
     pub fn finish_expected(self) {
@@ -156,10 +177,10 @@ impl<'de> Deserializer<'de> {
     }
 }
 
-pub fn deserialize<'de, S, T>(input: &'de [u8]) -> Result<(T, usize), DeserializeError>
+pub fn deserialize<'de, F, T>(input: &'de [u8]) -> Result<(T, usize), DeserializeError>
 where
-    S: UnsizedFormula + ?Sized,
-    T: Deserialize<'de, S>,
+    F: UnsizedFormula + ?Sized,
+    T: Deserialize<'de, F>,
 {
     const FIELD_SIZE: usize = size_of::<FixedUsize>();
     const HEADER_SIZE: usize = FIELD_SIZE * 2;
@@ -168,7 +189,7 @@ where
         return Err(DeserializeError::OutOfBounds);
     }
 
-    let mut de = Deserializer::new(HEADER_SIZE, &input[..HEADER_SIZE]);
+    let mut de = Deserializer::new(HEADER_SIZE, &input[..HEADER_SIZE])?;
 
     let size = de.deserialize::<FixedUsize, FixedUsize>(FIELD_SIZE)?;
     let address = de.deserialize::<FixedUsize, FixedUsize>(FIELD_SIZE)?;
@@ -182,8 +203,8 @@ where
         return Err(DeserializeError::OutOfBounds);
     }
 
-    let mut de = Deserializer::new(size.into(), &input[..usize::from(address)]);
-    let value = de.deserialize::<S, T>(size.into())?;
+    let mut de = Deserializer::new(size.into(), &input[..usize::from(address)])?;
+    let value = de.deserialize::<F, T>(size.into())?;
     de.finish_expected();
 
     Ok((value, address.into()))

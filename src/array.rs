@@ -1,21 +1,22 @@
 use crate::{
-    formula::{Formula, UnsizedFormula},
-    serialize::Serialize,
-    Deserialize, DeserializeError, Deserializer, Serializer,
+    deserialize::{Deserialize, DeserializeError, Deserializer},
+    formula::{Formula, NonRefFormula, UnsizedFormula},
+    serialize::{Serialize, Serializer},
 };
 
-impl<S, const N: usize> UnsizedFormula for [S; N] where S: Formula {}
-impl<S, const N: usize> Formula for [S; N]
+impl<F, const N: usize> UnsizedFormula for [F; N] where F: Formula {}
+impl<F, const N: usize> Formula for [F; N]
 where
-    S: Formula,
+    F: Formula,
 {
-    const SIZE: usize = N * S::SIZE;
+    const SIZE: usize = N * F::SIZE;
 }
+impl<F, const N: usize> NonRefFormula for [F; N] where F: Formula {}
 
-impl<S, T, const N: usize> Serialize<[S; N]> for [T; N]
+impl<F, T, const N: usize> Serialize<[F; N]> for [T; N]
 where
-    S: Formula,
-    T: Serialize<S>,
+    F: Formula,
+    T: Serialize<F>,
 {
     #[inline]
     fn serialize(self, offset: usize, output: &mut [u8]) -> Result<(usize, usize), usize> {
@@ -25,9 +26,9 @@ where
 
         self.into_iter().for_each(|elem: T| {
             if let Err(size) = err {
-                err = Err(size + <T as Serialize<S>>::size(elem));
+                err = Err(size + <T as Serialize<F>>::size(elem));
             } else {
-                if let Err(size) = ser.serialize_value::<S, T>(elem) {
+                if let Err(size) = ser.serialize_value::<F, T>(elem) {
                     err = Err(size);
                 }
             }
@@ -40,14 +41,14 @@ where
     #[inline]
     fn size(self) -> usize {
         self.into_iter()
-            .fold(0, |acc, elem: T| acc + <T as Serialize<S>>::size(elem))
+            .fold(0, |acc, elem: T| acc + <T as Serialize<F>>::size(elem))
     }
 }
 
-impl<'a, S, T, const N: usize> Serialize<[S; N]> for &'a [T; N]
+impl<'de, F, T, const N: usize> Serialize<[F; N]> for &'de [T; N]
 where
-    S: Formula,
-    &'a T: Serialize<S>,
+    F: Formula,
+    &'de T: Serialize<F>,
 {
     #[inline]
     fn serialize(self, offset: usize, output: &mut [u8]) -> Result<(usize, usize), usize> {
@@ -55,11 +56,11 @@ where
 
         let mut err = Ok::<(), usize>(());
 
-        self.iter().for_each(|elem: &'a T| {
+        self.iter().for_each(|elem: &'de T| {
             if let Err(size) = err {
-                err = Err(size + <&'a T as Serialize<S>>::size(elem));
+                err = Err(size + <&'de T as Serialize<F>>::size(elem));
             } else {
-                if let Err(size) = ser.serialize_value::<S, &'a T>(elem) {
+                if let Err(size) = ser.serialize_value::<F, &'de T>(elem) {
                     err = Err(size);
                 }
             }
@@ -72,30 +73,30 @@ where
     #[inline]
     fn size(self) -> usize {
         self.into_iter()
-            .fold(0, |acc, elem: &T| acc + <&T as Serialize<S>>::size(elem))
+            .fold(0, |acc, elem: &T| acc + <&T as Serialize<F>>::size(elem))
     }
 }
 
-impl<'a, S, T, const N: usize> Deserialize<'a, [S; N]> for [T; N]
+impl<'de, F, T, const N: usize> Deserialize<'de, [F; N]> for [T; N]
 where
-    S: Formula,
-    T: Deserialize<'a, S>,
+    F: Formula,
+    T: Deserialize<'de, F>,
 {
     #[inline(always)]
-    fn deserialize(len: usize, input: &'a [u8]) -> Result<Self, DeserializeError> {
-        if len != S::SIZE * N {
+    fn deserialize(len: usize, input: &'de [u8]) -> Result<Self, DeserializeError> {
+        if len != F::SIZE * N {
             return Err(DeserializeError::WrongLength);
         }
 
-        if input.len() < S::SIZE * N {
+        if input.len() < F::SIZE * N {
             return Err(DeserializeError::OutOfBounds);
         }
 
-        let mut des = Deserializer::new(len, input);
+        let mut des = Deserializer::new(len, input)?;
 
         let mut opts = [(); N].map(|_| None);
         opts.iter_mut().try_for_each(|slot| {
-            *slot = Some(des.deserialize_sized::<S, T>()?);
+            *slot = Some(des.deserialize_sized::<F, T>()?);
             Ok(())
         })?;
 
@@ -108,55 +109,17 @@ where
     fn deserialize_in_place(
         &mut self,
         len: usize,
-        input: &'a [u8],
+        input: &'de [u8],
     ) -> Result<(), DeserializeError> {
-        if len != S::SIZE * N {
+        if len != F::SIZE * N {
             return Err(DeserializeError::WrongLength);
         }
 
-        if input.len() < S::SIZE * N {
-            return Err(DeserializeError::OutOfBounds);
-        }
-
-        let mut des = Deserializer::new(len, input);
+        let mut des = Deserializer::new(len, input)?;
         self.iter_mut()
-            .try_for_each(|elem| des.deserialize_in_place_sized::<S, T>(elem))?;
+            .try_for_each(|elem| des.deserialize_in_place_sized::<F, T>(elem))?;
+
         des.finish_expected();
-
         Ok(())
-    }
-}
-
-trait MapArrayRef<const N: usize> {
-    type Item: Sized;
-
-    fn map_ref<'a, F, U>(&'a self, f: F) -> [U; N]
-    where
-        F: FnMut(&'a Self::Item) -> U;
-
-    fn map_mut<'a, F, U>(&'a mut self, f: F) -> [U; N]
-    where
-        F: FnMut(&'a mut Self::Item) -> U;
-}
-
-impl<T, const N: usize> MapArrayRef<N> for [T; N] {
-    type Item = T;
-
-    #[inline]
-    fn map_ref<'a, F, U>(&'a self, mut f: F) -> [U; N]
-    where
-        F: FnMut(&'a Self::Item) -> U,
-    {
-        let mut iter = self.iter();
-        [(); N].map(|()| f(iter.next().unwrap()))
-    }
-
-    #[inline]
-    fn map_mut<'a, F, U>(&'a mut self, mut f: F) -> [U; N]
-    where
-        F: FnMut(&'a mut Self::Item) -> U,
-    {
-        let mut iter = self.iter_mut();
-        [(); N].map(|()| f(iter.next().unwrap()))
     }
 }

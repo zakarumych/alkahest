@@ -43,26 +43,35 @@ pub trait UnsizedFormula {}
 
 /// Trait similar to `Formula` implemented by types
 /// for which size is known in advance.
-pub trait Formula: UnsizedFormula {
+pub trait Formula: UnsizedFormula + Sized {
     /// Size in bytes of serialized value with this formula.
     const SIZE: usize;
 }
 
-pub trait FormulaAlias {
-    type Alias;
-}
+/// Kind of formula that is not `Ref`.
+/// Should be implemented for all formulas except `Ref`
+/// and formulas that act as alias to `Ref` (like `Vec`).
+///
+/// This is used to prevent `Ref<Ref<F>>` formulas
+/// and prevent conflict impls with `Ref` by using `F: NonRefFormula`
+/// instead of `F: Formula`, that would guarantee that `F` is not `Ref`.
+pub trait NonRefFormula: UnsizedFormula {}
 
-impl<S, A> UnsizedFormula for S
-where
-    A: UnsizedFormula,
-    S: FormulaAlias<Alias = A>,
-{
-}
+// pub trait FormulaAlias {
+//     type Alias;
+// }
 
-impl<S, A> Formula for S
-where
-    A: Formula,
-    S: FormulaAlias<Alias = A>,
-{
-    const SIZE: usize = A::SIZE;
-}
+// impl<F, A> UnsizedFormula for F
+// where
+//     A: UnsizedFormula,
+//     F: FormulaAlias<Alias = A>,
+// {
+// }
+
+// impl<F, A> Formula for F
+// where
+//     A: Formula,
+//     F: FormulaAlias<Alias = A>,
+// {
+//     const SIZE: usize = A::SIZE;
+// }

@@ -1,10 +1,14 @@
 use crate::{
     deserialize::{Deserialize, DeserializeError, Deserializer},
-    formula::{Formula, UnsizedFormula},
+    formula::{Formula, NonRefFormula, UnsizedFormula},
     serialize::{Serialize, Serializer},
 };
 
 impl UnsizedFormula for () {}
+impl Formula for () {
+    const SIZE: usize = 0;
+}
+impl NonRefFormula for () {}
 
 impl Serialize<()> for () {
     #[inline(always)]
@@ -67,6 +71,12 @@ macro_rules! impl_for_tuple {
             const SIZE: usize = 0 $( + <$a as Formula>::SIZE)*;
         }
 
+        impl<$($a,)* $at> NonRefFormula for ($($a,)* $at,)
+        where
+            $($a: Formula,)*
+            $at: Formula + ?Sized,
+        {}
+
         impl<$($a,)* $at, $($b,)* $bt> Serialize<($($a,)* $at,)> for ($($b,)* $bt,)
         where
             $($a: Formula, $b: Serialize<$a>,)*
@@ -110,10 +120,10 @@ macro_rules! impl_for_tuple {
             }
         }
 
-        impl<'a, $($a,)* $at, $($b,)* $bt> Serialize<($($a,)* $at,)> for &'a ($($b,)* $bt,)
+        impl<'de, $($a,)* $at, $($b,)* $bt> Serialize<($($a,)* $at,)> for &'de ($($b,)* $bt,)
         where
-            $($a: Formula, &'a $b: Serialize<$a>,)*
-            $at: UnsizedFormula + ?Sized, $bt: ?Sized, &'a $bt: Serialize<$at>,
+            $($a: Formula, &'de $b: Serialize<$a>,)*
+            $at: UnsizedFormula + ?Sized, $bt: ?Sized, &'de $bt: Serialize<$at>,
         {
             #[inline]
             fn serialize(self, offset: usize, output: &mut [u8]) -> Result<(usize, usize), usize> {
@@ -121,7 +131,7 @@ macro_rules! impl_for_tuple {
 
                 let ($($b,)* $bt,) = self;
                 let me = ($($b,)* $bt,);
-                <($(&'a $b,)* &'a $bt,) as Serialize<($($a,)* $at,)>>::serialize(me, offset, output)
+                <($(&'de $b,)* &'de $bt,) as Serialize<($($a,)* $at,)>>::serialize(me, offset, output)
             }
         }
 
@@ -139,7 +149,7 @@ macro_rules! impl_for_tuple {
                     return Err(DeserializeError::WrongLength);
                 }
 
-                let mut des = Deserializer::new(len, input);
+                let mut des = Deserializer::new(len, input)?;
                 $(let $b;)*
 
                 $(
@@ -161,7 +171,7 @@ macro_rules! impl_for_tuple {
                     return Err(DeserializeError::WrongLength);
                 }
 
-                let mut des = Deserializer::new(len, input);
+                let mut des = Deserializer::new(len, input)?;
                 let ($($b,)* $bt,) = self;
 
                 $(

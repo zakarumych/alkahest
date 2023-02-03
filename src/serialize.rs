@@ -1,12 +1,9 @@
 use core::mem::size_of;
 
-use crate::{
-    formula::{FormulaAlias, UnsizedFormula},
-    size::FixedUsize,
-};
+use crate::{formula::UnsizedFormula, size::FixedUsize};
 
 /// Trait for types that can be serialized
-/// into raw bytes with specified `S: `[`Formula`].
+/// into raw bytes with specified `F: `[`Formula`].
 ///
 /// Implementations *must* write data according to the formula.
 /// Doing otherwise may result in errors during deserialization.
@@ -42,55 +39,66 @@ pub trait Serialize<T: UnsizedFormula + ?Sized> {
 /// Wraps output buffer and provides methods for serializing data.
 /// Implementors of `Serialize` trait may use this type.
 #[must_use]
-pub struct Serializer<'a> {
+pub struct Serializer<'de> {
     /// Offset of the output buffer from the "start".
     offset: usize,
 
     /// Output buffer sub-slice usable for serialization.
-    output: &'a mut [u8],
+    output: &'de mut [u8],
 
-    // size of the payload
-    payload: usize,
+    // size of the heap
+    heap: usize,
 
-    // start of the metadata
-    metadata: usize,
+    // start of the stack
+    stack: usize,
 }
 
-impl<'a> Serializer<'a> {
-    pub fn new(offset: usize, output: &'a mut [u8]) -> Self {
+impl<'de> Serializer<'de> {
+    pub fn new(offset: usize, output: &'de mut [u8]) -> Self {
         Self {
             offset,
-            payload: 0,
-            metadata: output.len(),
+            heap: 0,
+            stack: output.len(),
             output,
         }
     }
 
     #[inline(always)]
     fn written(&self) -> usize {
-        self.payload + (self.output.len() - self.metadata)
+        self.heap + (self.output.len() - self.stack)
     }
 
     /// Serialize a value according to specified formula.
     /// Value is written to the output buffer associated with this serializer.
     /// Serializer takes care of moving data around if necessary.
     #[inline]
-    pub fn serialize_value<S, T>(&mut self, value: T) -> Result<(), usize>
+    pub fn serialize_value<F, T>(&mut self, value: T) -> Result<(), usize>
     where
-        S: UnsizedFormula + ?Sized,
-        T: Serialize<S>,
+        F: UnsizedFormula + ?Sized,
+        T: Serialize<F>,
     {
         match value.serialize(
-            self.offset + self.payload,
-            &mut self.output[self.payload..self.metadata],
+            self.offset + self.heap,
+            &mut self.output[self.heap..self.stack],
         ) {
-            Ok((payload, metadata)) => {
-                self.metadata = self.payload + metadata;
-                self.payload += payload;
+            Ok((heap, stack)) => {
+                self.stack = self.heap + stack;
+                self.heap += heap;
                 Ok(())
             }
             Err(size) => Err(size + self.written()),
         }
+    }
+
+    /// Wastes `size` bytes on stack.
+    #[inline]
+    pub fn waste(&mut self, size: usize) -> Result<(), usize> {
+        if self.output.len() - self.stack < size {
+            return Err(size + self.written());
+        }
+
+        self.stack -= size;
+        Ok(())
     }
 
     /// Serialize a value according to specified formula.
@@ -104,38 +112,31 @@ impl<'a> Serializer<'a> {
         self.serialize_value::<T, T>(value)
     }
 
-    /// Returns offset of the output buffer from the "start".
-    #[inline(always)]
-    #[must_use]
-    pub fn offset(&self) -> usize {
-        self.offset + self.payload
-    }
-
     /// Moves "stack" to "heap".
     /// Returns address of the value moved from "stack" and its size.
     #[inline(always)]
     #[must_use]
     pub fn flush(&mut self) -> (usize, usize) {
-        let meta_size = self.output.len() - self.metadata;
-        self.output.copy_within(self.metadata.., self.payload);
-        self.payload += meta_size;
-        self.metadata = self.output.len();
-        (self.payload + self.offset, meta_size)
+        let meta_size = self.output.len() - self.stack;
+        self.output.copy_within(self.stack.., self.heap);
+        self.heap += meta_size;
+        self.stack = self.output.len();
+        (self.heap + self.offset, meta_size)
     }
 
     /// Ends writing to the output buffer.
-    /// Returns payload size and start of the metadata.
+    /// Returns heap size and start of the stack.
     #[inline(always)]
     #[must_use]
     pub fn finish(self) -> (usize, usize) {
-        (self.payload, self.metadata)
+        (self.heap, self.stack)
     }
 }
 
-pub fn serialize<S, T>(value: T, output: &mut [u8]) -> Result<usize, usize>
+pub fn serialize<F, T>(value: T, output: &mut [u8]) -> Result<usize, usize>
 where
-    S: UnsizedFormula + ?Sized,
-    T: Serialize<S>,
+    F: UnsizedFormula + ?Sized,
+    T: Serialize<F>,
 {
     if output.len() < HEADER_SIZE {
         return Err(HEADER_SIZE + value.size());
@@ -143,39 +144,25 @@ where
 
     let mut ser = Serializer::new(HEADER_SIZE, &mut output[HEADER_SIZE..]);
 
-    ser.serialize_value::<S, T>(value)
+    ser.serialize_value::<F, T>(value)
         .map_err(|size| size + HEADER_SIZE)?;
     let (address, size) = ser.flush();
 
-    output[..FIELD_SIZE].copy_from_slice(&FixedUsize::truncated(address).to_le_bytes());
-    output[FIELD_SIZE..][..FIELD_SIZE].copy_from_slice(&FixedUsize::truncated(size).to_le_bytes());
+    output[..FIELD_SIZE].copy_from_slice(&FixedUsize::truncate_unchecked(address).to_le_bytes());
+    output[FIELD_SIZE..][..FIELD_SIZE]
+        .copy_from_slice(&FixedUsize::truncate_unchecked(size).to_le_bytes());
 
     // Nothing is written beyond address of top-level value.
     Ok(address)
 }
 
-pub fn serialized_size<S, T>(value: T) -> usize
+pub fn serialized_size<F, T>(value: T) -> usize
 where
-    S: UnsizedFormula + ?Sized,
-    T: Serialize<S>,
+    F: UnsizedFormula + ?Sized,
+    T: Serialize<F>,
 {
-    <T as Serialize<S>>::size(value) + HEADER_SIZE
+    <T as Serialize<F>>::size(value) + HEADER_SIZE
 }
 
 const FIELD_SIZE: usize = size_of::<FixedUsize>();
 const HEADER_SIZE: usize = FIELD_SIZE * 2;
-
-impl<T, S, A> Serialize<S> for T
-where
-    S: FormulaAlias<Alias = A>,
-    A: UnsizedFormula,
-    T: Serialize<A>,
-{
-    fn serialize(self, offset: usize, output: &mut [u8]) -> Result<(usize, usize), usize> {
-        <T as Serialize<A>>::serialize(self, offset, output)
-    }
-
-    fn size(self) -> usize {
-        <T as Serialize<A>>::size(self)
-    }
-}

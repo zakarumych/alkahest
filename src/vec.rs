@@ -1,33 +1,72 @@
 use alloc::vec::Vec;
 
 use crate::{
+    bytes::Bytes,
     deserialize::{Deserialize, DeserializeError, Deserializer},
-    formula::{Formula, FormulaAlias},
+    formula::{Formula, UnsizedFormula},
     reference::Ref,
+    serialize::Serialize,
 };
 
-impl<S> FormulaAlias for Vec<S>
+impl<F> UnsizedFormula for Vec<F> where F: Formula {}
+impl<F> Formula for Vec<F>
 where
-    S: Formula,
+    F: Formula,
 {
-    type Alias = Ref<[S]>;
+    const SIZE: usize = <Ref<[F]> as Formula>::SIZE;
 }
 
-impl<'a, S, T> Deserialize<'a, [S]> for Vec<T>
+impl<F, T, I> Serialize<Vec<F>> for I
 where
-    S: Formula,
-    T: Deserialize<'a, S>,
+    F: Formula,
+    I: IntoIterator<Item = T>,
+    T: Serialize<F>,
 {
-    fn deserialize(len: usize, input: &'a [u8]) -> Result<Self, DeserializeError> {
-        if len % S::SIZE != 0 {
+    fn serialize(self, offset: usize, output: &mut [u8]) -> Result<(usize, usize), usize> {
+        <I as Serialize<Ref<[F]>>>::serialize(self, offset, output)
+    }
+
+    fn size(self) -> usize {
+        <I as Serialize<Ref<[F]>>>::size(self)
+    }
+}
+
+impl<'de, F, T> Deserialize<'de, Vec<F>> for T
+where
+    F: Formula,
+    T: Deserialize<'de, Ref<[F]>> + ?Sized,
+{
+    fn deserialize(len: usize, input: &'de [u8]) -> Result<Self, DeserializeError>
+    where
+        T: Sized,
+    {
+        <T as Deserialize<'de, Ref<[F]>>>::deserialize(len, input)
+    }
+
+    fn deserialize_in_place(
+        &mut self,
+        len: usize,
+        input: &'de [u8],
+    ) -> Result<(), DeserializeError> {
+        <T as Deserialize<'de, Ref<[F]>>>::deserialize_in_place(self, len, input)
+    }
+}
+
+impl<'de, F, T> Deserialize<'de, [F]> for Vec<T>
+where
+    F: Formula,
+    T: Deserialize<'de, F>,
+{
+    fn deserialize(len: usize, input: &'de [u8]) -> Result<Self, DeserializeError> {
+        if len % F::SIZE != 0 {
             return Err(DeserializeError::WrongLength);
         }
-        let count = len / S::SIZE;
-        let mut des = Deserializer::new(len, input);
+        let mut des = Deserializer::new(len, input)?;
 
+        let count = len / F::SIZE;
         let mut vec = Vec::with_capacity(count);
         for _ in 0..count {
-            vec.push(des.deserialize_sized::<S, T>()?);
+            vec.push(des.deserialize_sized::<F, T>()?);
         }
 
         des.finish_expected();
@@ -37,18 +76,17 @@ where
     fn deserialize_in_place(
         &mut self,
         len: usize,
-        input: &'a [u8],
+        input: &'de [u8],
     ) -> Result<(), DeserializeError> {
-        if len % S::SIZE != 0 {
+        if len % F::SIZE != 0 {
             return Err(DeserializeError::WrongLength);
         }
-        let count = len / S::SIZE;
-        let mut des = Deserializer::new(len, input);
+        let mut des = Deserializer::new(len, input)?;
 
+        let count = len / F::SIZE;
         self.reserve_exact(count);
-
         for _ in 0..count {
-            self.push(des.deserialize_sized::<S, T>()?);
+            self.push(des.deserialize_sized::<F, T>()?);
         }
         des.finish_expected();
 
@@ -56,20 +94,21 @@ where
     }
 }
 
-impl<'a, S, T, const N: usize> Deserialize<'a, [S; N]> for Vec<T>
+impl<'de, F, T, const N: usize> Deserialize<'de, [F; N]> for Vec<T>
 where
-    S: Formula,
-    T: Deserialize<'a, S>,
+    F: Formula,
+    T: Deserialize<'de, F>,
 {
-    fn deserialize(len: usize, input: &'a [u8]) -> Result<Self, DeserializeError> {
-        if len != N * S::SIZE {
+    fn deserialize(len: usize, input: &'de [u8]) -> Result<Self, DeserializeError> {
+        if len != N * F::SIZE {
             return Err(DeserializeError::WrongLength);
         }
-        let mut des = Deserializer::new(len, input);
+
+        let mut des = Deserializer::new(len, input)?;
 
         let mut vec = Vec::with_capacity(N);
         for _ in 0..N {
-            vec.push(des.deserialize_sized::<S, T>()?);
+            vec.push(des.deserialize_sized::<F, T>()?);
         }
 
         des.finish_expected();
@@ -79,20 +118,44 @@ where
     fn deserialize_in_place(
         &mut self,
         len: usize,
-        input: &'a [u8],
+        input: &'de [u8],
     ) -> Result<(), DeserializeError> {
-        if len != N * S::SIZE {
+        if len != N * F::SIZE {
             return Err(DeserializeError::WrongLength);
         }
-        let mut des = Deserializer::new(len, input);
+        let mut des = Deserializer::new(len, input)?;
 
         self.reserve_exact(N);
-
         for _ in 0..N {
-            self.push(des.deserialize_sized::<S, T>()?);
+            self.push(des.deserialize_sized::<F, T>()?);
         }
-        des.finish_expected();
 
+        des.finish_expected();
+        Ok(())
+    }
+}
+
+impl<'de> Deserialize<'de, Bytes> for Vec<u8> {
+    #[inline(always)]
+    fn deserialize(len: usize, input: &'de [u8]) -> Result<Self, DeserializeError> {
+        if len > input.len() {
+            return Err(DeserializeError::OutOfBounds);
+        }
+        let at = input.len() - len;
+        Ok(input[at..].to_vec())
+    }
+
+    #[inline(always)]
+    fn deserialize_in_place(
+        &mut self,
+        len: usize,
+        input: &'de [u8],
+    ) -> Result<(), DeserializeError> {
+        if len > input.len() {
+            return Err(DeserializeError::OutOfBounds);
+        }
+        let at = input.len() - len;
+        self.extend_from_slice(&input[at..]);
         Ok(())
     }
 }

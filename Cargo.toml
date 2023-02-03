@@ -11,10 +11,11 @@ readme = "README.md"
 description = "Fantastic serialization library with zero-overhead serialization and zero-copy deserialization"
 
 [features]
-alloc = []
+alloc = [] # enables impls for types from `alloc` crate.
 derive = ["alkahest-proc"]
-#big = [] # Enables 64-bit sizes and offsets. Makes format incompatible with 32-bit sized data.
-default = ["alloc"]
+fixed32 = [] # sets size of `FixedUsize` and `FixedIsize` to 32 bits. Default.
+fixed64 = [] # sets size of `FixedUsize` and `FixedIsize` to 64 bits. Incompatible with `fixed32`.
+default = ["alloc", "fixed32"]
 
 [dependencies]
 alkahest-proc = { version = "=0.2.0", path = "proc", optional = true }
