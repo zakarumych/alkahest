@@ -1,6 +1,4 @@
-use alkahest::{
-    deserialize, serialize, serialized_size, Deserialize, Formula, Serialize, UnsizedFormula,
-};
+use alkahest::{deserialize, serialize, serialized_size, Deserialize, Formula, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Formula, Serialize, Deserialize)]
 struct X;
@@ -13,9 +11,9 @@ struct Test<T: ?Sized> {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[alkahest(serialize(for<'ser, U: ?Sized> Test<U> where U: UnsizedFormula + 'ser, T: 'ser, &'ser T: Serialize<U>))]
-#[alkahest(serialize(owned(for<U: ?Sized> Test<U> where U: UnsizedFormula, T: Serialize<U>)))]
-#[alkahest(deserialize(for<'de, U: ?Sized> Test<U> where U: UnsizedFormula, T: Deserialize<'de, U>))]
+#[alkahest(serialize(for<'ser, U: ?Sized> Test<U> where U: Formula + 'ser, T: 'ser, &'ser T: Serialize<U>))]
+#[alkahest(serialize(owned(for<U: ?Sized> Test<U> where U: Formula, T: Serialize<U>)))]
+#[alkahest(deserialize(for<'de, U: ?Sized> Test<U> where U: Formula, T: Deserialize<'de, U>))]
 struct TestS<T> {
     a: u32,
     b: X,

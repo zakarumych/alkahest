@@ -5,8 +5,8 @@
 use core::{marker::PhantomData, mem::size_of};
 
 use crate::{
-    deserialize::{Deserialize, DeserializeError, Deserializer},
-    formula::{Formula, NonRefFormula, UnsizedFormula},
+    deserialize::{Deserialize, Deserializer, Error},
+    formula::{Formula, NonRefFormula},
     serialize::{Serialize, Serializer},
     size::FixedUsize,
 };
@@ -22,12 +22,11 @@ pub struct Ref<F: ?Sized> {
     marker: PhantomData<fn(&F) -> &F>,
 }
 
-impl<F: ?Sized> UnsizedFormula for Ref<F> where F: NonRefFormula {}
 impl<F: ?Sized> Formula for Ref<F>
 where
     F: NonRefFormula,
 {
-    const SIZE: usize = <FixedUsize as Formula>::SIZE * 2;
+    const MAX_SIZE: Option<usize> = Some(size_of::<[FixedUsize; 2]>());
 }
 
 impl<F, T> Serialize<Ref<F>> for T
@@ -36,27 +35,13 @@ where
     T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize(self, offset: usize, output: &mut [u8]) -> Result<(usize, usize), usize> {
-        let mut ser = Serializer::new(offset, output);
-
-        if let Err(size) = ser.serialize_unsized(self) {
-            return Err(size + size_of::<[FixedUsize; 2]>());
-        }
-
-        let (address, size) = ser.flush();
-        let address = FixedUsize::truncate_unchecked(address);
-        let size = FixedUsize::truncate_unchecked(size);
-
-        if let Err(size) = ser.serialize_self([address, size]) {
-            return Err(size);
-        }
-
-        Ok(ser.finish())
-    }
-
-    #[inline(always)]
-    fn size(self) -> usize {
-        size_of::<[FixedUsize; 2]>() + <T as Serialize<F>>::size(self)
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut ser = ser.into();
+        ser.write_ref::<F, T>(self)?;
+        ser.finish()
     }
 }
 
@@ -65,45 +50,22 @@ where
     F: NonRefFormula + ?Sized,
     T: Deserialize<'de, F> + ?Sized,
 {
-    fn deserialize(len: usize, input: &'de [u8]) -> Result<Self, DeserializeError>
+    fn deserialize(mut de: Deserializer<'de>) -> Result<Self, Error>
     where
         Self: Sized,
     {
-        let mut des = Deserializer::new(len, input)?;
-        let [address, size] = des.deserialize_self::<[FixedUsize; 2]>()?;
-        des.finish_expected();
-
-        if usize::from(address) > input.len() {
-            return Err(DeserializeError::WrongAddress);
-        }
-
-        let ref_input = &input[..usize::from(address)];
-
-        let mut des = Deserializer::new(size.into(), ref_input)?;
-        let value = des.deserialize::<F, T>(size.into())?;
-        des.finish_expected();
+        let mut deref = de.deref()?;
+        let value = deref.read_value::<F, T>()?;
+        deref.finish()?;
+        de.finish()?;
         Ok(value)
     }
 
-    fn deserialize_in_place(
-        &mut self,
-        len: usize,
-        input: &'de [u8],
-    ) -> Result<(), DeserializeError> {
-        let mut des = Deserializer::new(len, input)?;
-        let address = des.deserialize_self::<FixedUsize>()?;
-        let size = des.deserialize_self::<FixedUsize>()?;
-        des.finish_checked()?;
-
-        if usize::from(address) > input.len() {
-            return Err(DeserializeError::WrongAddress);
-        }
-
-        let ref_input = &input[..usize::from(address)];
-
-        let mut des = Deserializer::new(size.into(), ref_input)?;
-        des.deserialize_in_place::<F, T>(self, size.into())?;
-        des.finish_expected();
+    fn deserialize_in_place(&mut self, mut de: Deserializer<'de>) -> Result<(), Error> {
+        let mut deref = de.deref()?;
+        deref.read_in_place::<F, T>(self)?;
+        deref.finish()?;
+        de.finish()?;
         Ok(())
     }
 }

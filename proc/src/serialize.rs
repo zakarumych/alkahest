@@ -55,14 +55,22 @@ impl Config {
                 check_fields: false,
             },
             (None, Some(None)) => {
+                let field_count = data.fields.len();
+
                 // Add predicates that fields implement
                 // `T: Formula` and `T: Serialize<T>`
                 let predicates = data
                     .fields
                     .iter()
-                    .map(|field| -> syn::WherePredicate {
+                    .enumerate()
+                    .map(|(idx, field)| -> syn::WherePredicate {
                         let ty = &field.ty;
-                        syn::parse_quote! { #ty: ::alkahest::UnsizedFormula }
+                        if idx + 1 < field_count {
+                            syn::parse_quote! { #ty: ::alkahest::Formula }
+                        } else {
+                            assert_eq!(idx + 1, field_count);
+                            syn::parse_quote! { #ty: ::alkahest::UnsizedFormula }
+                        }
                     })
                     .chain(data.fields.iter().map(|field| -> syn::WherePredicate {
                         let ty = &field.ty;
@@ -91,14 +99,22 @@ impl Config {
                 }
             }
             (None, None) => {
+                let field_count = data.fields.len();
+
                 // Add predicates that fields implement
                 // `T: Formula` and `&T: Serialize<T>`
                 let predicates = data
                     .fields
                     .iter()
-                    .map(|field| -> syn::WherePredicate {
+                    .enumerate()
+                    .map(|(idx, field)| -> syn::WherePredicate {
                         let ty = &field.ty;
-                        syn::parse_quote! { #ty: ::alkahest::UnsizedFormula }
+                        if idx + 1 < field_count {
+                            syn::parse_quote! { #ty: ::alkahest::Formula }
+                        } else {
+                            assert_eq!(idx + 1, field_count);
+                            syn::parse_quote! { #ty: ::alkahest::UnsizedFormula }
+                        }
                     })
                     .chain(data.fields.iter().map(|field| -> syn::WherePredicate {
                         let ty = &field.ty;
@@ -126,9 +142,15 @@ impl Config {
                 let predicates = data
                     .fields
                     .iter()
-                    .map(|field| -> syn::WherePredicate {
+                    .enumerate()
+                    .map(|(idx, field)| -> syn::WherePredicate {
                         let ty = &field.ty;
-                        syn::parse_quote! { #ty: ::alkahest::UnsizedFormula }
+                        if idx + 1 < field_count {
+                            syn::parse_quote! { #ty: ::alkahest::Formula }
+                        } else {
+                            assert_eq!(idx + 1, field_count);
+                            syn::parse_quote! { #ty: ::alkahest::UnsizedFormula }
+                        }
                     })
                     .chain(data.fields.iter().map(|field| -> syn::WherePredicate {
                         let ty = &field.ty;
@@ -241,7 +263,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 _ => Vec::new(),
             };
 
-            let field_names = data
+            let mut field_names = data
                 .fields
                 .iter()
                 .enumerate()
@@ -250,6 +272,9 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                     None => syn::Member::from(index),
                 })
                 .collect::<Vec<_>>();
+
+            let last_field_name = field_names.pop().into_iter().collect::<Vec<_>>();
+            let field_names_but_last = field_names;
 
             match (cfg.reference, cfg.owned) {
                 (None, None) => unreachable!(),
@@ -298,11 +323,22 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                 let mut err = Result::<(), usize>::Ok(());
 
                                 #(
-                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names);
+                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names_but_last);
                                     if let Result::Err(size) = err {
-                                        err = Result::Err(size + with_formula.size_value(&self.#field_names));
+                                        err = Result::Err(size + with_formula.size_value(&self.#field_names_but_last));
                                     } else {
-                                        if let Result::Err(size) = with_formula.serialize_value(&mut ser, &self.#field_names) {
+                                        if let Result::Err(size) = with_formula.serialize_sized(&mut ser, &self.#field_names_but_last) {
+                                            err = Result::Err(size);
+                                        }
+                                    }
+                                )*
+
+                                #(
+                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#last_field_name);
+                                    if let Result::Err(size) = err {
+                                        err = Result::Err(size + with_formula.size_value(&self.#last_field_name));
+                                    } else {
+                                        if let Result::Err(size) = with_formula.serialize_sized(&mut ser, &self.#last_field_name) {
                                             err = Result::Err(size);
                                         }
                                     }
@@ -316,8 +352,12 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                 #[allow(unused_mut)]
                                 let mut size = 0;
                                 #(
-                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names);
-                                    size += with_formula.size_value(&self.#field_names);
+                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names_but_last);
+                                    size += with_formula.size_value(&self.#field_names_but_last);
+                                )*
+                                #(
+                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#last_field_name);
+                                    size += with_formula.size_value(&self.#last_field_name);
                                 )*
                                 size
                             }
@@ -377,11 +417,22 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                 let mut err = Result::<(), usize>::Ok(());
 
                                 #(
-                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names);
+                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names_but_last);
                                     if let Result::Err(size) = err {
-                                        err = Result::Err(size + with_formula.size_value(self.#field_names));
+                                        err = Result::Err(size + with_formula.size_value(self.#field_names_but_last));
                                     } else {
-                                        if let Result::Err(size) = with_formula.serialize_value(&mut ser, self.#field_names) {
+                                        if let Result::Err(size) = with_formula.serialize_sized(&mut ser, self.#field_names_but_last) {
+                                            err = Result::Err(size);
+                                        }
+                                    }
+                                )*
+
+                                #(
+                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#last_field_name);
+                                    if let Result::Err(size) = err {
+                                        err = Result::Err(size + with_formula.size_value(self.#last_field_name));
+                                    } else {
+                                        if let Result::Err(size) = with_formula.serialize_value(&mut ser, self.#last_field_name) {
                                             err = Result::Err(size);
                                         }
                                     }
@@ -395,8 +446,12 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                 #[allow(unused_mut)]
                                 let mut size = 0;
                                 #(
-                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names);
-                                    size += with_formula.size_value(self.#field_names);
+                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names_but_last);
+                                    size += with_formula.size_value(self.#field_names_but_last);
+                                )*
+                                #(
+                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#last_field_name);
+                                    size += with_formula.size_value(self.#last_field_name);
                                 )*
                                 size
                             }
@@ -434,11 +489,22 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                     let mut err = Result::<(), usize>::Ok(());
 
                                     #(
-                                        let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names);
+                                        let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names_but_last);
                                         if let Result::Err(size) = err {
-                                            err = Result::Err(size + with_formula.size_value(&self.#field_names));
+                                            err = Result::Err(size + with_formula.size_value(&self.#field_names_but_last));
                                         } else {
-                                            if let Result::Err(size) = with_formula.serialize_value(&mut ser, &self.#field_names) {
+                                            if let Result::Err(size) = with_formula.serialize_sized(&mut ser, &self.#field_names_but_last) {
+                                                err = Result::Err(size);
+                                            }
+                                        }
+                                    )*
+
+                                    #(
+                                        let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#last_field_name);
+                                        if let Result::Err(size) = err {
+                                            err = Result::Err(size + with_formula.size_value(&self.#last_field_name));
+                                        } else {
+                                            if let Result::Err(size) = with_formula.serialize_value(&mut ser, &self.#last_field_name) {
                                                 err = Result::Err(size);
                                             }
                                         }
@@ -452,8 +518,12 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                     #[allow(unused_mut)]
                                     let mut size = 0;
                                     #(
-                                        let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names);
-                                        size += with_formula.size_value(&self.#field_names);
+                                        let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names_but_last);
+                                        size += with_formula.size_value(&self.#field_names_but_last);
+                                    )*
+                                    #(
+                                        let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#last_field_name);
+                                        size += with_formula.size_value(&self.#last_field_name);
                                     )*
                                     size
                                 }

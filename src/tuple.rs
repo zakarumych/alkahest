@@ -1,184 +1,135 @@
 use crate::{
-    deserialize::{Deserialize, DeserializeError, Deserializer},
-    formula::{Formula, NonRefFormula, UnsizedFormula},
+    deserialize::{Deserialize, Deserializer, Error},
+    formula::{combine_sizes, Formula, NonRefFormula},
     serialize::{Serialize, Serializer},
 };
 
-impl UnsizedFormula for () {}
 impl Formula for () {
-    const SIZE: usize = 0;
+    const MAX_SIZE: Option<usize> = Some(0);
 }
 impl NonRefFormula for () {}
 
 impl Serialize<()> for () {
     #[inline(always)]
-    fn serialize(self, _offset: usize, _output: &mut [u8]) -> Result<(usize, usize), usize> {
-        Ok((0, 0))
-    }
-
-    #[inline(always)]
-    fn size(self) -> usize {
-        0
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        ser.into().finish()
     }
 }
 
 impl Serialize<()> for &'_ () {
     #[inline(always)]
-    fn serialize(self, _offset: usize, _output: &mut [u8]) -> Result<(usize, usize), usize> {
-        Ok((0, 0))
-    }
-
-    #[inline(always)]
-    fn size(self) -> usize {
-        0
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        ser.into().finish()
     }
 }
 
 impl Deserialize<'_, ()> for () {
-    fn deserialize(len: usize, _input: &'_ [u8]) -> Result<(), DeserializeError> {
-        if len != 0 {
-            return Err(DeserializeError::WrongLength);
-        }
+    fn deserialize(_de: Deserializer) -> Result<(), Error> {
         Ok(())
     }
 
-    fn deserialize_in_place(
-        &mut self,
-        len: usize,
-        _input: &'_ [u8],
-    ) -> Result<(), DeserializeError> {
-        if len != 0 {
-            return Err(DeserializeError::WrongLength);
-        }
+    fn deserialize_in_place(&mut self, _de: Deserializer) -> Result<(), Error> {
         Ok(())
     }
 }
 
 macro_rules! impl_for_tuple {
-    ([$at:ident $(, $a:ident)* $(,)?] [$bt:ident $(,$b:ident)* $(,)?]) => {
-        impl<$($a,)* $at> UnsizedFormula for ($($a,)* $at,)
+    ([$($a:ident),* $(,)?] [$($b:ident),* $(,)?]) => {
+        impl<$($a,)*> Formula for ($($a,)*)
         where
             $($a: Formula,)*
-            $at: UnsizedFormula + ?Sized,
         {
+            const MAX_SIZE: Option<usize> = {
+                let mut size = Some(0);
+                $(size = combine_sizes(size, <$a as Formula>::MAX_SIZE);)*
+                size
+            };
         }
 
-        impl<$($a,)* $at> Formula for ($($a,)* $at,)
+        impl<$($a,)*> NonRefFormula for ($($a,)*)
         where
             $($a: Formula,)*
-            $at: Formula + ?Sized,
-        {
-            const SIZE: usize = 0 $( + <$a as Formula>::SIZE)*;
-        }
-
-        impl<$($a,)* $at> NonRefFormula for ($($a,)* $at,)
-        where
-            $($a: Formula,)*
-            $at: Formula + ?Sized,
         {}
 
-        impl<$($a,)* $at, $($b,)* $bt> Serialize<($($a,)* $at,)> for ($($b,)* $bt,)
+        impl<$($a,)* $($b,)*> Serialize<($($a,)*)> for ($($b,)*)
         where
-            $($a: Formula, $b: Serialize<$a>,)*
-            $at: UnsizedFormula + ?Sized, $bt: Serialize<$at>,
+            $(
+                $a: Formula,
+                $b: Serialize<$a>,
+            )*
         {
             #[inline]
-            fn serialize(self, offset: usize, output: &mut [u8]) -> Result<(usize, usize), usize> {
+            fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
                 #![allow(non_snake_case)]
-
-                let mut ser = Serializer::new(offset, output);
-
-                let ($($b,)* $bt,) = self;
-
-                let mut err = Ok::<(), usize>(());
+                let mut ser = ser.into();
+                let ($($b,)*) = self;
                 $(
-                    if let Err(size) = err {
-                        err = Err(size + <$b as Serialize<$a>>::size($b));
-                    } else {
-                        match ser.serialize_sized::<$a, $b>($b) {
-                            Ok(()) => {}
-                            Err(size) => {
-                                err = Err(size);
-                            }
-                        }
-                    }
+                    ser.write_value::<$a, $b>($b)?;
                 )*
-
-                if let Err(size) = err {
-                    err = Err(size + <$bt as Serialize<$at>>::size($bt));
-                } else {
-                    match ser.serialize_unsized::<$at, $bt>($bt) {
-                        Ok(()) => {}
-                        Err(size) => {
-                            err = Err(size);
-                        }
-                    }
-                }
-
-                err?;
-                Ok(ser.finish())
+                ser.finish()
             }
         }
 
-        impl<'de, $($a,)* $at, $($b,)* $bt> Serialize<($($a,)* $at,)> for &'de ($($b,)* $bt,)
+        impl<'__ser, $($a,)* $($b,)*> Serialize<($($a,)*)> for &'__ser ($($b,)*)
         where
-            $($a: Formula, &'de $b: Serialize<$a>,)*
-            $at: UnsizedFormula + ?Sized, $bt: ?Sized, &'de $bt: Serialize<$at>,
+            $(
+                $a: Formula,
+                &'__ser $b: Serialize<$a>,
+            )*
         {
             #[inline]
-            fn serialize(self, offset: usize, output: &mut [u8]) -> Result<(usize, usize), usize> {
+            fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
                 #![allow(non_snake_case)]
-
-                let ($($b,)* $bt,) = self;
-                let me = ($($b,)* $bt,);
-                <($(&'de $b,)* &'de $bt,) as Serialize<($($a,)* $at,)>>::serialize(me, offset, output)
+                let mut ser = ser.into();
+                let ($($b,)*) = self;
+                $(
+                    ser.write_value::<$a, &'__ser $b>(&$b)?;
+                )*
+                ser.finish()
             }
         }
 
-        impl<'__a, $($a,)* $at, $($b,)* $bt> Deserialize<'__a, ($($a,)* $at,)> for ($($b,)* $bt,)
+        impl<'__de, $($a,)* $($b,)*> Deserialize<'__de, ($($a,)*)> for ($($b,)*)
         where
-            $($a: Formula, $b: Deserialize<'__a, $a>,)*
-            $at: UnsizedFormula + ?Sized, $bt: Deserialize<'__a, $at>,
+            $(
+                $a: Formula,
+                $b: Deserialize<'__de, $a>,
+            )*
         {
             #[inline(always)]
-            fn deserialize(len: usize, input: &'__a [u8]) -> Result<($($b,)* $bt,), DeserializeError> {
+            fn deserialize(mut de: Deserializer<'__de>) -> Result<($($b,)*), Error> {
                 #![allow(non_snake_case)]
-
-                let tuple_no_tail_size: usize = 0$( + <$a as Formula>::SIZE)*;
-                if tuple_no_tail_size > len {
-                    return Err(DeserializeError::WrongLength);
-                }
-
-                let mut des = Deserializer::new(len, input)?;
-                $(let $b;)*
-
                 $(
-                    $b = des.deserialize_sized::<$a, $b>()?;
+                    let $b = de.read_value::<$a, $b>()?;
                 )*
+                de.finish()?;
 
-                let $bt = des.deserialize_rest()?;
-
-                let value = ($($b,)* $bt,);
+                let value = ($($b,)*);
                 Ok(value)
             }
 
             #[inline(always)]
-            fn deserialize_in_place(&mut self, len: usize, input: &'__a [u8]) -> Result<(), DeserializeError> {
+            fn deserialize_in_place(&mut self, mut de: Deserializer<'__de>) -> Result<(), Error> {
                 #![allow(non_snake_case)]
 
-                let tuple_no_tail_size: usize = 0$( + <$a as Formula>::SIZE)*;
-                if tuple_no_tail_size > len {
-                    return Err(DeserializeError::WrongLength);
-                }
-
-                let mut des = Deserializer::new(len, input)?;
-                let ($($b,)* $bt,) = self;
+                let ($($b,)*) = self;
 
                 $(
-                    des.deserialize_in_place_sized::<$a, $b>($b)?;
+                    de.read_in_place::<$a, $b>($b)?;
                 )*
-
-                des.deserialize_in_place_rest::<$at, $bt>($bt)?;
+                de.finish()?;
 
                 Ok(())
             }

@@ -1,14 +1,16 @@
 use crate::{
-    deserialize::{Deserialize, DeserializeError},
-    formula::{NonRefFormula, UnsizedFormula},
-    serialize::Serialize,
+    deserialize::{Deserialize, Deserializer, Error},
+    formula::{Formula, NonRefFormula},
+    serialize::{Serialize, Serializer},
 };
 
 /// A formula for a raw byte slices.
 /// Serializable from anything that implements `AsRef<[u8]>`.
 pub struct Bytes;
 
-impl UnsizedFormula for Bytes {}
+impl Formula for Bytes {
+    const MAX_SIZE: Option<usize> = None;
+}
 impl NonRefFormula for Bytes {}
 
 impl<T> Serialize<Bytes> for T
@@ -16,38 +18,25 @@ where
     T: AsRef<[u8]>,
 {
     #[inline(always)]
-    fn serialize(self, _offset: usize, output: &mut [u8]) -> Result<(usize, usize), usize> {
-        let slice = self.as_ref();
-        if slice.len() > output.len() {
-            return Err(slice.len());
-        }
-        let at = output.len() - slice.len();
-        output[at..].copy_from_slice(slice);
-        Ok((0, slice.len()))
-    }
-
-    #[inline(always)]
-    fn size(self) -> usize {
-        self.as_ref().len()
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut ser = ser.into();
+        ser.write_bytes(self.as_ref())?;
+        ser.finish()
     }
 }
 
 impl<'de> Deserialize<'de, Bytes> for &'de [u8] {
     #[inline(always)]
-    fn deserialize(len: usize, input: &'de [u8]) -> Result<Self, DeserializeError> {
-        if len > input.len() {
-            return Err(DeserializeError::OutOfBounds);
-        }
-        Ok(&input[input.len() - len..])
+    fn deserialize(de: Deserializer<'de>) -> Result<Self, Error> {
+        Ok(de.read_all_bytes())
     }
 
     #[inline(always)]
-    fn deserialize_in_place(
-        &mut self,
-        len: usize,
-        input: &'de [u8],
-    ) -> Result<(), DeserializeError> {
-        *self = <Self as Deserialize<'de, Bytes>>::deserialize(len, input)?;
+    fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), Error> {
+        *self = de.read_all_bytes();
         Ok(())
     }
 }

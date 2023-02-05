@@ -1,5 +1,5 @@
 use crate::{
-    deserialize::{Deserialize, DeserializeError},
+    deserialize::{Deserialize, Deserializer, Error},
     formula::NonRefFormula,
 };
 
@@ -7,22 +7,24 @@ use crate::{
 /// `Lazy<T>` may deserialize data from formula `F`
 /// when and only when `T` can deserialize data from formula `F`.
 /// The actual deserialization is delayed until `get` or `get_in_place` is called.
+#[derive(Clone)]
 pub struct Lazy<'de, T> {
-    len: usize,
-    input: &'de [u8],
-    de: fn(usize, &'de [u8]) -> Result<T, DeserializeError>,
-    de_in_place: fn(&mut T, usize, &'de [u8]) -> Result<(), DeserializeError>,
+    de: Deserializer<'de>,
+    value: fn(Deserializer<'de>) -> Result<T, Error>,
+    in_place: fn(&mut T, Deserializer<'de>) -> Result<(), Error>,
 }
 
 impl<'de, T> Lazy<'de, T> {
     /// Deserialize the lazy value.
-    pub fn get(self) -> Result<T, DeserializeError> {
-        (self.de)(self.len, self.input)
+    #[inline(always)]
+    pub fn get(&self) -> Result<T, Error> {
+        (self.value)(self.de.clone())
     }
 
     /// Deserialize the lazy value in place.
-    pub fn get_in_place(self, place: &mut T) -> Result<(), DeserializeError> {
-        (self.de_in_place)(place, self.len, self.input)
+    #[inline(always)]
+    pub fn get_in_place(&self, place: &mut T) -> Result<(), Error> {
+        (self.in_place)(place, self.de.clone())
     }
 }
 
@@ -31,21 +33,20 @@ where
     F: NonRefFormula + ?Sized,
     T: Deserialize<'de, F>,
 {
-    fn deserialize(len: usize, input: &'de [u8]) -> Result<Self, DeserializeError> {
+    #[inline(always)]
+    fn deserialize(de: Deserializer<'de>) -> Result<Self, Error> {
         Ok(Lazy {
-            len,
-            input,
-            de: T::deserialize,
-            de_in_place: T::deserialize_in_place,
+            de,
+            value: T::deserialize,
+            in_place: T::deserialize_in_place,
         })
     }
 
-    fn deserialize_in_place(
-        &mut self,
-        len: usize,
-        input: &'de [u8],
-    ) -> Result<(), DeserializeError> {
-        *self = <Self as Deserialize<'de, F>>::deserialize(len, input)?;
+    #[inline(always)]
+    fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), Error> {
+        self.de = de;
+        self.value = T::deserialize;
+        self.in_place = T::deserialize_in_place;
         Ok(())
     }
 }

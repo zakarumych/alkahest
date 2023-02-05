@@ -39,39 +39,49 @@
 /// Implementing traits incorrectly may result in wrong content
 /// of serialized data and deserialized values.
 /// It can't result in undefined behavior.
-pub trait UnsizedFormula {}
-
-/// Trait similar to `Formula` implemented by types
-/// for which size is known in advance.
-pub trait Formula: UnsizedFormula + Sized {
-    /// Size in bytes of serialized value with this formula.
-    const SIZE: usize;
+pub trait Formula {
+    /// Maximum number of bytes serialized values with this formula consume
+    /// from "stack" in output buffer.
+    ///
+    /// Values *may* use less number of bytes.
+    /// `Deserialize` implementations must be prepared to handle this.
+    ///
+    /// Formulas *should* specify as small value as possible.
+    /// Providing too large value may result in wasted space in serialized data.
+    ///
+    /// Unsized formulas like slices should specify `None`.
+    /// Same applies for `non_exhaustive` formulas,
+    /// as they may be extended in future without breaking
+    /// deserialization compatibility.
+    const MAX_SIZE: Option<usize>;
 }
 
-/// Kind of formula that is not `Ref`.
-/// Should be implemented for all formulas except `Ref`
-/// and formulas that act as alias to `Ref` (like `Vec`).
-///
-/// This is used to prevent `Ref<Ref<F>>` formulas
-/// and prevent conflict impls with `Ref` by using `F: NonRefFormula`
-/// instead of `F: Formula`, that would guarantee that `F` is not `Ref`.
-pub trait NonRefFormula: UnsizedFormula {}
+/// Function to combine sizes of formulas.
+/// Order of arguments is important.
+/// First argument is not allowed to be `None` and will cause an error.
+/// Second argument may be `None` and will produce `None` as a result.
+/// If both arguments are `Some` then result is their sum.
+pub const fn combine_sizes(a: Option<usize>, b: Option<usize>) -> Option<usize> {
+    let (arr, idx) = match (a, b) {
+        (None, _) => ([None], 1), // Error in both runtime and compile time.
+        (Some(_), None) => ([None], 0),
+        (Some(a), Some(b)) => ([Some(a + b)], 0),
+    };
+    arr[idx]
+}
 
-// pub trait FormulaAlias {
-//     type Alias;
-// }
+/// Function for multiplying size of formula by a constant.
+/// First argument cannot be `None` and will cause an error.
+/// If first argument is `Some` then product of arguments is returned.
+pub const fn repeat_size(a: Option<usize>, n: usize) -> Option<usize> {
+    let (arr, idx) = match a {
+        None => ([None], 1), // Error in both runtime and compile time.
+        Some(a) => ([Some(a * n)], 0),
+    };
+    arr[idx]
+}
 
-// impl<F, A> UnsizedFormula for F
-// where
-//     A: UnsizedFormula,
-//     F: FormulaAlias<Alias = A>,
-// {
-// }
-
-// impl<F, A> Formula for F
-// where
-//     A: Formula,
-//     F: FormulaAlias<Alias = A>,
-// {
-//     const SIZE: usize = A::SIZE;
-// }
+/// Ad-hoc negative trait.
+/// It *should* be implemented for all formulas except `Ref`.
+/// `derive(Formula)` does this automatically.
+pub trait NonRefFormula: Formula {}

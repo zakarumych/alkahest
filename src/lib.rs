@@ -25,11 +25,11 @@ mod vec;
 
 pub use self::{
     bytes::Bytes,
-    deserialize::{deserialize, Deserialize, DeserializeError, Deserializer},
-    formula::{Formula, UnsizedFormula},
+    deserialize::{deserialize, value_size, Deserialize, Deserializer, Error},
+    formula::Formula,
     lazy::Lazy,
     reference::Ref,
-    serialize::{serialize, serialized_size, Serialize, Serializer},
+    serialize::{serialize, serialize_ff, serialized_size, Serialize, Serializer},
     skip::Skip,
     slice::SliceIter,
 };
@@ -46,7 +46,7 @@ pub use alkahest_proc::{Deserialize, Formula, Serialize, UnsizedFormula};
 //     use core::marker::PhantomData;
 
 //     pub use crate::{
-//         deserialize::{Deserialize, DeserializeError, Deserializer},
+//         deserialize::{Deserialize, Error, Deserializer},
 //         formula::{Formula, UnsizedFormula},
 //         serialize::{Serialize, Serializer},
 //     };
@@ -59,11 +59,19 @@ pub use alkahest_proc::{Deserialize, Formula, Serialize, UnsizedFormula};
 //     where
 //         F: UnsizedFormula + ?Sized,
 //     {
-//         pub fn serialize_value<T>(self, ser: &mut Serializer, value: T) -> Result<(), usize>
+//         pub fn serialize_sized<T>(self, ser: &mut Serializer, value: T) -> Result<(), usize>
+//         where
+//             F: Formula + ?Sized,
+//             T: Serialize<F>,
+//         {
+//             ser.serialize_sized::<F, T>(value)
+//         }
+
+//         pub fn serialize_unsized<T>(self, ser: &mut Serializer, value: T) -> Result<(), usize>
 //         where
 //             T: Serialize<F>,
 //         {
-//             ser.serialize_value::<F, T>(value)
+//             ser.serialize_sized::<F, T>(value)
 //         }
 
 //         pub fn size_value<T>(self, value: T) -> usize
@@ -76,7 +84,7 @@ pub use alkahest_proc::{Deserialize, Formula, Serialize, UnsizedFormula};
 //         pub fn deserialize_sized<'de, T>(
 //             self,
 //             des: &mut Deserializer<'de>,
-//         ) -> Result<T, DeserializeError>
+//         ) -> Result<T, Error>
 //         where
 //             F: Formula,
 //             T: Deserialize<'de, F>,
@@ -87,16 +95,16 @@ pub use alkahest_proc::{Deserialize, Formula, Serialize, UnsizedFormula};
 //         pub fn deserialize_rest<'de, T>(
 //             self,
 //             des: &mut Deserializer<'de>,
-//         ) -> Result<T, DeserializeError>
+//         ) -> Result<T, Error>
 //         where
-//             F: UnsizedFormula,
+//             F: Formula,
 //             T: Deserialize<'de, F>,
 //         {
 //             des.deserialize_rest::<F, T>()
 //         }
 //     }
 
-//     pub fn with_formula<F: UnsizedFormula + ?Sized, L: UnsizedFormula + ?Sized>(
+//     pub fn with_formula<F: Formula + ?Sized, L: Formula + ?Sized>(
 //         _: impl FnOnce(&F) -> &L,
 //     ) -> WithFormula<L> {
 //         WithFormula {

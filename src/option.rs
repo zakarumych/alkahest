@@ -1,15 +1,14 @@
 use crate::{
-    deserialize::{Deserialize, DeserializeError, Deserializer},
-    formula::{Formula, NonRefFormula, UnsizedFormula},
+    deserialize::{Deserialize, Deserializer, Error},
+    formula::{combine_sizes, Formula, NonRefFormula},
     serialize::{Serialize, Serializer},
 };
 
-impl<T> UnsizedFormula for Option<T> where T: Formula {}
-impl<T> Formula for Option<T>
+impl<F> Formula for Option<F>
 where
-    T: Formula,
+    F: Formula,
 {
-    const SIZE: usize = 1 + T::SIZE;
+    const MAX_SIZE: Option<usize> = combine_sizes(Some(1), F::MAX_SIZE);
 }
 impl<T> NonRefFormula for Option<T> where T: Formula {}
 
@@ -18,20 +17,22 @@ where
     T: Formula,
     U: Serialize<T>,
 {
-    fn serialize(self, offset: usize, output: &mut [u8]) -> Result<(usize, usize), usize> {
-        let mut ser = Serializer::new(offset, output);
+    #[inline(always)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut ser = ser.into();
         match self {
-            Some(value) => {
-                ser.serialize_self::<u8>(1)?;
-                ser.serialize_unsized(value)?;
-                Ok(ser.finish())
-            }
             None => {
-                ser.serialize_self::<u8>(0)?;
-                ser.waste(T::SIZE)?;
-                Ok(ser.finish())
+                ser.write_bytes(&[0u8])?;
+            }
+            Some(value) => {
+                ser.write_bytes(&[1u8])?;
+                ser.write_value(value)?;
             }
         }
+        ser.finish()
     }
 }
 
@@ -40,35 +41,29 @@ where
     F: Formula,
     T: Deserialize<'de, F>,
 {
-    fn deserialize(len: usize, input: &'de [u8]) -> Result<Self, DeserializeError> {
-        let mut de = Deserializer::new(len, input)?;
-        let is_some = de.deserialize_self::<u8>()?;
+    #[inline(always)]
+    fn deserialize(mut de: Deserializer<'de>) -> Result<Self, Error> {
+        let is_some: u8 = de.read_bytes(1)?[0];
         if is_some != 0 {
-            Ok(Some(de.deserialize_sized()?))
+            Ok(Some(de.read_value()?))
         } else {
-            de.consume(F::SIZE)?;
             Ok(None)
         }
     }
 
-    fn deserialize_in_place(
-        &mut self,
-        len: usize,
-        input: &'de [u8],
-    ) -> Result<(), DeserializeError> {
-        let mut de = Deserializer::new(len, input)?;
-        let is_some = de.deserialize_self::<u8>()?;
+    #[inline(always)]
+    fn deserialize_in_place(&mut self, mut de: Deserializer<'de>) -> Result<(), Error> {
+        let is_some: u8 = de.read_bytes(1)?[0];
         if is_some != 0 {
             match self {
                 Some(value) => {
-                    de.deserialize_in_place_sized::<F, T>(value)?;
+                    de.read_in_place::<F, T>(value)?;
                 }
                 None => {
-                    *self = Some(de.deserialize_sized()?);
+                    *self = Some(de.read_value()?);
                 }
             }
         } else {
-            de.consume(F::SIZE)?;
             *self = None;
         }
         Ok(())

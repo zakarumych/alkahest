@@ -27,7 +27,7 @@ elements in `Iterator::next` and other methods.
 
 The crate works using three fundamental traits.
 `Formula`, `Serialize` and `Deserialize`.
-There's also supporting traits - `UnsizedFormula` and `NonRefFormula`.
+There's also supporting trait - `NonRefFormula`.
 
 *Alkahest* provides derive macros for `Formula`, `Serialize` and `Deserialize`.
 
@@ -58,15 +58,6 @@ The easiest way to define a new formula is to derive `Formula` trait for a struc
 Generics are supported, but may require complex bounds specified in attributes for
 `Serialize` and `Deserialize` derive macros.
 The only constrain is that all fields must implement `Formula`.
-
-For structs `UnsizedFormula` (super-trait of `Formula`) can be derived instead,
-allowing last field to be a slice or another `UnsizedFormula` type.
-Other fields still have to implement `Formula`.
-
-`UnsizedFormula` impls can also be wrapped in `Ref` type to convert it to a `Formula`.
-Therefore `Ref<[T]>` is a `Formula` given that `T` is a `Formula`.
-`Ref` formula contains address and length of a value.
-
 ## Serialize
 
 `Serialize<Formula>` trait is used to implement serialization

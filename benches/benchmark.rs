@@ -1,4 +1,4 @@
-use alkahest::{Seq, Serialize, UnsizedFormula};
+use alkahest::{Formula, Seq, Serialize};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 #[derive(Formula)]
@@ -200,7 +200,7 @@ criterion_main!(benches);
 
 pub fn alkahest_to_vec<'de, T, P>(data: P) -> Vec<u8>
 where
-    T: UnsizedFormula,
+Formula,
     P: alkahest::Serialize<T>,
 {
     let mut bytes = Vec::new();

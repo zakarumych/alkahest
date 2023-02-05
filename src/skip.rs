@@ -1,5 +1,5 @@
 use crate::{
-    deserialize::{Deserialize, DeserializeError},
+    deserialize::{Deserialize, Deserializer, Error},
     formula::NonRefFormula,
 };
 
@@ -10,15 +10,13 @@ impl<'de, F> Deserialize<'de, F> for Skip
 where
     F: NonRefFormula + ?Sized,
 {
-    fn deserialize(_len: usize, _input: &[u8]) -> Result<Self, DeserializeError> {
+    #[inline(always)]
+    fn deserialize(_de: Deserializer) -> Result<Self, Error> {
         Ok(Skip)
     }
 
-    fn deserialize_in_place(
-        &mut self,
-        _len: usize,
-        _input: &'de [u8],
-    ) -> Result<(), DeserializeError> {
+    #[inline(always)]
+    fn deserialize_in_place(&mut self, _de: Deserializer) -> Result<(), Error> {
         Ok(())
     }
 }

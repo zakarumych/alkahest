@@ -1,9 +1,9 @@
 use core::{borrow::Borrow, mem::size_of};
 
 use crate::{
-    deserialize::{Deserialize, DeserializeError},
-    formula::{Formula, NonRefFormula, UnsizedFormula},
-    serialize::Serialize,
+    deserialize::{Deserialize, Deserializer, Error},
+    formula::{Formula, NonRefFormula},
+    serialize::{Serialize, Serializer},
 };
 
 macro_rules! impl_primitive {
@@ -15,9 +15,8 @@ macro_rules! impl_primitive {
     };
 
     (impl $ty:ty) => {
-        impl UnsizedFormula for $ty {}
         impl Formula for $ty {
-            const SIZE: usize = size_of::<$ty>();
+            const MAX_SIZE: Option<usize> = Some(size_of::<$ty>());
         }
         impl NonRefFormula for $ty {}
 
@@ -26,17 +25,13 @@ macro_rules! impl_primitive {
             T: Borrow<$ty>,
         {
             #[inline(always)]
-            fn serialize(self, _offset: usize, output: &mut [u8]) -> Result<(usize, usize), usize> {
-                const SIZE: usize = size_of::<$ty>();
-
-                if output.len() < SIZE {
-                    return Err(SIZE);
-                };
-
-                let bytes = self.borrow().to_le_bytes();
-                let at = output.len() - SIZE;
-                output[at..].copy_from_slice(&bytes);
-                Ok((0, at))
+            fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
+                let mut ser = ser.into();
+                ser.write_bytes(&self.borrow().to_le_bytes())?;
+                ser.finish()
             }
         }
 
@@ -45,28 +40,17 @@ macro_rules! impl_primitive {
             T: From<$ty>,
         {
             #[inline(always)]
-            fn deserialize(len: usize, input: &[u8]) -> Result<Self, DeserializeError> {
-                const SIZE: usize = size_of::<$ty>();
-
-                if len != SIZE {
-                    return Err(DeserializeError::WrongLength);
-                }
-
-                if input.len() < SIZE {
-                    return Err(DeserializeError::OutOfBounds);
-                }
-
-                let mut bytes = [0; SIZE];
-                let at = input.len() - SIZE;
-                bytes.copy_from_slice(&input[at..]);
-
+            fn deserialize(mut de: Deserializer) -> Result<Self, Error> {
+                let mut bytes = [0; size_of::<$ty>()];
+                bytes.copy_from_slice(de.read_bytes(size_of::<$ty>())?);
+                de.finish()?;
                 let value = <$ty>::from_le_bytes(bytes);
                 Ok(From::from(value))
             }
 
             #[inline(always)]
-            fn deserialize_in_place(&mut self, len: usize, input: &[u8]) -> Result<(), DeserializeError> {
-                let value = <T as Deserialize<'_, $ty>>::deserialize(len, input)?;
+            fn deserialize_in_place(&mut self, de: Deserializer) -> Result<(), Error> {
+                let value = <T as Deserialize<'_, $ty>>::deserialize(de)?;
                 *self = value;
                 Ok(())
             }
@@ -89,9 +73,8 @@ impl_primitive! {
     f64,
 }
 
-impl UnsizedFormula for bool {}
 impl Formula for bool {
-    const SIZE: usize = 1;
+    const MAX_SIZE: Option<usize> = Some(1);
 }
 impl NonRefFormula for bool {}
 
@@ -100,8 +83,11 @@ where
     T: Borrow<bool>,
 {
     #[inline(always)]
-    fn serialize(self, offset: usize, output: &mut [u8]) -> Result<(usize, usize), usize> {
-        <u8 as Serialize<u8>>::serialize((*self.borrow()) as u8, offset, output)
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        <u8 as Serialize<u8>>::serialize((*self.borrow()) as u8, ser)
     }
 }
 
@@ -110,14 +96,14 @@ where
     T: From<bool>,
 {
     #[inline(always)]
-    fn deserialize(len: usize, input: &[u8]) -> Result<Self, DeserializeError> {
-        let value = <u8 as Deserialize<u8>>::deserialize(len, input)?;
+    fn deserialize(de: Deserializer) -> Result<Self, Error> {
+        let value = <u8 as Deserialize<u8>>::deserialize(de)?;
         Ok(From::from(value != 0))
     }
 
     #[inline(always)]
-    fn deserialize_in_place(&mut self, len: usize, input: &[u8]) -> Result<(), DeserializeError> {
-        let value = <u8 as Deserialize<u8>>::deserialize(len, input)?;
+    fn deserialize_in_place(&mut self, de: Deserializer) -> Result<(), Error> {
+        let value = <u8 as Deserialize<u8>>::deserialize(de)?;
         *self = From::from(value != 0);
         Ok(())
     }

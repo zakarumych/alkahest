@@ -1,9 +1,9 @@
 use core::{mem::size_of, num::TryFromIntError};
 
 use crate::{
-    deserialize::{Deserialize, DeserializeError},
-    formula::{Formula, UnsizedFormula},
-    serialize::Serialize,
+    deserialize::{Deserialize, Deserializer, Error},
+    formula::Formula,
+    serialize::{Serialize, Serializer},
 };
 
 #[cfg(feature = "fixed32")]
@@ -32,8 +32,8 @@ impl FixedUsize {
     }
 
     #[inline(always)]
-    pub fn from_le_bytes(bytes: [u8; size_of::<Self>()]) -> Self {
-        FixedUsize(FixedUsizeType::from_le_bytes(bytes))
+    pub fn from_le_bytes(bytes: [u8; size_of::<Self>()]) -> Result<Self, TryFromIntError> {
+        FixedUsizeType::from_le_bytes(bytes).try_into()
     }
 }
 
@@ -70,43 +70,44 @@ impl From<FixedUsize> for FixedUsizeType {
     }
 }
 
-impl UnsizedFormula for FixedUsize {}
 impl Formula for FixedUsize {
-    const SIZE: usize = size_of::<FixedUsizeType>();
+    const MAX_SIZE: Option<usize> = Some(size_of::<FixedUsizeType>());
 }
 
 impl Serialize<FixedUsize> for FixedUsize {
     #[inline(always)]
-    fn serialize(self, offset: usize, output: &mut [u8]) -> Result<(usize, usize), usize> {
-        <FixedUsizeType as Serialize<FixedUsizeType>>::serialize(self.0, offset, output)
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        <FixedUsizeType as Serialize<FixedUsizeType>>::serialize(self.0, ser)
     }
 }
 
 impl Serialize<FixedUsize> for &'_ FixedUsize {
     #[inline(always)]
-    fn serialize(self, offset: usize, output: &mut [u8]) -> Result<(usize, usize), usize> {
-        <FixedUsizeType as Serialize<FixedUsizeType>>::serialize(self.0, offset, output)
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        <FixedUsizeType as Serialize<FixedUsizeType>>::serialize(self.0, ser)
     }
 }
 
 impl Deserialize<'_, FixedUsize> for FixedUsize {
     #[inline(always)]
-    fn deserialize(len: usize, input: &[u8]) -> Result<Self, DeserializeError> {
-        let value = <FixedUsizeType as Deserialize<FixedUsizeType>>::deserialize(len, input)?;
+    fn deserialize(de: Deserializer) -> Result<Self, Error> {
+        let value = <FixedUsizeType as Deserialize<FixedUsizeType>>::deserialize(de)?;
         if value > usize::MAX as FixedUsizeType {
-            return Err(DeserializeError::InvalidUsize(value));
+            return Err(Error::InvalidUsize(value));
         }
 
         Ok(FixedUsize(value))
     }
 
     #[inline(always)]
-    fn deserialize_in_place(&mut self, len: usize, input: &[u8]) -> Result<(), DeserializeError> {
-        <FixedUsizeType as Deserialize<FixedUsizeType>>::deserialize_in_place(
-            &mut self.0,
-            len,
-            input,
-        )
+    fn deserialize_in_place(&mut self, de: Deserializer) -> Result<(), Error> {
+        <FixedUsizeType as Deserialize<FixedUsizeType>>::deserialize_in_place(&mut self.0, de)
     }
 }
 
@@ -130,8 +131,8 @@ impl FixedIsize {
     }
 
     #[inline(always)]
-    pub fn from_le_bytes(bytes: [u8; size_of::<Self>()]) -> Self {
-        FixedIsize(FixedIsizeType::from_le_bytes(bytes))
+    pub fn from_le_bytes(bytes: [u8; size_of::<Self>()]) -> Result<Self, TryFromIntError> {
+        FixedIsizeType::from_le_bytes(bytes).try_into()
     }
 }
 
@@ -168,42 +169,43 @@ impl From<FixedIsize> for FixedIsizeType {
     }
 }
 
-impl UnsizedFormula for FixedIsize {}
 impl Formula for FixedIsize {
-    const SIZE: usize = size_of::<FixedIsizeType>();
+    const MAX_SIZE: Option<usize> = Some(size_of::<FixedIsizeType>());
 }
 
 impl Serialize<FixedIsize> for FixedIsize {
     #[inline(always)]
-    fn serialize(self, offset: usize, output: &mut [u8]) -> Result<(usize, usize), usize> {
-        <FixedIsizeType as Serialize<FixedIsizeType>>::serialize(self.0, offset, output)
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        <FixedIsizeType as Serialize<FixedIsizeType>>::serialize(self.0, ser)
     }
 }
 
 impl Serialize<FixedIsize> for &'_ FixedIsize {
     #[inline(always)]
-    fn serialize(self, offset: usize, output: &mut [u8]) -> Result<(usize, usize), usize> {
-        <FixedIsizeType as Serialize<FixedIsizeType>>::serialize(self.0, offset, output)
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        <FixedIsizeType as Serialize<FixedIsizeType>>::serialize(self.0, ser)
     }
 }
 
 impl Deserialize<'_, FixedIsize> for FixedIsize {
     #[inline(always)]
-    fn deserialize(len: usize, input: &[u8]) -> Result<Self, DeserializeError> {
-        let value = <FixedIsizeType as Deserialize<FixedIsizeType>>::deserialize(len, input)?;
+    fn deserialize(de: Deserializer) -> Result<Self, Error> {
+        let value = <FixedIsizeType as Deserialize<FixedIsizeType>>::deserialize(de)?;
         if value > usize::MAX as FixedIsizeType {
-            return Err(DeserializeError::InvalidIsize(value));
+            return Err(Error::InvalidIsize(value));
         }
 
         Ok(FixedIsize(value))
     }
 
     #[inline(always)]
-    fn deserialize_in_place(&mut self, len: usize, input: &[u8]) -> Result<(), DeserializeError> {
-        <FixedIsizeType as Deserialize<FixedIsizeType>>::deserialize_in_place(
-            &mut self.0,
-            len,
-            input,
-        )
+    fn deserialize_in_place(&mut self, de: Deserializer) -> Result<(), Error> {
+        <FixedIsizeType as Deserialize<FixedIsizeType>>::deserialize_in_place(&mut self.0, de)
     }
 }
