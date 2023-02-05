@@ -9,7 +9,7 @@
 *Alkahest* is blazing-fast, zero-deps, zero-overhead, zero-unsafe, schema-based
 serialization library.
 It is suitable for broad range of use-cases, but tailored for
-for custom high-performance network protocols.
+custom high-performance network protocols.
 
 ## How it works
 
