@@ -55,22 +55,14 @@ impl Config {
                 check_fields: false,
             },
             (None, Some(None)) => {
-                let field_count = data.fields.len();
-
                 // Add predicates that fields implement
                 // `T: Formula` and `T: Serialize<T>`
                 let predicates = data
                     .fields
                     .iter()
-                    .enumerate()
-                    .map(|(idx, field)| -> syn::WherePredicate {
+                    .map(|field| -> syn::WherePredicate {
                         let ty = &field.ty;
-                        if idx + 1 < field_count {
-                            syn::parse_quote! { #ty: ::alkahest::Formula }
-                        } else {
-                            assert_eq!(idx + 1, field_count);
-                            syn::parse_quote! { #ty: ::alkahest::UnsizedFormula }
-                        }
+                        syn::parse_quote! { #ty: ::alkahest::Formula }
                     })
                     .chain(data.fields.iter().map(|field| -> syn::WherePredicate {
                         let ty = &field.ty;
@@ -99,22 +91,14 @@ impl Config {
                 }
             }
             (None, None) => {
-                let field_count = data.fields.len();
-
                 // Add predicates that fields implement
                 // `T: Formula` and `&T: Serialize<T>`
                 let predicates = data
                     .fields
                     .iter()
-                    .enumerate()
-                    .map(|(idx, field)| -> syn::WherePredicate {
+                    .map(|field| -> syn::WherePredicate {
                         let ty = &field.ty;
-                        if idx + 1 < field_count {
-                            syn::parse_quote! { #ty: ::alkahest::Formula }
-                        } else {
-                            assert_eq!(idx + 1, field_count);
-                            syn::parse_quote! { #ty: ::alkahest::UnsizedFormula }
-                        }
+                        syn::parse_quote! { #ty: ::alkahest::Formula }
                     })
                     .chain(data.fields.iter().map(|field| -> syn::WherePredicate {
                         let ty = &field.ty;
@@ -142,15 +126,9 @@ impl Config {
                 let predicates = data
                     .fields
                     .iter()
-                    .enumerate()
-                    .map(|(idx, field)| -> syn::WherePredicate {
+                    .map(|field| -> syn::WherePredicate {
                         let ty = &field.ty;
-                        if idx + 1 < field_count {
-                            syn::parse_quote! { #ty: ::alkahest::Formula }
-                        } else {
-                            assert_eq!(idx + 1, field_count);
-                            syn::parse_quote! { #ty: ::alkahest::UnsizedFormula }
-                        }
+                        syn::parse_quote! { #ty: ::alkahest::Formula }
                     })
                     .chain(data.fields.iter().map(|field| -> syn::WherePredicate {
                         let ty = &field.ty;
@@ -263,7 +241,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 _ => Vec::new(),
             };
 
-            let mut field_names = data
+            let field_names = data
                 .fields
                 .iter()
                 .enumerate()
@@ -272,9 +250,6 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                     None => syn::Member::from(index),
                 })
                 .collect::<Vec<_>>();
-
-            let last_field_name = field_names.pop().into_iter().collect::<Vec<_>>();
-            let field_names_but_last = field_names;
 
             match (cfg.reference, cfg.owned) {
                 (None, None) => unreachable!(),
@@ -306,9 +281,10 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                     let (impl_generics, _type_generics, where_clause) = generics.split_for_impl();
                     Ok(quote::quote! {
                         impl #impl_generics ::alkahest::Serialize<#formula_type> for &'ser #ident #type_generics #where_clause {
-                            fn serialize(self, offset: ::alkahest::private::usize, output: &mut [::alkahest::private::u8]) -> ::alkahest::private::Result<(::alkahest::private::usize, ::alkahest::private::usize), ::alkahest::private::usize> {
-                                use ::alkahest::private::Result;
-
+                            fn serialize<S>(self, ser: impl ::alkahest::private::Into<S>) -> ::alkahest::private::Result<S::Ok, S::Error>
+                            where
+                                S: ::alkahest::Serializer
+                            {
                                 // Checks compilation of code in the block.
                                 #[allow(unused)]
                                 let _ = || {
@@ -316,59 +292,26 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                     #check_field_count
                                 };
 
-                                let mut ser = ::alkahest::Serializer::new(offset, output);
-
-
-                                #[allow(unused_mut)]
-                                let mut err = Result::<(), usize>::Ok(());
-
+                                let mut ser = ser.into();
                                 #(
-                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names_but_last);
-                                    if let Result::Err(size) = err {
-                                        err = Result::Err(size + with_formula.size_value(&self.#field_names_but_last));
-                                    } else {
-                                        if let Result::Err(size) = with_formula.serialize_sized(&mut ser, &self.#field_names_but_last) {
-                                            err = Result::Err(size);
-                                        }
-                                    }
+                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names);
+                                    with_formula.write_value(&mut ser, &self.#field_names)?;
                                 )*
-
-                                #(
-                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#last_field_name);
-                                    if let Result::Err(size) = err {
-                                        err = Result::Err(size + with_formula.size_value(&self.#last_field_name));
-                                    } else {
-                                        if let Result::Err(size) = with_formula.serialize_sized(&mut ser, &self.#last_field_name) {
-                                            err = Result::Err(size);
-                                        }
-                                    }
-                                )*
-
-                                err?;
-                                Result::Ok(ser.finish())
-                            }
-
-                            fn size(self) -> ::alkahest::private::usize {
-                                #[allow(unused_mut)]
-                                let mut size = 0;
-                                #(
-                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names_but_last);
-                                    size += with_formula.size_value(&self.#field_names_but_last);
-                                )*
-                                #(
-                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#last_field_name);
-                                    size += with_formula.size_value(&self.#last_field_name);
-                                )*
-                                size
+                                ser.finish()
                             }
                         }
 
                         impl #impl_generics ::alkahest::Serialize<#formula_type> for #ident #type_generics #where_clause {
-                            fn serialize(self, offset: ::alkahest::private::usize, output: &mut [::alkahest::private::u8]) -> ::alkahest::private::Result<(::alkahest::private::usize, ::alkahest::private::usize), ::alkahest::private::usize> {
-                                todo!()
-                            }
-                            fn size(self) -> ::alkahest::private::usize {
-                                todo!()
+                            fn serialize<S>(self, ser: impl ::alkahest::private::Into<S>) -> ::alkahest::private::Result<S::Ok, S::Error>
+                            where
+                                S: ::alkahest::Serializer
+                            {
+                                let mut ser = ser.into();
+                                #(
+                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names);
+                                    with_formula.write_value(&mut ser, self.#field_names)?;
+                                )*
+                                ser.finish()
                             }
                         }
                     })
@@ -400,9 +343,10 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
 
                     let mut tokens = quote::quote! {
                         impl #impl_generics ::alkahest::Serialize<#formula_type> for #ident #type_generics #where_clause {
-                            fn serialize(self, offset: ::alkahest::private::usize, output: &mut [::alkahest::private::u8]) -> ::alkahest::private::Result<(::alkahest::private::usize, ::alkahest::private::usize), ::alkahest::private::usize> {
-                                use ::alkahest::private::Result;
-
+                            fn serialize<S>(self, ser: impl ::alkahest::private::Into<S>) -> ::alkahest::private::Result<S::Ok, S::Error>
+                            where
+                                S: ::alkahest::Serializer
+                            {
                                 // Checks compilation of code in the block.
                                 #[allow(unused)]
                                 let _ = || {
@@ -410,50 +354,12 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                     #check_field_count
                                 };
 
-                                let mut ser = ::alkahest::Serializer::new(offset, output);
-
-
-                                #[allow(unused_mut)]
-                                let mut err = Result::<(), usize>::Ok(());
-
+                                let mut ser = ser.into();
                                 #(
-                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names_but_last);
-                                    if let Result::Err(size) = err {
-                                        err = Result::Err(size + with_formula.size_value(self.#field_names_but_last));
-                                    } else {
-                                        if let Result::Err(size) = with_formula.serialize_sized(&mut ser, self.#field_names_but_last) {
-                                            err = Result::Err(size);
-                                        }
-                                    }
+                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names);
+                                    with_formula.write_value(&mut ser, self.#field_names)?;
                                 )*
-
-                                #(
-                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#last_field_name);
-                                    if let Result::Err(size) = err {
-                                        err = Result::Err(size + with_formula.size_value(self.#last_field_name));
-                                    } else {
-                                        if let Result::Err(size) = with_formula.serialize_value(&mut ser, self.#last_field_name) {
-                                            err = Result::Err(size);
-                                        }
-                                    }
-                                )*
-
-                                err?;
-                                Result::Ok(ser.finish())
-                            }
-
-                            fn size(self) -> ::alkahest::private::usize {
-                                #[allow(unused_mut)]
-                                let mut size = 0;
-                                #(
-                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names_but_last);
-                                    size += with_formula.size_value(self.#field_names_but_last);
-                                )*
-                                #(
-                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#last_field_name);
-                                    size += with_formula.size_value(self.#last_field_name);
-                                )*
-                                size
+                                ser.finish()
                             }
                         }
                     };
@@ -480,52 +386,16 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
 
                         tokens.extend(quote::quote! {
                             impl #impl_generics ::alkahest::Serialize<#formula_type> for &'ser #ident #type_generics #where_clause {
-                                fn serialize(self, offset: ::alkahest::private::usize, output: &mut [::alkahest::private::u8]) -> ::alkahest::private::Result<(::alkahest::private::usize, ::alkahest::private::usize), ::alkahest::private::usize> {
-                                    use ::alkahest::private::Result;
-
-                                    let mut ser = ::alkahest::Serializer::new(offset, output);
-
-                                    #[allow(unused_mut)]
-                                    let mut err = Result::<(), usize>::Ok(());
-
+                                fn serialize<S>(self, ser: impl ::alkahest::private::Into<S>) -> ::alkahest::private::Result<S::Ok, S::Error>
+                                where
+                                    S: ::alkahest::Serializer
+                                {
+                                    let mut ser = ser.into();
                                     #(
-                                        let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names_but_last);
-                                        if let Result::Err(size) = err {
-                                            err = Result::Err(size + with_formula.size_value(&self.#field_names_but_last));
-                                        } else {
-                                            if let Result::Err(size) = with_formula.serialize_sized(&mut ser, &self.#field_names_but_last) {
-                                                err = Result::Err(size);
-                                            }
-                                        }
+                                        let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names);
+                                        with_formula.write_value(&mut ser, &self.#field_names)?;
                                     )*
-
-                                    #(
-                                        let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#last_field_name);
-                                        if let Result::Err(size) = err {
-                                            err = Result::Err(size + with_formula.size_value(&self.#last_field_name));
-                                        } else {
-                                            if let Result::Err(size) = with_formula.serialize_value(&mut ser, &self.#last_field_name) {
-                                                err = Result::Err(size);
-                                            }
-                                        }
-                                    )*
-
-                                    err?;
-                                    Result::Ok(ser.finish())
-                                }
-
-                                fn size(self) -> ::alkahest::private::usize {
-                                    #[allow(unused_mut)]
-                                    let mut size = 0;
-                                    #(
-                                        let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names_but_last);
-                                        size += with_formula.size_value(&self.#field_names_but_last);
-                                    )*
-                                    #(
-                                        let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#last_field_name);
-                                        size += with_formula.size_value(&self.#last_field_name);
-                                    )*
-                                    size
+                                    ser.finish()
                                 }
                             }
                         });

@@ -288,7 +288,8 @@ impl<'ser> Serializer for FailFastSerializer<'ser> {
         let end = self.output.len() - self.stack;
         let start = end - stack;
         self.output.copy_within(start..end, heap);
-        self.heap += heap + stack;
+        self.heap = heap + stack;
+
         let address = FixedUsize::truncate_unchecked(self.heap);
         let size = FixedUsize::truncate_unchecked(stack);
 
@@ -420,8 +421,12 @@ impl<'ser> Serializer for ExactSizeSerializer<'ser> {
             }
         }
 
-        self.heap += heap + stack;
-        Ok(())
+        self.heap = heap + stack;
+
+        let address = FixedUsize::truncate_unchecked(self.heap);
+        let size = FixedUsize::truncate_unchecked(stack);
+
+        self.write_value::<[FixedUsize; 2], _>([address, size])
     }
 
     #[inline(always)]
@@ -446,7 +451,8 @@ impl<'ser> Serializer for ExactSizeSerializer<'ser> {
     }
 }
 
-pub fn serialize_ff<F, T>(value: T, output: &mut [u8]) -> Result<usize, ()>
+#[inline]
+pub fn serialize<F, T>(value: T, output: &mut [u8]) -> Result<usize, ()>
 where
     F: Formula + ?Sized,
     T: Serialize<F>,
@@ -455,20 +461,22 @@ where
         return Err(());
     }
 
-    let mut ser = FailFastSerializer::new(HEADER_SIZE, &mut output[HEADER_SIZE..]);
+    let mut ser = FailFastSerializer::new(HEADER_SIZE, output);
     ser.write_value::<F, T>(value)?;
     let (heap, stack) = ser.finish()?;
+    output.copy_within(output.len() - stack.., heap);
 
-    let address = FixedUsize::truncate_unchecked(heap);
+    let address = FixedUsize::truncate_unchecked(heap + stack);
     let size = FixedUsize::truncate_unchecked(stack);
     let mut ser = FailFastSerializer::new(0, &mut output[..HEADER_SIZE]);
     ser.write_value::<[FixedUsize; 2], _>([address, size])
         .unwrap();
 
-    Ok(heap)
+    Ok(heap + stack)
 }
 
-pub fn serialize<F, T>(value: T, output: &mut [u8]) -> Result<usize, usize>
+#[inline]
+pub fn serialize_or_size<F, T>(value: T, output: &mut [u8]) -> Result<usize, usize>
 where
     F: Formula + ?Sized,
     T: Serialize<F>,
@@ -477,20 +485,21 @@ where
         return Err(serialized_size(value));
     }
 
-    let mut ser = ExactSizeSerializer::new(HEADER_SIZE, &mut output[HEADER_SIZE..]);
+    let mut ser = ExactSizeSerializer::new(HEADER_SIZE, output);
     ser.write_value::<F, T>(value).unwrap();
     let (heap, stack) = match ser.finish() {
         Err((heap, stack)) => return Err(heap + stack),
         Ok(sizes) => sizes,
     };
+    output.copy_within(output.len() - stack.., heap);
 
-    let address = FixedUsize::truncate_unchecked(heap);
+    let address = FixedUsize::truncate_unchecked(heap + stack);
     let size = FixedUsize::truncate_unchecked(stack);
     let mut ser = FailFastSerializer::new(0, &mut output[..HEADER_SIZE]);
     ser.write_value::<[FixedUsize; 2], _>([address, size])
         .unwrap();
 
-    Ok(heap)
+    Ok(heap + stack)
 }
 
 fn serialized_sizes<F, T>(value: T) -> (usize, usize)
@@ -522,7 +531,7 @@ where
 {
     if let Some(max_size) = F::MAX_SIZE {
         assert!(
-            stack > max_size,
+            stack <= max_size,
             "Incorrect `<{} as Serialize<{}>>` implementation. `stack` size is `{}` but must be at most `{}`",
             type_name::<T>(),
             type_name::<F>(),

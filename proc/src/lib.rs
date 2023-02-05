@@ -13,20 +13,7 @@ use proc_macro::TokenStream;
 /// All fields must implement `Formula`.
 #[proc_macro_derive(Formula, attributes(alkahest))]
 pub fn derive_formula(input: TokenStream) -> TokenStream {
-    match formula::derive(input, true) {
-        Ok(tokens) => tokens.into(),
-        Err(err) => err.to_compile_error().into(),
-    }
-}
-
-/// Proc-macro to derive `UnsizedFormula` trait for user-defined type.
-///
-/// This macro requires that type is either `struct` or `enum`.
-/// All fields must except the last must implement `Formula`
-/// and the last field must implement `UnsizedFormula`.
-#[proc_macro_derive(UnsizedFormula, attributes(alkahest))]
-pub fn derive_unsized_formula(input: TokenStream) -> TokenStream {
-    match formula::derive(input, false) {
+    match formula::derive(input) {
         Ok(tokens) => tokens.into(),
         Err(err) => err.to_compile_error().into(),
     }

@@ -3,19 +3,12 @@ use syn::spanned::Spanned;
 
 use crate::attrs::parse_attributes;
 
-pub fn derive(input: proc_macro::TokenStream, sized: bool) -> syn::Result<TokenStream> {
+pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
     let input = syn::parse::<syn::DeriveInput>(input)?;
     let ident = &input.ident;
 
     let args = parse_attributes(&input.attrs)?;
-    if sized {
-        if let Some(non_exhaustive) = args.non_exhaustive {
-            return Err(syn::Error::new_spanned(
-                non_exhaustive,
-                "SizedFormula cannot be non-exhaustive",
-            ));
-        }
-    }
+    let non_exhaustive = args.non_exhaustive.is_some();
 
     if let Some(formula) = args
         .serialize
@@ -49,7 +42,7 @@ pub fn derive(input: proc_macro::TokenStream, sized: bool) -> syn::Result<TokenS
             let mut formula_generics = input.generics.clone();
             if !all_field_types.is_empty() && !input.generics.params.is_empty() {
                 let predicates = all_field_types.iter().map(|ty| -> syn::WherePredicate {
-                    syn::parse_quote_spanned! { ty.span() => #ty: ::alkahest::UnsizedFormula }
+                    syn::parse_quote_spanned! { ty.span() => #ty: ::alkahest::Formula }
                 });
 
                 let where_clause = formula_generics.make_where_clause();
@@ -82,7 +75,7 @@ pub fn derive(input: proc_macro::TokenStream, sized: bool) -> syn::Result<TokenS
             let (formula_impl_generics, formula_type_generics, formula_where_clause) =
                 formula_generics.split_for_impl();
 
-            let mut tokens = quote::quote! {
+            Ok(quote::quote! {
                 impl #impl_generics #ident #type_generics #where_clause {
                     #(
                         #[doc(hidden)]
@@ -99,36 +92,19 @@ pub fn derive(input: proc_macro::TokenStream, sized: bool) -> syn::Result<TokenS
                     }
                 }
 
-                impl #formula_impl_generics ::alkahest::UnsizedFormula for #ident #formula_type_generics #formula_where_clause {}
-                impl #formula_impl_generics ::alkahest::NonRefFormula for #ident #formula_type_generics #formula_where_clause {}
-            };
-
-            if sized {
-                let mut sized_formula_generics = formula_generics.clone();
-
-                if !all_field_types.is_empty() {
-                    let predicates = all_field_types.iter().map(|ty| -> syn::WherePredicate {
-                        syn::parse_quote_spanned! { ty.span() => #ty: ::alkahest::Formula }
-                    });
-
-                    let where_clause = sized_formula_generics.make_where_clause();
-                    where_clause.predicates.extend(predicates);
+                impl #formula_impl_generics ::alkahest::Formula for #ident #formula_type_generics #formula_where_clause {
+                    const MAX_SIZE: ::alkahest::private::Option<::alkahest::private::usize> = {
+                        #[allow(unused_mut)]
+                        let mut max_size = Some(0);
+                        #(
+                            max_size = ::alkahest::private::combine_sizes(max_size, <#all_field_types as ::alkahest::Formula>::MAX_SIZE);
+                        )*;
+                        max_size
+                    };
                 }
 
-                let (
-                    sized_formula_impl_generics,
-                    sized_formula_type_generics,
-                    sized_formula_where_clause,
-                ) = sized_formula_generics.split_for_impl();
-
-                tokens.extend(quote::quote! {
-                    impl #sized_formula_impl_generics ::alkahest::Formula for #ident #sized_formula_type_generics #sized_formula_where_clause {
-                        const SIZE: ::alkahest::private::usize = 0 #( + <#all_field_types as ::alkahest::Formula>::SIZE)*;
-                    }
-                });
-            }
-
-            Ok(tokens)
+                impl #formula_impl_generics ::alkahest::NonRefFormula for #ident #formula_type_generics #formula_where_clause {}
+            })
         }
         syn::Data::Enum(data) => {
             let all_field_types: Vec<&syn::Type> = data
@@ -197,7 +173,7 @@ pub fn derive(input: proc_macro::TokenStream, sized: bool) -> syn::Result<TokenS
             let (formula_impl_generics, formula_type_generics, formula_where_clause) =
                 formula_generics.split_for_impl();
 
-            let mut tokens = quote::quote! {
+            Ok(quote::quote! {
                 impl #impl_generics #ident #type_generics #where_clause {
                     #(#(
                         #[doc(hidden)]
@@ -216,35 +192,8 @@ pub fn derive(input: proc_macro::TokenStream, sized: bool) -> syn::Result<TokenS
                     )*
                 }
 
-                impl #formula_impl_generics ::alkahest::UnsizedFormula for #ident #formula_type_generics #formula_where_clause {}
-            };
-
-            if sized {
-                let mut sized_formula_generics = formula_generics.clone();
-
-                if !all_field_types.is_empty() {
-                    let predicates = all_field_types.iter().map(|ty| -> syn::WherePredicate {
-                        syn::parse_quote_spanned! { ty.span() => #ty: ::alkahest::Formula }
-                    });
-
-                    let where_clause = sized_formula_generics.make_where_clause();
-                    where_clause.predicates.extend(predicates);
-                }
-
-                let (
-                    sized_formula_impl_generics,
-                    sized_formula_type_generics,
-                    sized_formula_where_clause,
-                ) = sized_formula_generics.split_for_impl();
-
-                tokens.extend(quote::quote! {
-                    impl #sized_formula_impl_generics ::alkahest::Formula for #ident #sized_formula_type_generics #sized_formula_where_clause {
-                        const SIZE: ::alkahest::private::usize = 0 #( + <#all_field_types as ::alkahest::Formula>::SIZE)*;
-                    }
-                });
-            }
-
-            Ok(tokens)
+                impl #formula_impl_generics ::alkahest::Formula for #ident #formula_type_generics #formula_where_clause {}
+            })
         }
     }
 }

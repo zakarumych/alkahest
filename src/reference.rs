@@ -50,6 +50,7 @@ where
     F: NonRefFormula + ?Sized,
     T: Deserialize<'de, F> + ?Sized,
 {
+    #[inline(always)]
     fn deserialize(mut de: Deserializer<'de>) -> Result<Self, Error>
     where
         Self: Sized,
@@ -61,6 +62,7 @@ where
         Ok(value)
     }
 
+    #[inline(always)]
     fn deserialize_in_place(&mut self, mut de: Deserializer<'de>) -> Result<(), Error> {
         let mut deref = de.deref()?;
         deref.read_in_place::<F, T>(self)?;

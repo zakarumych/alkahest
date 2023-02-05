@@ -21,6 +21,7 @@ where
     I: IntoIterator<Item = T>,
     T: Serialize<F>,
 {
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -34,6 +35,7 @@ where
     F: Formula,
     T: Deserialize<'de, Ref<[F]>> + ?Sized,
 {
+    #[inline(always)]
     fn deserialize(de: Deserializer<'de>) -> Result<Self, Error>
     where
         T: Sized,
@@ -41,6 +43,7 @@ where
         <T as Deserialize<'de, Ref<[F]>>>::deserialize(de)
     }
 
+    #[inline(always)]
     fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), Error> {
         <T as Deserialize<'de, Ref<[F]>>>::deserialize_in_place(self, de)
     }
@@ -51,10 +54,12 @@ where
     F: Formula,
     T: Deserialize<'de, F>,
 {
+    #[inline(always)]
     fn deserialize(de: Deserializer<'de>) -> Result<Self, Error> {
         de.into_iter::<F, T>()?.collect()
     }
 
+    #[inline(always)]
     fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), Error> {
         let iter = de.into_iter::<F, T>()?;
         self.reserve(iter.len());
@@ -70,10 +75,12 @@ where
     F: Formula,
     T: Deserialize<'de, F>,
 {
+    #[inline(always)]
     fn deserialize(de: Deserializer<'de>) -> Result<Self, Error> {
         de.into_iter::<F, T>()?.collect()
     }
 
+    #[inline(always)]
     fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), Error> {
         let iter = de.into_iter::<F, T>()?;
         self.reserve(iter.len());

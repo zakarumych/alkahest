@@ -17,7 +17,7 @@ where
     F: Formula,
     T: Serialize<F>,
 {
-    #[inline]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -34,7 +34,7 @@ where
     F: Formula,
     &'ser T: Serialize<F>,
 {
-    #[inline]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,

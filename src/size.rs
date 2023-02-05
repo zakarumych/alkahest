@@ -12,6 +12,12 @@ pub type FixedUsizeType = u32;
 #[cfg(feature = "fixed64")]
 pub type FixedUsizeType = u64;
 
+#[cfg(feature = "fixed32")]
+pub type FixedIsizeType = i32;
+
+#[cfg(feature = "fixed64")]
+pub type FixedIsizeType = i64;
+
 /// Type used to represent sizes and offsets in serialized data.
 /// This places limitation on sequence sizes which practically is never hit.
 /// `usize` itself is not portable and cannot be written into alkahest package.
@@ -110,12 +116,6 @@ impl Deserialize<'_, FixedUsize> for FixedUsize {
         <FixedUsizeType as Deserialize<FixedUsizeType>>::deserialize_in_place(&mut self.0, de)
     }
 }
-
-#[cfg(feature = "fixed32")]
-pub type FixedIsizeType = i32;
-
-#[cfg(feature = "fixed64")]
-pub type FixedIsizeType = i64;
 
 /// Type used to represent sizes and offsets in serialized data.
 /// This places limitation on sequence sizes which practically is never hit.

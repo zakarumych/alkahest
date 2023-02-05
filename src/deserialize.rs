@@ -67,6 +67,7 @@ impl<'de> Deserializer<'de> {
     #[inline(always)]
     #[must_use]
     pub const fn new_unchecked(stack: usize, input: &'de [u8]) -> Self {
+        debug_assert!(stack <= input.len());
         Deserializer { input, stack }
     }
 
@@ -80,12 +81,13 @@ impl<'de> Deserializer<'de> {
             None => self.stack,
             Some(max_size) => self.stack.min(max_size),
         };
-        self.stack -= sub_stack;
 
-        Deserializer {
-            input: self.input,
-            stack: sub_stack,
-        }
+        let sub = Deserializer::new_unchecked(sub_stack, self.input);
+
+        self.stack -= sub_stack;
+        let at = self.input.len() - sub_stack;
+        self.input = &self.input[..at];
+        sub
     }
 
     #[inline(always)]
@@ -148,10 +150,7 @@ impl<'de> Deserializer<'de> {
             return Err(Error::WrongAddress);
         }
 
-        Ok(Deserializer {
-            input: &self.input[..address.into()],
-            stack: size.into(),
-        })
+        Deserializer::new(size.into(), &self.input[..address.into()])
     }
 
     #[inline(always)]
@@ -195,12 +194,12 @@ where
 {
     type Item = Result<T, Error>;
 
-    #[inline]
+    #[inline(always)]
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.count, Some(self.count))
     }
 
-    #[inline]
+    #[inline(always)]
     fn next(&mut self) -> Option<Result<T, Error>> {
         if self.count == 0 {
             return None;
@@ -216,12 +215,12 @@ where
         Some(result)
     }
 
-    #[inline]
+    #[inline(always)]
     fn count(self) -> usize {
         self.count
     }
 
-    #[inline]
+    #[inline(always)]
     fn nth(&mut self, n: usize) -> Option<Result<T, Error>> {
         if n >= self.count {
             self.count = 0;
@@ -234,7 +233,7 @@ where
         self.next()
     }
 
-    #[inline]
+    #[inline(always)]
     fn fold<B, Fun>(self, init: B, mut f: Fun) -> B
     where
         Fun: FnMut(B, Result<T, Error>) -> B,
@@ -256,7 +255,7 @@ where
     F: Formula,
     T: Deserialize<'de, F>,
 {
-    #[inline]
+    #[inline(always)]
     fn next_back(&mut self) -> Option<Result<T, Error>> {
         if self.count == 0 {
             return None;
@@ -269,7 +268,7 @@ where
         Some(T::deserialize(Deserializer::new_unchecked(size, input)))
     }
 
-    #[inline]
+    #[inline(always)]
     fn nth_back(&mut self, n: usize) -> Option<Result<T, Error>> {
         if n >= self.count {
             self.count = 0;
@@ -279,7 +278,7 @@ where
         self.next_back()
     }
 
-    #[inline]
+    #[inline(always)]
     fn rfold<B, Fun>(self, init: B, mut f: Fun) -> B
     where
         Fun: FnMut(B, Result<T, Error>) -> B,
@@ -304,7 +303,7 @@ where
     F: Formula,
     T: Deserialize<'de, F>,
 {
-    #[inline]
+    #[inline(always)]
     fn len(&self) -> usize {
         self.count
     }
@@ -326,6 +325,7 @@ pub fn value_size(input: &[u8]) -> Result<usize, Error> {
     de.read_auto::<FixedUsize>().map(usize::from)
 }
 
+#[inline]
 pub fn deserialize<'de, F, T>(input: &'de [u8]) -> Result<(T, usize), Error>
 where
     F: Formula + ?Sized,

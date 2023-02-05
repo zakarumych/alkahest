@@ -23,16 +23,9 @@ impl Config {
                 // Add predicates that fields implement
                 // `SizedFormula + Deserialize<'de, #field_type>`
                 // Except that last one if `non_exhaustive` is not set.
-                let count = data.fields.len();
-                let predicates = data.fields.iter().enumerate().map(|(idx, field)| -> syn::WherePredicate {
+                let predicates = data.fields.iter().map(|field| -> syn::WherePredicate {
                         let ty = &field.ty;
-
-                        if non_exhaustive || idx + 1 < count {
-                            syn::parse_quote! { #ty: ::alkahest::Formula + ::alkahest::Deserialize<'de, #ty> }
-                        } else {
-                            debug_assert_eq!(idx + 1, count);
-                            syn::parse_quote! { #ty: ::alkahest::UnsizedFormula + ::alkahest::Deserialize<'de, #ty> }
-                        }
+                        syn::parse_quote! { #ty: ::alkahest::Formula + ::alkahest::Deserialize<'de, #ty> }
                     }).collect();
 
                 // Add `'de` generic parameter
@@ -127,7 +120,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 _ => Vec::new(),
             };
 
-            let mut field_names = data
+            let field_names = data
                 .fields
                 .iter()
                 .enumerate()
@@ -137,25 +130,18 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 })
                 .collect::<Vec<_>>();
 
-            let mut last_field_name = vec![];
-            let field_names_no_last;
             let consume_tail;
 
             if non_exhaustive {
-                field_names_no_last = field_names;
-                consume_tail = vec![quote::quote! {
-                    des.consume_tail();
-                }];
+                consume_tail = quote::quote! {
+                    des.read_all_bytes();
+                };
             } else {
-                if let Some(last) = field_names.pop() {
-                    last_field_name.push(last);
-                }
-                field_names_no_last = field_names;
-                consume_tail = vec![];
+                consume_tail = quote::quote! {};
             }
 
             let field_count = data.fields.len();
-            let check_field_count = if check_fields {
+            let check_field_count = if check_fields && !non_exhaustive {
                 quote::quote! {
                     let _: [(); #field_count] = <#formula_type>::__alkahest_formula_field_count();
                 }
@@ -168,7 +154,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 deserialize_generics.split_for_impl();
             Ok(quote::quote! {
                 impl #impl_deserialize_generics ::alkahest::Deserialize<'de, #formula_type> for #ident #type_generics #where_serialize_clause {
-                    fn deserialize(len: ::alkahest::private::usize, input: &'de [::alkahest::private::u8]) -> ::alkahest::private::Result<Self, ::alkahest::DeserializeError> {
+                    fn deserialize(mut de: ::alkahest::Deserializer<'de>) -> ::alkahest::private::Result<Self, ::alkahest::Error> {
                         // Checks compilation of code in the block.
                         #[allow(unused)]
                         let _ = || {
@@ -176,28 +162,24 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         };
                         #check_field_count
 
-                        let mut des = ::alkahest::Deserializer::new(len, input);
+                        #(
+                            let #field_names = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names).read_value(&mut de)?;
+                        )*
+                        #consume_tail
 
-                        #(
-                            let #field_names_no_last = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names_no_last).deserialize_sized(&mut des)?;
-                        )*
-                        #(
-                            let #last_field_name = ::alkahest::private::with_formula(|s: &#formula_type| &s.#last_field_name).deserialize_rest(&mut des)?;
-                        )*
-                        #(
-                            #consume_tail
-                        )*
-
-                        des.finish_checked()?;
+                        de.finish()?;
 
                         ::alkahest::private::Result::Ok(#ident {
-                            #(#field_names_no_last,)*
-                            #(#last_field_name,)*
+                            #(#field_names,)*
                         })
                     }
 
-                    fn deserialize_in_place(&mut self, len: usize, input: &[u8]) -> Result<(), ::alkahest::DeserializeError> {
-                        todo!()
+                    fn deserialize_in_place(&mut self, mut de: ::alkahest::Deserializer<'de>) -> Result<(), ::alkahest::Error> {
+                        #(
+                            let #field_names = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names).read_in_place(&mut self.#field_names, &mut de)?;
+                        )*
+                        #consume_tail
+                        de.finish()
                     }
                 }
             })
