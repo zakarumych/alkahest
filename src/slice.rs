@@ -1,9 +1,9 @@
-use core::iter::FusedIterator;
+use core::{iter::FusedIterator, ops::Range};
 
 use crate::{
-    deserialize::{DeIter, Deserializer, Error, NonRefDeserialize},
+    deserialize::{DeIter, Deserialize, Deserializer, Error},
     formula::{Formula, NonRefFormula},
-    serialize::{NonRefSerializeOwned, SerializeOwned, Serializer},
+    serialize::{SerializeOwned, Serializer},
 };
 
 impl<F> NonRefFormula for [F]
@@ -13,17 +13,17 @@ where
     const MAX_SIZE: Option<usize> = None;
 }
 
-/// Wrapper for iterators to implement `NonRefSerializeOwned` into slice formula.
+/// Wrapper for iterators to implement `SerializeOwned` into slice formula.
 #[repr(transparent)]
 pub struct SerIter<I>(pub I);
 
-impl<F, T, I> NonRefSerializeOwned<[F]> for SerIter<I>
+impl<F, T, I> SerializeOwned<[F]> for SerIter<I>
 where
     F: Formula,
     I: IntoIterator<Item = T>,
-    T: SerializeOwned<F>,
+    T: SerializeOwned<F::NonRef>,
 {
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn serialize_owned<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -35,70 +35,61 @@ where
         ser.finish()
     }
 }
-macro_rules! impl_iter_to_slice {
-    (for<F $(,$a:ident)*> $iter:ty where $($predicates:tt)*) => {
-        impl<F $(, $a)*> NonRefSerializeOwned<[F]> for $iter
-        where $($predicates)*
-        {
-            #[inline(always)]
-            fn serialize_owned<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
-            where
-                S: Serializer,
-            {
-                let mut ser = ser.into();
-                for elem in self {
-                    ser.write_value::<F, _>(elem)?;
-                }
-                ser.finish()
-            }
+
+impl<F, T> SerializeOwned<[F]> for Range<T>
+where
+    Range<T>: IntoIterator<Item = T>,
+    T: SerializeOwned<F::NonRef>,
+    F: Formula,
+{
+    fn serialize_owned<S>(self, er: impl Into<S>) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut er = er.into();
+        for elem in self {
+            er.write_value::<F, _>(elem)?;
         }
-    };
+        er.finish()
+    }
 }
-
-impl_iter_to_slice!(for<F, T> core::ops::Range<T> where F: Formula, T: SerializeOwned<F>, core::ops::Range<T>: IntoIterator<Item = T>);
-
-#[cfg(feature = "alloc")]
-impl_iter_to_slice!(for<F, T> alloc::vec::Vec<T> where F: Formula, T: SerializeOwned<F>);
-
-#[cfg(feature = "alloc")]
-impl_iter_to_slice!(for<F, T> alloc::collections::VecDeque<T> where F: Formula, T: SerializeOwned<F>);
 
 pub struct SliceIter<'de, F, T = F> {
     inner: DeIter<'de, F, T>,
 }
 
-impl<'de, F, T> NonRefDeserialize<'de, [F]> for SliceIter<'de, F, T>
+impl<'de, F, T> Deserialize<'de, [F]> for SliceIter<'de, F, T>
 where
     F: Formula,
-    T: NonRefDeserialize<'de, F::NonRef>,
+    T: Deserialize<'de, F::NonRef>,
 {
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn deserialize(de: Deserializer<'de>) -> Result<Self, Error> {
         Ok(SliceIter {
             inner: de.into_iter()?,
         })
     }
 
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), Error> {
         self.inner = de.into_iter()?;
         Ok(())
     }
 }
 
-impl<'de, F, T, const N: usize> NonRefDeserialize<'de, [F; N]> for SliceIter<'de, F, T>
+impl<'de, F, T, const N: usize> Deserialize<'de, [F; N]> for SliceIter<'de, F, T>
 where
     F: Formula,
-    T: NonRefDeserialize<'de, F::NonRef>,
+    T: Deserialize<'de, F::NonRef>,
 {
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn deserialize(de: Deserializer<'de>) -> Result<Self, Error> {
         Ok(SliceIter {
             inner: de.into_iter()?,
         })
     }
 
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), Error> {
         self.inner = de.into_iter()?;
         Ok(())
@@ -108,31 +99,31 @@ where
 impl<'de, F, T> Iterator for SliceIter<'de, F, T>
 where
     F: Formula,
-    T: NonRefDeserialize<'de, F::NonRef>,
+    T: Deserialize<'de, F::NonRef>,
 {
     type Item = Result<T, Error>;
 
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.inner.size_hint()
     }
 
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn next(&mut self) -> Option<Result<T, Error>> {
         self.inner.next()
     }
 
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn count(self) -> usize {
         self.inner.count()
     }
 
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn nth(&mut self, n: usize) -> Option<Result<T, Error>> {
         self.inner.nth(n)
     }
 
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn fold<B, Fun>(self, init: B, f: Fun) -> B
     where
         Fun: FnMut(B, Result<T, Error>) -> B,
@@ -144,19 +135,19 @@ where
 impl<'de, F, T> DoubleEndedIterator for SliceIter<'de, F, T>
 where
     F: Formula,
-    T: NonRefDeserialize<'de, F::NonRef>,
+    T: Deserialize<'de, F::NonRef>,
 {
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn next_back(&mut self) -> Option<Result<T, Error>> {
         self.inner.next_back()
     }
 
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn nth_back(&mut self, n: usize) -> Option<Result<T, Error>> {
         self.inner.nth_back(n)
     }
 
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn rfold<B, Fun>(self, init: B, f: Fun) -> B
     where
         Fun: FnMut(B, Result<T, Error>) -> B,
@@ -168,9 +159,9 @@ where
 impl<'de, F, T> ExactSizeIterator for SliceIter<'de, F, T>
 where
     F: Formula,
-    T: NonRefDeserialize<'de, F::NonRef>,
+    T: Deserialize<'de, F::NonRef>,
 {
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn len(&self) -> usize {
         self.inner.len()
     }
@@ -179,6 +170,6 @@ where
 impl<'de, F, T> FusedIterator for SliceIter<'de, F, T>
 where
     F: Formula,
-    T: NonRefDeserialize<'de, F::NonRef>,
+    T: Deserialize<'de, F::NonRef>,
 {
 }

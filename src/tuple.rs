@@ -1,15 +1,15 @@
 use crate::{
-    deserialize::{Deserializer, Error, NonRefDeserialize},
+    deserialize::{Deserialize, Deserializer, Error},
     formula::{combine_sizes, Formula, NonRefFormula},
-    serialize::{NonRefSerialize, NonRefSerializeOwned, Serializer},
+    serialize::{Serialize, SerializeOwned, Serializer},
 };
 
 impl NonRefFormula for () {
     const MAX_SIZE: Option<usize> = Some(0);
 }
 
-impl NonRefSerializeOwned<()> for () {
-    #[inline(always)]
+impl SerializeOwned<()> for () {
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn serialize_owned<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -18,8 +18,8 @@ impl NonRefSerializeOwned<()> for () {
     }
 }
 
-impl NonRefSerializeOwned<()> for &'_ () {
-    #[inline(always)]
+impl SerializeOwned<()> for &'_ () {
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn serialize_owned<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -28,13 +28,13 @@ impl NonRefSerializeOwned<()> for &'_ () {
     }
 }
 
-impl NonRefDeserialize<'_, ()> for () {
-    #[inline(always)]
+impl Deserialize<'_, ()> for () {
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn deserialize(_de: Deserializer) -> Result<(), Error> {
         Ok(())
     }
 
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn deserialize_in_place(&mut self, _de: Deserializer) -> Result<(), Error> {
         Ok(())
     }
@@ -55,16 +55,16 @@ macro_rules! impl_for_tuple {
             };
         }
 
-        impl<$($a,)* $at, $($b,)* $bt> NonRefSerializeOwned<($($a,)* $at,)> for ($($b,)* $bt,)
+        impl<$($a,)* $at, $($b,)* $bt> SerializeOwned<($($a,)* $at,)> for ($($b,)* $bt,)
         where
             $(
                 $a: Formula,
-                $b: NonRefSerializeOwned<$a::NonRef>,
+                $b: SerializeOwned<$a::NonRef>,
             )*
             $at: Formula + ?Sized,
-            $bt: NonRefSerializeOwned<$at::NonRef>,
+            $bt: SerializeOwned<$at::NonRef>,
         {
-            #[inline(always)]
+            #[cfg_attr(feature = "inline-more", inline(always))]
             fn serialize_owned<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
             where
                 S: Serializer,
@@ -80,16 +80,16 @@ macro_rules! impl_for_tuple {
             }
         }
 
-        impl<$($a,)* $at, $($b,)* $bt,> NonRefSerialize<($($a,)* $at,)> for ($($b,)* $bt,)
+        impl<$($a,)* $at, $($b,)* $bt,> Serialize<($($a,)* $at,)> for ($($b,)* $bt,)
         where
             $(
                 $a: Formula,
-                $b: NonRefSerialize<$a::NonRef>,
+                $b: Serialize<$a::NonRef>,
             )*
             $at: Formula + ?Sized,
-            $bt: NonRefSerialize<$at::NonRef>,
+            $bt: Serialize<$at::NonRef>,
         {
-            #[inline(always)]
+            #[cfg_attr(feature = "inline-more", inline(always))]
             fn serialize<S>(&self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
             where
                 S: Serializer,
@@ -105,16 +105,16 @@ macro_rules! impl_for_tuple {
             }
         }
 
-        impl<'__de, $($a,)* $at, $($b,)* $bt> NonRefDeserialize<'__de, ($($a,)* $at,)> for ($($b,)* $bt,)
+        impl<'__de, $($a,)* $at, $($b,)* $bt> Deserialize<'__de, ($($a,)* $at,)> for ($($b,)* $bt,)
         where
             $(
                 $a: Formula,
-                $b: NonRefDeserialize<'__de, $a::NonRef>,
+                $b: Deserialize<'__de, $a::NonRef>,
             )*
             $at: Formula + ?Sized,
-            $bt: NonRefDeserialize<'__de, $at::NonRef>,
+            $bt: Deserialize<'__de, $at::NonRef>,
         {
-            #[inline(always)]
+            #[cfg_attr(feature = "inline-more", inline(always))]
             fn deserialize(mut de: Deserializer<'__de>) -> Result<($($b,)* $bt,), Error> {
                 #![allow(non_snake_case)]
                 $(
@@ -127,7 +127,7 @@ macro_rules! impl_for_tuple {
                 Ok(value)
             }
 
-            #[inline(always)]
+            #[cfg_attr(feature = "inline-more", inline(always))]
             fn deserialize_in_place(&mut self, mut de: Deserializer<'__de>) -> Result<(), Error> {
                 #![allow(non_snake_case)]
 

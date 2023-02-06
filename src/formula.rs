@@ -1,28 +1,28 @@
 use crate::{
-    deserialize::{Deserializer, Error, NonRefDeserialize},
-    serialize::{NonRefSerializeOwned, Serializer},
+    deserialize::{Deserialize, Deserializer, Error},
+    serialize::{SerializeOwned, Serializer},
 };
 
 /// Trait for data formulas.
 /// Types that implement this trait are used as markers
 /// to guide serialization and deserialization process.
-/// Many types that implement `Formula`
-/// implement `NonRefSerializeOwned` and/or `NonRefDeserialize` traits
+/// Many types that implement `NonRefFormula`
+/// implement `SerializeOwned` and/or `Deserialize` traits
 /// with `Self` as formula type.
 ///
 /// The typical exceptions are lazily serialized and deserialize types.
 /// For example `[T]` can be used as formula for which iterators
-/// implement `NonRefSerializeOwned` trait.
-/// And `SliceIter` and `FromIterator` containers implement `NonRefDeserialize` trait.
+/// implement `SerializeOwned` trait.
+/// And `SliceIter` and `FromIterator` containers implement `Deserialize` trait.
 ///
 /// Similarly structures that contain `[T]` may be serialized
 /// from structures with identical layout but iterator for that field.
 ///
-/// Users may `derive(Formula)` for their types, structures and enums.
-/// Then `derive(NonRefSerializeOwned)` and `derive(NonRefDeserialize)`
+/// Users may `derive(NonRefFormula)` for their types, structures and enums.
+/// Then `derive(SerializeOwned)` and `derive(Deserialize)`
 /// will use formula structure to implement serialization and deserialization.
 /// Fields of formula structure must be visible in scope of type where
-/// `derive(NonRefSerializeOwned)` and `derive(NonRefDeserialize)` is used.
+/// `derive(SerializeOwned)` and `derive(Deserialize)` is used.
 ///
 /// Additionally for each field of the serialization/deserialization structure
 /// there must be field in formula.
@@ -33,9 +33,9 @@ use crate::{
 /// In this case specific variant is used and layout of that variant must
 /// match layout of serialization structure.
 ///
-/// Users are also free to implement `Formula` and other traits manually.
-/// In this case they are encouraged to pay attention to `Formula` documentation.
-/// And provide implementations for `NonRefSerializeOwned` and `NonRefDeserialize` traits
+/// Users are also free to implement `NonRefFormula` and other traits manually.
+/// In this case they are encouraged to pay attention to `NonRefFormula` documentation.
+/// And provide implementations for `SerializeOwned` and `Deserialize` traits
 /// with this formula.
 ///
 /// For use-cases outside defining new primitives users are encouraged
@@ -54,13 +54,13 @@ pub trait Formula {
     #[doc(hidden)]
     fn serialize<T, S>(value: T, serializer: impl Into<S>) -> Result<S::Ok, S::Error>
     where
-        T: NonRefSerializeOwned<Self::NonRef>,
+        T: SerializeOwned<Self::NonRef>,
         S: Serializer;
 
     #[doc(hidden)]
     fn deserialize<'de, T>(deserializer: Deserializer<'de>) -> Result<T, Error>
     where
-        T: NonRefDeserialize<'de, Self::NonRef>;
+        T: Deserialize<'de, Self::NonRef>;
 
     #[doc(hidden)]
     fn deserialize_in_place<'de, T>(
@@ -68,7 +68,7 @@ pub trait Formula {
         deserializer: Deserializer<'de>,
     ) -> Result<(), Error>
     where
-        T: NonRefDeserialize<'de, Self::NonRef> + ?Sized;
+        T: Deserialize<'de, Self::NonRef> + ?Sized;
 }
 
 /// Function to combine sizes of formulas.
@@ -97,14 +97,17 @@ pub const fn repeat_size(a: Option<usize>, n: usize) -> Option<usize> {
 }
 
 /// Ad-hoc negative trait.
-/// It *should* be implemented for all formulas except `Ref`.
-/// `derive(Formula)` does this automatically.
+/// It *should* be implemented for all formulas except [`Ref`]
+/// and its aliases, like [`Vec`]
+///
+/// [`Ref`]: crate::Ref
+/// [`Vec`]: alloc::vec::Vec
 pub trait NonRefFormula {
     /// Maximum number of bytes serialized values with this formula consume
     /// from "stack" in output buffer.
     ///
     /// Values *may* use less number of bytes.
-    /// `NonRefDeserialize` implementations must be prepared to handle this.
+    /// `Deserialize` implementations must be prepared to handle this.
     ///
     /// Formulas *should* specify as small value as possible.
     /// Providing too large value may result in wasted space in serialized data.
@@ -126,32 +129,32 @@ where
     const MAX_SIZE: Option<usize> = <Self as NonRefFormula>::MAX_SIZE;
 
     #[doc(hidden)]
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn serialize<T, S>(value: T, serializer: impl Into<S>) -> Result<S::Ok, S::Error>
     where
-        T: NonRefSerializeOwned<Self::NonRef>,
+        T: SerializeOwned<Self::NonRef>,
         S: Serializer,
     {
         T::serialize_owned(value, serializer)
     }
 
     #[doc(hidden)]
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn deserialize<'de, T>(deserializer: Deserializer<'de>) -> Result<T, Error>
     where
-        T: NonRefDeserialize<'de, Self::NonRef>,
+        T: Deserialize<'de, Self::NonRef>,
     {
         T::deserialize(deserializer)
     }
 
     #[doc(hidden)]
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn deserialize_in_place<'de, T>(
         place: &mut T,
         deserializer: Deserializer<'de>,
     ) -> Result<(), Error>
     where
-        T: NonRefDeserialize<'de, Self::NonRef> + ?Sized,
+        T: Deserialize<'de, Self::NonRef> + ?Sized,
     {
         T::deserialize_in_place(place, deserializer)
     }

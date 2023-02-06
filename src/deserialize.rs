@@ -26,48 +26,8 @@ pub enum Error {
 }
 
 /// Trait for types that can be deserialized
-/// from raw bytes with specified `F: `[`Formula`].
-pub trait Deserialize<'de, F: Formula + ?Sized> {
-    /// Deserializes value provided deserializer.
-    /// Returns deserialized value and the number of bytes consumed from
-    /// the and of input.
-    ///
-    /// The value appears at the end of the slice.
-    /// And referenced values are addressed from the beginning of the slice.
-    fn deserialize(deserializer: Deserializer<'de>) -> Result<Self, Error>
-    where
-        Self: Sized;
-
-    /// Deserializes value in-place provided deserializer.
-    /// Overwrites `self` with data from the `input`.
-    ///
-    /// The value appears at the end of the slice.
-    /// And referenced values are addressed from the beginning of the slice.
-    fn deserialize_in_place(&mut self, deserializer: Deserializer<'de>) -> Result<(), Error>;
-}
-
-impl<'de, F, T> Deserialize<'de, F> for T
-where
-    F: Formula + ?Sized,
-    T: NonRefDeserialize<'de, F::NonRef> + ?Sized,
-{
-    #[inline(always)]
-    fn deserialize(deserializer: Deserializer<'de>) -> Result<Self, Error>
-    where
-        T: Sized,
-    {
-        F::deserialize(deserializer)
-    }
-
-    #[inline(always)]
-    fn deserialize_in_place(&mut self, deserializer: Deserializer<'de>) -> Result<(), Error> {
-        F::deserialize_in_place(self, deserializer)
-    }
-}
-
-/// Trait for types that can be deserialized
-/// from raw bytes with specified `F: `[`Formula`].
-pub trait NonRefDeserialize<'de, F: NonRefFormula + ?Sized> {
+/// from raw bytes with specified `F: `[`NonRefFormula`].
+pub trait Deserialize<'de, F: NonRefFormula + ?Sized> {
     /// Deserializes value provided deserializer.
     /// Returns deserialized value and the number of bytes consumed from
     /// the and of input.
@@ -95,7 +55,7 @@ pub struct Deserializer<'de> {
 }
 
 impl<'de> Deserializer<'de> {
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     #[must_use]
     pub const fn new(stack: usize, input: &'de [u8]) -> Result<Self, Error> {
         if stack > input.len() {
@@ -104,14 +64,14 @@ impl<'de> Deserializer<'de> {
         Ok(Self::new_unchecked(stack, input))
     }
 
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     #[must_use]
     pub const fn new_unchecked(stack: usize, input: &'de [u8]) -> Self {
         debug_assert!(stack <= input.len());
         Deserializer { input, stack }
     }
 
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     #[must_use]
     fn sub<F>(&mut self) -> Self
     where
@@ -130,7 +90,7 @@ impl<'de> Deserializer<'de> {
         sub
     }
 
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     pub fn read_bytes(&mut self, len: usize) -> Result<&'de [u8], Error> {
         if len > self.stack {
             return Err(Error::OutOfBounds);
@@ -142,47 +102,47 @@ impl<'de> Deserializer<'de> {
         Ok(tail)
     }
 
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     pub fn read_all_bytes(self) -> &'de [u8] {
         let at = self.input.len() - self.stack;
         &self.input[at..]
     }
 
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     pub fn read_value<F, T>(&mut self) -> Result<T, Error>
     where
         F: Formula + ?Sized,
-        T: Deserialize<'de, F>,
+        T: Deserialize<'de, F::NonRef>,
     {
-        <T as Deserialize<'de, F>>::deserialize(self.sub::<F>())
+        F::deserialize(self.sub::<F>())
     }
 
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     pub fn read_auto<T>(&mut self) -> Result<T, Error>
     where
-        T: Formula + Deserialize<'de, T>,
+        T: NonRefFormula + Deserialize<'de, T>,
     {
         self.read_value::<T, T>()
     }
 
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     pub fn read_in_place<F, T>(&mut self, place: &mut T) -> Result<(), Error>
     where
         F: Formula + ?Sized,
-        T: Deserialize<'de, F> + ?Sized,
+        T: Deserialize<'de, F::NonRef> + ?Sized,
     {
-        <T as Deserialize<'de, F>>::deserialize_in_place(place, self.sub::<F>())
+        F::deserialize_in_place(place, self.sub::<F>())
     }
 
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     pub fn read_auto_in_place<T>(&mut self, place: &mut T) -> Result<(), Error>
     where
-        T: Formula + Deserialize<'de, T> + ?Sized,
+        T: NonRefFormula + Deserialize<'de, T> + ?Sized,
     {
         self.read_in_place::<T, T>(place)
     }
 
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     pub fn deref(mut self) -> Result<Deserializer<'de>, Error> {
         let [address, size] = self.read_auto::<[FixedUsize; 2]>()?;
 
@@ -196,11 +156,11 @@ impl<'de> Deserializer<'de> {
         Deserializer::new(size.into(), input)
     }
 
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     pub fn into_iter<F, T>(self) -> Result<DeIter<'de, F, T>, Error>
     where
         F: Formula,
-        T: Deserialize<'de, F>,
+        T: Deserialize<'de, F::NonRef>,
     {
         let size = F::MAX_SIZE.expect("Sized formula should have some MAX_SIZE");
         if self.stack % size != 0 {
@@ -214,7 +174,7 @@ impl<'de> Deserializer<'de> {
         })
     }
 
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     pub fn finish(self) -> Result<(), Error> {
         if self.stack == 0 {
             Ok(())
@@ -233,16 +193,16 @@ pub struct DeIter<'de, F, T> {
 impl<'de, F, T> Iterator for DeIter<'de, F, T>
 where
     F: Formula,
-    T: Deserialize<'de, F>,
+    T: Deserialize<'de, F::NonRef>,
 {
     type Item = Result<T, Error>;
 
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.count, Some(self.count))
     }
 
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn next(&mut self) -> Option<Result<T, Error>> {
         if self.count == 0 {
             return None;
@@ -254,16 +214,16 @@ where
         let end = self.input.len() - size;
         self.input = &self.input[..end];
 
-        let result = T::deserialize(Deserializer::new_unchecked(size, input));
+        let result = F::deserialize(Deserializer::new_unchecked(size, input));
         Some(result)
     }
 
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn count(self) -> usize {
         self.count
     }
 
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn nth(&mut self, n: usize) -> Option<Result<T, Error>> {
         if n >= self.count {
             self.count = 0;
@@ -276,7 +236,7 @@ where
         self.next()
     }
 
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn fold<B, Fun>(self, init: B, mut f: Fun) -> B
     where
         Fun: FnMut(B, Result<T, Error>) -> B,
@@ -286,7 +246,7 @@ where
         let mut accum = init;
         for elem in 0..self.count {
             let at = end - size * elem;
-            let result = T::deserialize(Deserializer::new_unchecked(size, &self.input[..at]));
+            let result = F::deserialize(Deserializer::new_unchecked(size, &self.input[..at]));
             accum = f(accum, result);
         }
         accum
@@ -296,9 +256,9 @@ where
 impl<'de, F, T> DoubleEndedIterator for DeIter<'de, F, T>
 where
     F: Formula,
-    T: NonRefDeserialize<'de, F::NonRef>,
+    T: Deserialize<'de, F::NonRef>,
 {
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn next_back(&mut self) -> Option<Result<T, Error>> {
         if self.count == 0 {
             return None;
@@ -308,10 +268,10 @@ where
         let at = self.input.len() - size * self.count;
         let input = &self.input[at..];
 
-        Some(T::deserialize(Deserializer::new_unchecked(size, input)))
+        Some(F::deserialize(Deserializer::new_unchecked(size, input)))
     }
 
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn nth_back(&mut self, n: usize) -> Option<Result<T, Error>> {
         if n >= self.count {
             self.count = 0;
@@ -321,7 +281,7 @@ where
         self.next_back()
     }
 
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn rfold<B, Fun>(self, init: B, mut f: Fun) -> B
     where
         Fun: FnMut(B, Result<T, Error>) -> B,
@@ -334,7 +294,7 @@ where
         let mut accum = init;
         for elem in 0..self.count {
             let at = start + size * elem;
-            let result = T::deserialize(Deserializer::new_unchecked(size, &self.input[..at]));
+            let result = F::deserialize(Deserializer::new_unchecked(size, &self.input[..at]));
             accum = f(accum, result);
         }
         accum
@@ -344,9 +304,9 @@ where
 impl<'de, F, T> ExactSizeIterator for DeIter<'de, F, T>
 where
     F: Formula,
-    T: NonRefDeserialize<'de, F::NonRef>,
+    T: Deserialize<'de, F::NonRef>,
 {
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn len(&self) -> usize {
         self.count
     }
@@ -355,7 +315,7 @@ where
 impl<'de, F, T> FusedIterator for DeIter<'de, F, T>
 where
     F: Formula,
-    T: NonRefDeserialize<'de, F::NonRef>,
+    T: Deserialize<'de, F::NonRef>,
 {
 }
 
@@ -372,7 +332,7 @@ pub fn value_size(input: &[u8]) -> Result<usize, Error> {
 pub fn deserialize<'de, F, T>(input: &'de [u8]) -> Result<(T, usize), Error>
 where
     F: Formula + ?Sized,
-    T: Deserialize<'de, F>,
+    T: Deserialize<'de, F::NonRef>,
 {
     if input.len() < HEADER_SIZE {
         return Err(Error::OutOfBounds);
@@ -400,7 +360,7 @@ where
 #[inline]
 pub fn deserialize_in_place<'de, F, T>(place: &mut T, input: &'de [u8]) -> Result<usize, Error>
 where
-    F: Formula + ?Sized,
+    F: NonRefFormula + ?Sized,
     T: Deserialize<'de, F>,
 {
     if input.len() < HEADER_SIZE {

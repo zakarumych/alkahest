@@ -18,14 +18,14 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
     {
         return Err(syn::Error::new_spanned(
             formula.ty,
-            "Formula type should not be specified for `NonRefSerializeOwned` and `NonRefDeserialize` when type is also `Formula`",
+            "Formula type should not be specified for `SerializeOwned` and `Deserialize` when type is also `Formula`",
         ));
     }
 
     if args.variant.is_some() {
         return Err(syn::Error::new_spanned(
             input,
-            "Variant should not be specified for `NonRefSerializeOwned` when type is also `Formula`",
+            "Variant should not be specified for `SerializeOwned` when type is also `Formula`",
         ));
     }
 

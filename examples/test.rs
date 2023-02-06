@@ -1,9 +1,11 @@
-use alkahest::prelude::*;
+use std::ops::Range;
+
+use alkahest::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Formula, Serialize, Deserialize)]
 struct X;
 
-#[derive(Formula)]
+#[derive(Clone, Debug, Formula)]
 struct Test<T: ?Sized> {
     a: u32,
     b: X,
@@ -11,9 +13,9 @@ struct Test<T: ?Sized> {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[alkahest(serialize(for<U: ?Sized> Test<U> where U: Formula, T: Serialize<U>))]
-#[alkahest(serialize(owned(for<U: ?Sized> Test<U> where U: Formula, T: SerializeOwned<U>)))]
-#[alkahest(deserialize(for<'de, U: ?Sized> Test<U> where U: Formula, T: Deserialize<'de, U>))]
+#[alkahest(serialize(for<U: ?Sized> Test<U> where U: Formula, T: Serialize<U::NonRef>))]
+#[alkahest(serialize(owned(for<U: ?Sized> Test<U> where U: Formula, T: SerializeOwned<U::NonRef>)))]
+#[alkahest(deserialize(for<'de, U: ?Sized> Test<U> where U: Formula, T: Deserialize<'de, U::NonRef>))]
 struct TestS<T> {
     a: u32,
     b: X,

@@ -6,33 +6,35 @@ extern crate self as alkahest;
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
-pub mod array;
-pub mod bytes;
-pub mod deserialize;
-pub mod formula;
-pub mod lazy;
-pub mod option;
-pub mod primitive;
-pub mod reference;
-pub mod serialize;
-pub mod size;
-pub mod skip;
-pub mod slice;
-pub mod tuple;
+mod array;
+mod bytes;
+mod deserialize;
+mod formula;
+mod lazy;
+mod option;
+mod primitive;
+mod reference;
+mod serialize;
+mod size;
+mod skip;
+mod slice;
+mod tuple;
 
 #[cfg(feature = "alloc")]
-pub mod vec;
+mod vec;
 
-pub mod prelude {
-    pub use crate::{
-        deserialize::{deserialize, deserialize_in_place, Deserialize, Error},
-        formula::Formula,
-        serialize::{serialize, serialize_or_size, serialized_size, Serialize, SerializeOwned},
-    };
+#[cfg(feature = "alloc")]
+mod vec_deque;
 
-    #[cfg(feature = "derive")]
-    pub use alkahest_proc::{Deserialize, Formula, Serialize};
-}
+pub use crate::{
+    bytes::Bytes,
+    deserialize::{deserialize, deserialize_in_place, Deserialize, Error},
+    formula::Formula,
+    reference::Ref,
+    serialize::{serialize, serialize_or_size, serialized_size, Serialize, SerializeOwned},
+    size::{FixedIsize, FixedUsize},
+    slice::{SerIter, SliceIter},
+};
 
 #[cfg(feature = "derive")]
 pub use alkahest_proc::{Deserialize, Formula, Serialize};
@@ -46,9 +48,9 @@ pub mod private {
     use core::marker::PhantomData;
 
     pub use crate::{
-        deserialize::{Deserialize, Deserializer, Error, NonRefDeserialize},
+        deserialize::{Deserialize, Deserializer, Error},
         formula::{combine_sizes, Formula, NonRefFormula},
-        serialize::{NonRefSerialize, NonRefSerializeOwned, Serialize, SerializeOwned, Serializer},
+        serialize::{Serialize, SerializeOwned, Serializer},
     };
 
     pub struct WithFormula<F: Formula + ?Sized> {
@@ -59,25 +61,25 @@ pub mod private {
     where
         F: Formula + ?Sized,
     {
-        #[inline(always)]
+        #[cfg_attr(feature = "inline-more", inline(always))]
         pub fn write_value<T, S>(self, ser: &mut S, value: T) -> Result<(), S::Error>
         where
             S: Serializer,
-            T: SerializeOwned<F>,
+            T: SerializeOwned<F::NonRef>,
         {
             ser.write_value::<F, T>(value)
         }
 
-        #[inline(always)]
+        #[cfg_attr(feature = "inline-more", inline(always))]
         pub fn read_value<'de, T>(self, des: &mut Deserializer<'de>) -> Result<T, Error>
         where
             F: Formula,
-            T: Deserialize<'de, F>,
+            T: Deserialize<'de, F::NonRef>,
         {
             des.read_value::<F, T>()
         }
 
-        #[inline(always)]
+        #[cfg_attr(feature = "inline-more", inline(always))]
         pub fn read_in_place<'de, T>(
             self,
             place: &mut T,
@@ -85,13 +87,13 @@ pub mod private {
         ) -> Result<(), Error>
         where
             F: Formula,
-            T: Deserialize<'de, F>,
+            T: Deserialize<'de, F::NonRef>,
         {
             des.read_in_place::<F, T>(place)
         }
     }
 
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     pub fn with_formula<F: Formula + ?Sized, L: Formula + ?Sized>(
         _: impl FnOnce(&F) -> &L,
     ) -> WithFormula<L> {

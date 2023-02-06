@@ -5,7 +5,7 @@
 use core::{marker::PhantomData, mem::size_of};
 
 use crate::{
-    deserialize::{Deserializer, Error, NonRefDeserialize},
+    deserialize::{Deserialize, Deserializer, Error},
     formula::{Formula, NonRefFormula},
     serialize::{SerializeOwned, Serializer},
     size::FixedUsize,
@@ -30,7 +30,7 @@ where
 
     type NonRef = F;
 
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn serialize<T, S>(value: T, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         T: SerializeOwned<F>,
@@ -41,10 +41,10 @@ where
         ser.finish()
     }
 
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn deserialize<'de, T>(de: Deserializer<'de>) -> Result<T, Error>
     where
-        T: NonRefDeserialize<'de, F>,
+        T: Deserialize<'de, F>,
     {
         let mut de = de.deref()?;
         let value = de.read_value::<F, T>()?;
@@ -52,10 +52,10 @@ where
         Ok(value)
     }
 
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn deserialize_in_place<'de, T>(place: &mut T, de: Deserializer<'de>) -> Result<(), Error>
     where
-        T: NonRefDeserialize<'de, F> + ?Sized,
+        T: Deserialize<'de, F> + ?Sized,
     {
         let mut de = de.deref()?;
         de.read_in_place::<F, T>(place)?;

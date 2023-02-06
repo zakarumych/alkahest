@@ -1,7 +1,7 @@
 use crate::{
-    deserialize::{Deserializer, Error, NonRefDeserialize},
+    deserialize::{Deserialize, Deserializer, Error},
     formula::{repeat_size, Formula, NonRefFormula},
-    serialize::{NonRefSerializeOwned, Serializer},
+    serialize::{SerializeOwned, Serializer},
 };
 
 impl<F, const N: usize> NonRefFormula for [F; N]
@@ -11,12 +11,12 @@ where
     const MAX_SIZE: Option<usize> = repeat_size(F::MAX_SIZE, N);
 }
 
-impl<F, T, const N: usize> NonRefSerializeOwned<[F; N]> for [T; N]
+impl<F, T, const N: usize> SerializeOwned<[F; N]> for [T; N]
 where
     F: NonRefFormula,
-    T: NonRefSerializeOwned<F>,
+    T: SerializeOwned<F>,
 {
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn serialize_owned<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -28,12 +28,12 @@ where
     }
 }
 
-impl<F, T, const N: usize> NonRefSerializeOwned<[F; N]> for &[T; N]
+impl<F, T, const N: usize> SerializeOwned<[F; N]> for &[T; N]
 where
     F: NonRefFormula,
-    for<'ser> &'ser T: NonRefSerializeOwned<F>,
+    for<'ser> &'ser T: SerializeOwned<F>,
 {
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn serialize_owned<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -45,12 +45,12 @@ where
     }
 }
 
-impl<'de, F, T, const N: usize> NonRefDeserialize<'de, [F; N]> for [T; N]
+impl<'de, F, T, const N: usize> Deserialize<'de, [F; N]> for [T; N]
 where
     F: NonRefFormula,
-    T: NonRefDeserialize<'de, F>,
+    T: Deserialize<'de, F>,
 {
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn deserialize(mut de: Deserializer<'de>) -> Result<Self, Error> {
         let mut opts = [(); N].map(|_| None);
         opts.iter_mut().try_for_each(|slot| {
@@ -61,7 +61,7 @@ where
         Ok(value)
     }
 
-    #[inline(always)]
+    #[cfg_attr(feature = "inline-more", inline(always))]
     fn deserialize_in_place(&mut self, mut de: Deserializer<'de>) -> Result<(), Error> {
         self.iter_mut()
             .try_for_each(|elem| de.read_in_place::<F, T>(elem))?;

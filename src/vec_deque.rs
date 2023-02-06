@@ -1,4 +1,4 @@
-use alloc::vec::Vec;
+use alloc::collections::VecDeque;
 
 use crate::{
     bytes::Bytes,
@@ -9,41 +9,7 @@ use crate::{
     Serialize,
 };
 
-impl<F> Formula for Vec<F>
-where
-    F: Formula,
-{
-    const MAX_SIZE: Option<usize> = <Ref<[F]> as Formula>::MAX_SIZE;
-
-    type NonRef = [F];
-
-    #[cfg_attr(feature = "inline-more", inline(always))]
-    fn serialize<T, S>(value: T, ser: impl Into<S>) -> Result<S::Ok, S::Error>
-    where
-        T: SerializeOwned<[F]>,
-        S: Serializer,
-    {
-        <Ref<[F]>>::serialize(value, ser)
-    }
-
-    #[cfg_attr(feature = "inline-more", inline(always))]
-    fn deserialize<'de, T>(de: Deserializer<'de>) -> Result<T, Error>
-    where
-        T: Deserialize<'de, [F]>,
-    {
-        <Ref<[F]>>::deserialize(de)
-    }
-
-    #[cfg_attr(feature = "inline-more", inline(always))]
-    fn deserialize_in_place<'de, T>(place: &mut T, de: Deserializer<'de>) -> Result<(), Error>
-    where
-        T: Deserialize<'de, [F]> + ?Sized,
-    {
-        <Ref<[F]>>::deserialize_in_place(place, de)
-    }
-}
-
-impl<'de, F, T, const N: usize> Deserialize<'de, [F; N]> for Vec<T>
+impl<'de, F, T, const N: usize> Deserialize<'de, [F; N]> for VecDeque<T>
 where
     F: Formula,
     T: Deserialize<'de, F::NonRef>,
@@ -58,13 +24,13 @@ where
         let iter = de.into_iter::<F, T>()?;
         self.reserve(iter.len());
         for elem in iter {
-            self.push(elem?);
+            self.push_back(elem?);
         }
         Ok(())
     }
 }
 
-impl<F, T> SerializeOwned<[F]> for Vec<T>
+impl<F, T> SerializeOwned<[F]> for VecDeque<T>
 where
     T: SerializeOwned<F::NonRef>,
     F: Formula,
@@ -81,7 +47,7 @@ where
     }
 }
 
-impl<F, T> Serialize<[F]> for Vec<T>
+impl<F, T> Serialize<[F]> for VecDeque<T>
 where
     T: Serialize<F::NonRef>,
     F: Formula,
@@ -98,7 +64,7 @@ where
     }
 }
 
-impl<'de, F, T> Deserialize<'de, [F]> for Vec<T>
+impl<'de, F, T> Deserialize<'de, [F]> for VecDeque<T>
 where
     F: Formula,
     T: Deserialize<'de, F::NonRef>,
@@ -113,13 +79,13 @@ where
         let iter = de.into_iter::<F, T>()?;
         self.reserve(iter.len());
         for elem in iter {
-            self.push(elem?);
+            self.push_back(elem?);
         }
         Ok(())
     }
 }
 
-impl SerializeOwned<Bytes> for Vec<u8> {
+impl SerializeOwned<Bytes> for VecDeque<u8> {
     #[cfg_attr(feature = "inline-more", inline(always))]
     fn serialize_owned<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
@@ -129,27 +95,31 @@ impl SerializeOwned<Bytes> for Vec<u8> {
     }
 }
 
-impl Serialize<Bytes> for Vec<u8> {
+impl Serialize<Bytes> for VecDeque<u8> {
     #[cfg_attr(feature = "inline-more", inline(always))]
     fn serialize<S>(&self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         let mut ser = ser.into();
-        ser.write_bytes(&self)?;
+        let (head, tail) = self.as_slices();
+        ser.write_bytes(head)?;
+        ser.write_bytes(tail)?;
         ser.finish()
     }
 }
 
-impl<'de> Deserialize<'de, Bytes> for Vec<u8> {
+impl<'de> Deserialize<'de, Bytes> for VecDeque<u8> {
     #[cfg_attr(feature = "inline-more", inline(always))]
     fn deserialize(de: Deserializer) -> Result<Self, Error> {
-        Ok(de.read_all_bytes().to_vec())
+        let mut deque = VecDeque::new();
+        deque.extend(de.read_all_bytes());
+        Ok(deque)
     }
 
     #[cfg_attr(feature = "inline-more", inline(always))]
     fn deserialize_in_place(&mut self, de: Deserializer) -> Result<(), Error> {
-        self.extend_from_slice(de.read_all_bytes());
+        self.extend(de.read_all_bytes());
         Ok(())
     }
 }
