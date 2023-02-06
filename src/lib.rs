@@ -28,11 +28,13 @@ mod vec_deque;
 
 pub use crate::{
     bytes::Bytes,
-    deserialize::{deserialize, deserialize_in_place, Deserialize, Error},
+    deserialize::{deserialize, deserialize_in_place, value_size, Deserialize, Error},
     formula::Formula,
+    lazy::Lazy,
     reference::Ref,
-    serialize::{serialize, serialize_or_size, serialized_size, Serialize, SerializeOwned},
+    serialize::{serialize, serialize_or_size, serialized_size, Serialize},
     size::{FixedIsize, FixedUsize},
+    skip::Skip,
     slice::{SerIter, SliceIter},
 };
 
@@ -49,8 +51,8 @@ pub mod private {
 
     pub use crate::{
         deserialize::{Deserialize, Deserializer, Error},
-        formula::{combine_sizes, Formula, NonRefFormula},
-        serialize::{Serialize, SerializeOwned, Serializer},
+        formula::{max_size, sum_size, Formula, NonRefFormula},
+        serialize::{Serialize, Serializer},
     };
 
     pub struct WithFormula<F: Formula + ?Sized> {
@@ -61,25 +63,25 @@ pub mod private {
     where
         F: Formula + ?Sized,
     {
-        #[cfg_attr(feature = "inline-more", inline(always))]
+        #[inline(always)]
         pub fn write_value<T, S>(self, ser: &mut S, value: T) -> Result<(), S::Error>
         where
             S: Serializer,
-            T: SerializeOwned<F::NonRef>,
+            T: Serialize<F>,
         {
             ser.write_value::<F, T>(value)
         }
 
-        #[cfg_attr(feature = "inline-more", inline(always))]
+        #[inline(always)]
         pub fn read_value<'de, T>(self, des: &mut Deserializer<'de>) -> Result<T, Error>
         where
             F: Formula,
-            T: Deserialize<'de, F::NonRef>,
+            T: Deserialize<'de, F>,
         {
             des.read_value::<F, T>()
         }
 
-        #[cfg_attr(feature = "inline-more", inline(always))]
+        #[inline(always)]
         pub fn read_in_place<'de, T>(
             self,
             place: &mut T,
@@ -87,13 +89,13 @@ pub mod private {
         ) -> Result<(), Error>
         where
             F: Formula,
-            T: Deserialize<'de, F::NonRef>,
+            T: Deserialize<'de, F>,
         {
             des.read_in_place::<F, T>(place)
         }
     }
 
-    #[cfg_attr(feature = "inline-more", inline(always))]
+    #[inline(always)]
     pub fn with_formula<F: Formula + ?Sized, L: Formula + ?Sized>(
         _: impl FnOnce(&F) -> &L,
     ) -> WithFormula<L> {

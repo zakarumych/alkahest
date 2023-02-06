@@ -1,28 +1,23 @@
-use crate::{
-    deserialize::{Deserialize, Deserializer, Error},
-    serialize::{SerializeOwned, Serializer},
-};
-
 /// Trait for data formulas.
 /// Types that implement this trait are used as markers
 /// to guide serialization and deserialization process.
 /// Many types that implement `NonRefFormula`
-/// implement `SerializeOwned` and/or `Deserialize` traits
+/// implement `Serialize` and/or `Deserialize` traits
 /// with `Self` as formula type.
 ///
 /// The typical exceptions are lazily serialized and deserialize types.
 /// For example `[T]` can be used as formula for which iterators
-/// implement `SerializeOwned` trait.
+/// implement `Serialize` trait.
 /// And `SliceIter` and `FromIterator` containers implement `Deserialize` trait.
 ///
 /// Similarly structures that contain `[T]` may be serialized
 /// from structures with identical layout but iterator for that field.
 ///
 /// Users may `derive(NonRefFormula)` for their types, structures and enums.
-/// Then `derive(SerializeOwned)` and `derive(Deserialize)`
+/// Then `derive(Serialize)` and `derive(Deserialize)`
 /// will use formula structure to implement serialization and deserialization.
 /// Fields of formula structure must be visible in scope of type where
-/// `derive(SerializeOwned)` and `derive(Deserialize)` is used.
+/// `derive(Serialize)` and `derive(Deserialize)` is used.
 ///
 /// Additionally for each field of the serialization/deserialization structure
 /// there must be field in formula.
@@ -35,7 +30,7 @@ use crate::{
 ///
 /// Users are also free to implement `NonRefFormula` and other traits manually.
 /// In this case they are encouraged to pay attention to `NonRefFormula` documentation.
-/// And provide implementations for `SerializeOwned` and `Deserialize` traits
+/// And provide implementations for `Serialize` and `Deserialize` traits
 /// with this formula.
 ///
 /// For use-cases outside defining new primitives users are encouraged
@@ -50,25 +45,6 @@ pub trait Formula {
 
     #[doc(hidden)]
     type NonRef: NonRefFormula + ?Sized;
-
-    #[doc(hidden)]
-    fn serialize<T, S>(value: T, serializer: impl Into<S>) -> Result<S::Ok, S::Error>
-    where
-        T: SerializeOwned<Self::NonRef>,
-        S: Serializer;
-
-    #[doc(hidden)]
-    fn deserialize<'de, T>(deserializer: Deserializer<'de>) -> Result<T, Error>
-    where
-        T: Deserialize<'de, Self::NonRef>;
-
-    #[doc(hidden)]
-    fn deserialize_in_place<'de, T>(
-        place: &mut T,
-        deserializer: Deserializer<'de>,
-    ) -> Result<(), Error>
-    where
-        T: Deserialize<'de, Self::NonRef> + ?Sized;
 }
 
 /// Function to combine sizes of formulas.
@@ -76,13 +52,26 @@ pub trait Formula {
 /// First argument is not allowed to be `None` and will cause an error.
 /// Second argument may be `None` and will produce `None` as a result.
 /// If both arguments are `Some` then result is their sum.
-pub const fn combine_sizes(a: Option<usize>, b: Option<usize>) -> Option<usize> {
+pub const fn sum_size(a: Option<usize>, b: Option<usize>) -> Option<usize> {
     let (arr, idx) = match (a, b) {
         (None, _) => ([None], 1), // Error in both runtime and compile time.
         (Some(_), None) => ([None], 0),
         (Some(a), Some(b)) => ([Some(a + b)], 0),
     };
     arr[idx]
+}
+
+/// Function to combine sizes of formulas.
+/// Order of arguments is not important.
+/// If any argument is `None` then result is `None`.
+/// If both arguments are `Some` then result is maximum of the two.
+pub const fn max_size(a: Option<usize>, b: Option<usize>) -> Option<usize> {
+    match (a, b) {
+        (None, _) => None,
+        (Some(_), None) => None,
+        (Some(a), Some(b)) if a > b => Some(a),
+        (Some(_), Some(b)) => Some(b),
+    }
 }
 
 /// Function for multiplying size of formula by a constant.
@@ -127,35 +116,4 @@ where
     type NonRef = Self;
 
     const MAX_SIZE: Option<usize> = <Self as NonRefFormula>::MAX_SIZE;
-
-    #[doc(hidden)]
-    #[cfg_attr(feature = "inline-more", inline(always))]
-    fn serialize<T, S>(value: T, serializer: impl Into<S>) -> Result<S::Ok, S::Error>
-    where
-        T: SerializeOwned<Self::NonRef>,
-        S: Serializer,
-    {
-        T::serialize_owned(value, serializer)
-    }
-
-    #[doc(hidden)]
-    #[cfg_attr(feature = "inline-more", inline(always))]
-    fn deserialize<'de, T>(deserializer: Deserializer<'de>) -> Result<T, Error>
-    where
-        T: Deserialize<'de, Self::NonRef>,
-    {
-        T::deserialize(deserializer)
-    }
-
-    #[doc(hidden)]
-    #[cfg_attr(feature = "inline-more", inline(always))]
-    fn deserialize_in_place<'de, T>(
-        place: &mut T,
-        deserializer: Deserializer<'de>,
-    ) -> Result<(), Error>
-    where
-        T: Deserialize<'de, Self::NonRef> + ?Sized,
-    {
-        T::deserialize_in_place(place, deserializer)
-    }
 }

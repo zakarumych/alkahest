@@ -1,5 +1,3 @@
-use std::ops::Range;
-
 use alkahest::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Formula, Serialize, Deserialize)]
@@ -13,31 +11,36 @@ struct Test<T: ?Sized> {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[alkahest(serialize(for<U: ?Sized> Test<U> where U: Formula, T: Serialize<U::NonRef>))]
-#[alkahest(serialize(owned(for<U: ?Sized> Test<U> where U: Formula, T: SerializeOwned<U::NonRef>)))]
-#[alkahest(deserialize(for<'de, U: ?Sized> Test<U> where U: Formula, T: Deserialize<'de, U::NonRef>))]
+#[alkahest(serialize(for<U: ?Sized> Test<U> where U: Formula, for<'ser> &'ser T: Serialize<U>))]
+#[alkahest(serialize(owned(for<U: ?Sized> Test<U> where U: Formula, T: Serialize<U>)))]
+#[alkahest(deserialize(for<'de, U: ?Sized> Test<U> where U: Formula, T: Deserialize<'de, U>))]
 struct TestS<T> {
     a: u32,
     b: X,
     c: T,
 }
 
+#[derive(Formula)]
+enum Test2 {}
+
 fn main() {
+    type MyFormula = Test<[Vec<u32>]>;
+
     let value = TestS {
         a: 1,
         b: X,
         c: vec![2..4, 4..6],
     };
 
-    let size = serialized_size::<Test<[Vec<u32>]>, _>(value.clone());
+    let size = serialized_size::<MyFormula, _>(value.clone());
     println!("size: {}", size);
 
     let mut buffer = vec![0; size];
 
-    let size = serialize::<Test<[Vec<u32>]>, _>(value.clone(), &mut buffer).unwrap();
+    let size = serialize::<MyFormula, _>(value.clone(), &mut buffer).unwrap();
     assert_eq!(size, buffer.len());
 
-    let (value, size) = deserialize::<Test<[Vec<u32>]>, TestS<Vec<Vec<u32>>>>(&buffer).unwrap();
+    let (value, size) = deserialize::<MyFormula, TestS<Vec<Vec<u32>>>>(&buffer).unwrap();
     assert_eq!(size, buffer.len());
 
     assert_eq!(value.a, 1);

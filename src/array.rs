@@ -1,7 +1,7 @@
 use crate::{
     deserialize::{Deserialize, Deserializer, Error},
     formula::{repeat_size, Formula, NonRefFormula},
-    serialize::{SerializeOwned, Serializer},
+    serialize::{Serialize, Serializer},
 };
 
 impl<F, const N: usize> NonRefFormula for [F; N]
@@ -11,13 +11,13 @@ where
     const MAX_SIZE: Option<usize> = repeat_size(F::MAX_SIZE, N);
 }
 
-impl<F, T, const N: usize> SerializeOwned<[F; N]> for [T; N]
+impl<F, T, const N: usize> Serialize<[F; N]> for [T; N]
 where
     F: NonRefFormula,
-    T: SerializeOwned<F>,
+    T: Serialize<F>,
 {
-    #[cfg_attr(feature = "inline-more", inline(always))]
-    fn serialize_owned<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    #[inline(always)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -28,13 +28,13 @@ where
     }
 }
 
-impl<F, T, const N: usize> SerializeOwned<[F; N]> for &[T; N]
+impl<'ser, F, T, const N: usize> Serialize<[F; N]> for &'ser [T; N]
 where
-    F: NonRefFormula,
-    for<'ser> &'ser T: SerializeOwned<F>,
+    F: Formula,
+    &'ser T: Serialize<F>,
 {
-    #[cfg_attr(feature = "inline-more", inline(always))]
-    fn serialize_owned<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    #[inline(always)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -50,7 +50,7 @@ where
     F: NonRefFormula,
     T: Deserialize<'de, F>,
 {
-    #[cfg_attr(feature = "inline-more", inline(always))]
+    #[inline(always)]
     fn deserialize(mut de: Deserializer<'de>) -> Result<Self, Error> {
         let mut opts = [(); N].map(|_| None);
         opts.iter_mut().try_for_each(|slot| {
@@ -61,7 +61,7 @@ where
         Ok(value)
     }
 
-    #[cfg_attr(feature = "inline-more", inline(always))]
+    #[inline(always)]
     fn deserialize_in_place(&mut self, mut de: Deserializer<'de>) -> Result<(), Error> {
         self.iter_mut()
             .try_for_each(|elem| de.read_in_place::<F, T>(elem))?;

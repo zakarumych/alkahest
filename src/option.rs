@@ -1,23 +1,23 @@
 use crate::{
     deserialize::{Deserialize, Deserializer, Error},
-    formula::{combine_sizes, Formula, NonRefFormula},
-    serialize::{SerializeOwned, Serializer},
+    formula::{sum_size, Formula, NonRefFormula},
+    serialize::{Serialize, Serializer},
 };
 
 impl<F> NonRefFormula for Option<F>
 where
     F: Formula,
 {
-    const MAX_SIZE: Option<usize> = combine_sizes(Some(1), F::MAX_SIZE);
+    const MAX_SIZE: Option<usize> = sum_size(Some(1), F::MAX_SIZE);
 }
 
-impl<F, T> SerializeOwned<Option<F>> for Option<T>
+impl<F, T> Serialize<Option<F>> for Option<T>
 where
     F: Formula,
-    T: SerializeOwned<F::NonRef>,
+    T: Serialize<F>,
 {
-    #[cfg_attr(feature = "inline-more", inline(always))]
-    fn serialize_owned<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    #[inline(always)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -38,9 +38,9 @@ where
 impl<'de, F, T> Deserialize<'de, Option<F>> for Option<T>
 where
     F: Formula,
-    T: Deserialize<'de, F::NonRef>,
+    T: Deserialize<'de, F>,
 {
-    #[cfg_attr(feature = "inline-more", inline(always))]
+    #[inline(always)]
     fn deserialize(mut de: Deserializer<'de>) -> Result<Self, Error> {
         let is_some: u8 = de.read_bytes(1)?[0];
         if is_some != 0 {
@@ -50,7 +50,7 @@ where
         }
     }
 
-    #[cfg_attr(feature = "inline-more", inline(always))]
+    #[inline(always)]
     fn deserialize_in_place(&mut self, mut de: Deserializer<'de>) -> Result<(), Error> {
         let is_some: u8 = de.read_bytes(1)?[0];
         if is_some != 0 {

@@ -7,7 +7,7 @@ use core::{marker::PhantomData, mem::size_of};
 use crate::{
     deserialize::{Deserialize, Deserializer, Error},
     formula::{Formula, NonRefFormula},
-    serialize::{SerializeOwned, Serializer},
+    serialize::{Serialize, Serializer},
     size::FixedUsize,
 };
 
@@ -22,29 +22,40 @@ pub struct Ref<F: ?Sized> {
     marker: PhantomData<fn(&F) -> &F>,
 }
 
-impl<F: ?Sized> Formula for Ref<F>
+impl<F> Formula for Ref<F>
 where
-    F: NonRefFormula,
+    F: NonRefFormula + ?Sized,
 {
     const MAX_SIZE: Option<usize> = Some(size_of::<[FixedUsize; 2]>());
 
     type NonRef = F;
+}
 
-    #[cfg_attr(feature = "inline-more", inline(always))]
-    fn serialize<T, S>(value: T, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+impl<F, T> Serialize<Ref<F>> for T
+where
+    F: NonRefFormula + ?Sized,
+    T: Serialize<F>,
+{
+    #[inline(always)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
-        T: SerializeOwned<F>,
         S: Serializer,
     {
         let mut ser = ser.into();
-        ser.write_ref::<F, T>(value)?;
+        ser.write_ref::<F, T>(self)?;
         ser.finish()
     }
+}
 
-    #[cfg_attr(feature = "inline-more", inline(always))]
-    fn deserialize<'de, T>(de: Deserializer<'de>) -> Result<T, Error>
+impl<'de, F, T> Deserialize<'de, Ref<F>> for T
+where
+    F: NonRefFormula + ?Sized,
+    T: Deserialize<'de, F> + ?Sized,
+{
+    #[inline(always)]
+    fn deserialize(de: Deserializer<'de>) -> Result<T, Error>
     where
-        T: Deserialize<'de, F>,
+        T: Sized,
     {
         let mut de = de.deref()?;
         let value = de.read_value::<F, T>()?;
@@ -52,13 +63,10 @@ where
         Ok(value)
     }
 
-    #[cfg_attr(feature = "inline-more", inline(always))]
-    fn deserialize_in_place<'de, T>(place: &mut T, de: Deserializer<'de>) -> Result<(), Error>
-    where
-        T: Deserialize<'de, F> + ?Sized,
-    {
+    #[inline(always)]
+    fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), Error> {
         let mut de = de.deref()?;
-        de.read_in_place::<F, T>(place)?;
+        de.read_in_place::<F, T>(self)?;
         de.finish()?;
         Ok(())
     }

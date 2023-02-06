@@ -5,8 +5,7 @@ use crate::{
     deserialize::{Deserialize, Deserializer, Error},
     formula::Formula,
     reference::Ref,
-    serialize::{SerializeOwned, Serializer},
-    Serialize,
+    serialize::{Serialize, Serializer},
 };
 
 impl<F> Formula for Vec<F>
@@ -16,44 +15,50 @@ where
     const MAX_SIZE: Option<usize> = <Ref<[F]> as Formula>::MAX_SIZE;
 
     type NonRef = [F];
+}
 
-    #[cfg_attr(feature = "inline-more", inline(always))]
-    fn serialize<T, S>(value: T, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+impl<F, T> Serialize<Vec<F>> for T
+where
+    F: Formula,
+    T: Serialize<[F]>,
+{
+    #[inline(always)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
-        T: SerializeOwned<[F]>,
+        T: Serialize<[F]>,
         S: Serializer,
     {
-        <Ref<[F]>>::serialize(value, ser)
+        <T as Serialize<Ref<[F]>>>::serialize(self, ser)
+    }
+}
+
+impl<'de, F, T> Deserialize<'de, Vec<F>> for T
+where
+    F: Formula,
+    T: Deserialize<'de, [F]>,
+{
+    #[inline(always)]
+    fn deserialize(de: Deserializer<'de>) -> Result<T, Error> {
+        <T as Deserialize<'de, Ref<[F]>>>::deserialize(de)
     }
 
-    #[cfg_attr(feature = "inline-more", inline(always))]
-    fn deserialize<'de, T>(de: Deserializer<'de>) -> Result<T, Error>
-    where
-        T: Deserialize<'de, [F]>,
-    {
-        <Ref<[F]>>::deserialize(de)
-    }
-
-    #[cfg_attr(feature = "inline-more", inline(always))]
-    fn deserialize_in_place<'de, T>(place: &mut T, de: Deserializer<'de>) -> Result<(), Error>
-    where
-        T: Deserialize<'de, [F]> + ?Sized,
-    {
-        <Ref<[F]>>::deserialize_in_place(place, de)
+    #[inline(always)]
+    fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), Error> {
+        <T as Deserialize<'de, Ref<[F]>>>::deserialize_in_place(self, de)
     }
 }
 
 impl<'de, F, T, const N: usize> Deserialize<'de, [F; N]> for Vec<T>
 where
     F: Formula,
-    T: Deserialize<'de, F::NonRef>,
+    T: Deserialize<'de, F>,
 {
-    #[cfg_attr(feature = "inline-more", inline(always))]
+    #[inline(always)]
     fn deserialize(de: Deserializer<'de>) -> Result<Self, Error> {
         de.into_iter::<F, T>()?.collect()
     }
 
-    #[cfg_attr(feature = "inline-more", inline(always))]
+    #[inline(always)]
     fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), Error> {
         let iter = de.into_iter::<F, T>()?;
         self.reserve(iter.len());
@@ -64,12 +69,12 @@ where
     }
 }
 
-impl<F, T> SerializeOwned<[F]> for Vec<T>
+impl<F, T> Serialize<[F]> for Vec<T>
 where
-    T: SerializeOwned<F::NonRef>,
+    T: Serialize<F>,
     F: Formula,
 {
-    fn serialize_owned<S>(self, er: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<S>(self, er: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -81,12 +86,12 @@ where
     }
 }
 
-impl<F, T> Serialize<[F]> for Vec<T>
+impl<'ser, F, T> Serialize<[F]> for &'ser Vec<T>
 where
-    T: Serialize<F::NonRef>,
+    &'ser T: Serialize<F>,
     F: Formula,
 {
-    fn serialize<S>(&self, er: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<S>(self, er: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -101,14 +106,14 @@ where
 impl<'de, F, T> Deserialize<'de, [F]> for Vec<T>
 where
     F: Formula,
-    T: Deserialize<'de, F::NonRef>,
+    T: Deserialize<'de, F>,
 {
-    #[cfg_attr(feature = "inline-more", inline(always))]
+    #[inline(always)]
     fn deserialize(de: Deserializer<'de>) -> Result<Self, Error> {
         de.into_iter::<F, T>()?.collect()
     }
 
-    #[cfg_attr(feature = "inline-more", inline(always))]
+    #[inline(always)]
     fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), Error> {
         let iter = de.into_iter::<F, T>()?;
         self.reserve(iter.len());
@@ -119,9 +124,9 @@ where
     }
 }
 
-impl SerializeOwned<Bytes> for Vec<u8> {
-    #[cfg_attr(feature = "inline-more", inline(always))]
-    fn serialize_owned<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+impl Serialize<Bytes> for Vec<u8> {
+    #[inline(always)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -129,9 +134,9 @@ impl SerializeOwned<Bytes> for Vec<u8> {
     }
 }
 
-impl Serialize<Bytes> for Vec<u8> {
-    #[cfg_attr(feature = "inline-more", inline(always))]
-    fn serialize<S>(&self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+impl Serialize<Bytes> for &Vec<u8> {
+    #[inline(always)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -142,14 +147,16 @@ impl Serialize<Bytes> for Vec<u8> {
 }
 
 impl<'de> Deserialize<'de, Bytes> for Vec<u8> {
-    #[cfg_attr(feature = "inline-more", inline(always))]
+    #[inline(always)]
     fn deserialize(de: Deserializer) -> Result<Self, Error> {
-        Ok(de.read_all_bytes().to_vec())
+        let mut deque = Vec::new();
+        deque.extend(de.read_all_bytes());
+        Ok(deque)
     }
 
-    #[cfg_attr(feature = "inline-more", inline(always))]
+    #[inline(always)]
     fn deserialize_in_place(&mut self, de: Deserializer) -> Result<(), Error> {
-        self.extend_from_slice(de.read_all_bytes());
+        self.extend(de.read_all_bytes());
         Ok(())
     }
 }

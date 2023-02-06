@@ -18,14 +18,14 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
     {
         return Err(syn::Error::new_spanned(
             formula.ty,
-            "Formula type should not be specified for `SerializeOwned` and `Deserialize` when type is also `Formula`",
+            "Formula type should not be specified for `Serialize` and `Deserialize` when type is also `Formula`",
         ));
     }
 
     if args.variant.is_some() {
         return Err(syn::Error::new_spanned(
             input,
-            "Variant should not be specified for `SerializeOwned` when type is also `Formula`",
+            "Variant should not be specified for `Serialize` when type is also `Formula`",
         ));
     }
 
@@ -105,7 +105,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         #[allow(unused_mut)]
                         let mut max_size = Some(0);
                         #(
-                            max_size = ::alkahest::private::combine_sizes(max_size, <#all_field_types as ::alkahest::private::Formula>::MAX_SIZE);
+                            max_size = ::alkahest::private::sum_size(max_size, <#all_field_types as ::alkahest::private::Formula>::MAX_SIZE);
                         )*;
                         #expand_size
                         max_size
@@ -114,17 +114,25 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
             })
         }
         syn::Data::Enum(data) => {
-            let all_field_types: Vec<&syn::Type> = data
+            let all_field_types: Vec<Vec<&syn::Type>> = data
+                .variants
+                .iter()
+                .map(|variant| variant.fields.iter().map(|field| &field.ty).collect())
+                .collect();
+
+            let all_field_types_flat: Vec<&syn::Type> = data
                 .variants
                 .iter()
                 .flat_map(|variant| variant.fields.iter().map(|field| &field.ty))
                 .collect();
 
             let mut formula_generics = input.generics.clone();
-            if !all_field_types.is_empty() && !input.generics.params.is_empty() {
-                let predicates = all_field_types.iter().map(|ty| -> syn::WherePredicate {
-                    syn::parse_quote_spanned! { ty.span() => #ty: ::alkahest::private::Formula }
-                });
+            if !all_field_types_flat.is_empty() && !input.generics.params.is_empty() {
+                let predicates = all_field_types_flat
+                    .iter()
+                    .map(|ty| -> syn::WherePredicate {
+                        syn::parse_quote_spanned! { ty.span() => #ty: ::alkahest::private::Formula }
+                    });
 
                 let where_clause = formula_generics.make_where_clause();
                 where_clause.predicates.extend(predicates);
@@ -180,6 +188,14 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
             let (formula_impl_generics, formula_type_generics, formula_where_clause) =
                 formula_generics.split_for_impl();
 
+            let expand_size = if non_exhaustive {
+                quote::quote! {
+                    max_size = ::alkahest::private::Option::None;
+                }
+            } else {
+                quote::quote! {}
+            };
+
             Ok(quote::quote! {
                 impl #impl_generics #ident #type_generics #where_clause {
                     #(#(
@@ -199,7 +215,27 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                     )*
                 }
 
-                impl #formula_impl_generics ::alkahest::private::NonRefFormula for #ident #formula_type_generics #formula_where_clause {}
+                impl #formula_impl_generics ::alkahest::private::NonRefFormula for #ident #formula_type_generics #formula_where_clause {
+                    const MAX_SIZE: ::alkahest::private::Option<::alkahest::private::usize> = {
+                        #[allow(unused_mut)]
+                        let mut max_size = Some(0);
+
+                        #(
+                            let var_size = {
+                                #[allow(unused_mut)]
+                                let mut max_size = Some(0);
+                                #(
+                                    max_size = ::alkahest::private::sum_size(max_size, <#all_field_types as ::alkahest::private::Formula>::MAX_SIZE);
+                                )*;
+                                max_size
+                            };
+                            max_size = ::alkahest::private::max_size(max_size, var_size);
+                        )*
+
+                        #expand_size
+                        max_size
+                    };
+                }
             })
         }
     }

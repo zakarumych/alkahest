@@ -3,7 +3,7 @@ use core::{borrow::Borrow, mem::size_of};
 use crate::{
     deserialize::{Deserialize, Deserializer, Error},
     formula::NonRefFormula,
-    serialize::{Serialize, SerializeOwned, Serializer},
+    serialize::{Serialize, Serializer},
 };
 
 macro_rules! impl_primitive {
@@ -19,21 +19,12 @@ macro_rules! impl_primitive {
             const MAX_SIZE: Option<usize> = Some(size_of::<$ty>());
         }
 
-        impl SerializeOwned<$ty> for $ty {
-            #[cfg_attr(feature = "inline-more", inline(always))]
-            fn serialize_owned<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
-            where
-                S: Serializer,
-            {
-                let mut ser = ser.into();
-                ser.write_bytes(&self.borrow().to_le_bytes())?;
-                ser.finish()
-            }
-        }
-
-        impl Serialize<$ty> for $ty {
-            #[cfg_attr(feature = "inline-more", inline(always))]
-            fn serialize<S>(&self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+        impl<T> Serialize<$ty> for T
+        where
+            T: Borrow<$ty>,
+        {
+            #[inline(always)]
+            fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
             where
                 S: Serializer,
             {
@@ -47,7 +38,7 @@ macro_rules! impl_primitive {
         where
             T: From<$ty>,
         {
-            #[cfg_attr(feature = "inline-more", inline(always))]
+            #[inline(always)]
             fn deserialize(mut de: Deserializer) -> Result<Self, Error> {
                 let mut bytes = [0; size_of::<$ty>()];
                 bytes.copy_from_slice(de.read_bytes(size_of::<$ty>())?);
@@ -56,7 +47,7 @@ macro_rules! impl_primitive {
                 Ok(From::from(value))
             }
 
-            #[cfg_attr(feature = "inline-more", inline(always))]
+            #[inline(always)]
             fn deserialize_in_place(&mut self, de: Deserializer) -> Result<(), Error> {
                 let value = <T as Deserialize<'_, $ty>>::deserialize(de)?;
                 *self = value;
@@ -85,23 +76,16 @@ impl NonRefFormula for bool {
     const MAX_SIZE: Option<usize> = Some(1);
 }
 
-impl SerializeOwned<bool> for bool {
-    #[cfg_attr(feature = "inline-more", inline(always))]
-    fn serialize_owned<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+impl<T> Serialize<bool> for T
+where
+    T: Borrow<bool>,
+{
+    #[inline(always)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        <u8 as SerializeOwned<u8>>::serialize_owned(self as u8, ser)
-    }
-}
-
-impl SerializeOwned<bool> for &bool {
-    #[cfg_attr(feature = "inline-more", inline(always))]
-    fn serialize_owned<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        <u8 as SerializeOwned<u8>>::serialize_owned(*self as u8, ser)
+        <u8 as Serialize<u8>>::serialize(*self.borrow() as u8, ser)
     }
 }
 
@@ -109,13 +93,13 @@ impl<T> Deserialize<'_, bool> for T
 where
     T: From<bool>,
 {
-    #[cfg_attr(feature = "inline-more", inline(always))]
+    #[inline(always)]
     fn deserialize(de: Deserializer) -> Result<Self, Error> {
         let value = <u8 as Deserialize<u8>>::deserialize(de)?;
         Ok(From::from(value != 0))
     }
 
-    #[cfg_attr(feature = "inline-more", inline(always))]
+    #[inline(always)]
     fn deserialize_in_place(&mut self, de: Deserializer) -> Result<(), Error> {
         let value = <u8 as Deserialize<u8>>::deserialize(de)?;
         *self = From::from(value != 0);

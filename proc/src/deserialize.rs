@@ -25,7 +25,7 @@ impl Config {
                 // Except that last one if `non_exhaustive` is not set.
                 let predicates = data.fields.iter().map(|field| -> syn::WherePredicate {
                         let ty = &field.ty;
-                        syn::parse_quote! { #ty: ::alkahest::private::Formula + ::alkahest::private::Deserialize<'de, <#ty as ::alkahest::private::Formula>::NonRef> }
+                        syn::parse_quote! { #ty: ::alkahest::private::Formula + ::alkahest::private::Deserialize<'de, <#ty as ::alkahest::private::Formula>> }
                     }).collect();
 
                 // Add `'de` generic parameter

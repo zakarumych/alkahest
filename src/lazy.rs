@@ -1,52 +1,57 @@
+use core::marker::PhantomData;
+
 use crate::{
     deserialize::{Deserialize, Deserializer, Error},
     formula::NonRefFormula,
 };
 
 /// Wrapper for lazy deserialization.
-/// `Lazy<T>` may deserialize data from formula `F`
-/// when and only when `T` can deserialize data from formula `F`.
-/// The actual deserialization is delayed until `get` or `get_in_place` is called.
+/// `Lazy<F>` may deserialize data from formula `F`.
+/// Then any it may produce any type `T` that can be deserialized from formula `F`.
 #[derive(Clone)]
-pub struct Lazy<'de, T> {
+pub struct Lazy<'de, F: ?Sized> {
     de: Deserializer<'de>,
-    value: fn(Deserializer<'de>) -> Result<T, Error>,
-    in_place: fn(&mut T, Deserializer<'de>) -> Result<(), Error>,
+    marker: PhantomData<fn(&F) -> &F>,
 }
 
-impl<'de, T> Lazy<'de, T> {
+impl<'de, F> Lazy<'de, F>
+where
+    F: NonRefFormula + ?Sized,
+{
     /// Deserialize the lazy value.
-    #[cfg_attr(feature = "inline-more", inline(always))]
-    pub fn get(&self) -> Result<T, Error> {
-        (self.value)(self.de.clone())
+    #[inline(always)]
+    pub fn get<T>(&self) -> Result<T, Error>
+    where
+        T: Deserialize<'de, F>,
+    {
+        <T as Deserialize<'de, F>>::deserialize(self.de.clone())
     }
 
     /// Deserialize the lazy value in place.
-    #[cfg_attr(feature = "inline-more", inline(always))]
-    pub fn get_in_place(&self, place: &mut T) -> Result<(), Error> {
-        (self.in_place)(place, self.de.clone())
+    #[inline(always)]
+    pub fn get_in_place<T>(&self, place: &mut T) -> Result<(), Error>
+    where
+        T: Deserialize<'de, F> + ?Sized,
+    {
+        <T as Deserialize<'de, F>>::deserialize_in_place(place, self.de.clone())
     }
 }
 
-impl<'de, F, T> Deserialize<'de, F> for Lazy<'de, T>
+impl<'de, F> Deserialize<'de, F> for Lazy<'de, F>
 where
     F: NonRefFormula + ?Sized,
-    T: Deserialize<'de, F>,
 {
-    #[cfg_attr(feature = "inline-more", inline(always))]
+    #[inline(always)]
     fn deserialize(de: Deserializer<'de>) -> Result<Self, Error> {
         Ok(Lazy {
             de,
-            value: T::deserialize,
-            in_place: T::deserialize_in_place,
+            marker: PhantomData,
         })
     }
 
-    #[cfg_attr(feature = "inline-more", inline(always))]
+    #[inline(always)]
     fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), Error> {
         self.de = de;
-        self.value = T::deserialize;
-        self.in_place = T::deserialize_in_place;
         Ok(())
     }
 }

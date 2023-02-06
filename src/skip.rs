@@ -10,12 +10,12 @@ impl<'de, F> Deserialize<'de, F> for Skip
 where
     F: NonRefFormula + ?Sized,
 {
-    #[cfg_attr(feature = "inline-more", inline(always))]
+    #[inline(always)]
     fn deserialize(_de: Deserializer) -> Result<Self, Error> {
         Ok(Skip)
     }
 
-    #[cfg_attr(feature = "inline-more", inline(always))]
+    #[inline(always)]
     fn deserialize_in_place(&mut self, _de: Deserializer) -> Result<(), Error> {
         Ok(())
     }

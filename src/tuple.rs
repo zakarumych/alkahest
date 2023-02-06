@@ -1,16 +1,16 @@
 use crate::{
     deserialize::{Deserialize, Deserializer, Error},
-    formula::{combine_sizes, Formula, NonRefFormula},
-    serialize::{Serialize, SerializeOwned, Serializer},
+    formula::{sum_size, Formula, NonRefFormula},
+    serialize::{Serialize, Serializer},
 };
 
 impl NonRefFormula for () {
     const MAX_SIZE: Option<usize> = Some(0);
 }
 
-impl SerializeOwned<()> for () {
-    #[cfg_attr(feature = "inline-more", inline(always))]
-    fn serialize_owned<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+impl Serialize<()> for () {
+    #[inline(always)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -18,9 +18,9 @@ impl SerializeOwned<()> for () {
     }
 }
 
-impl SerializeOwned<()> for &'_ () {
-    #[cfg_attr(feature = "inline-more", inline(always))]
-    fn serialize_owned<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+impl Serialize<()> for &'_ () {
+    #[inline(always)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -29,12 +29,12 @@ impl SerializeOwned<()> for &'_ () {
 }
 
 impl Deserialize<'_, ()> for () {
-    #[cfg_attr(feature = "inline-more", inline(always))]
+    #[inline(always)]
     fn deserialize(_de: Deserializer) -> Result<(), Error> {
         Ok(())
     }
 
-    #[cfg_attr(feature = "inline-more", inline(always))]
+    #[inline(always)]
     fn deserialize_in_place(&mut self, _de: Deserializer) -> Result<(), Error> {
         Ok(())
     }
@@ -49,23 +49,23 @@ macro_rules! impl_for_tuple {
         {
             const MAX_SIZE: Option<usize> = {
                 let mut size = Some(0);
-                $(size = combine_sizes(size, <$a as Formula>::MAX_SIZE);)*
-                size = combine_sizes(size, <$at as Formula>::MAX_SIZE);
+                $(size = sum_size(size, <$a as Formula>::MAX_SIZE);)*
+                size = sum_size(size, <$at as Formula>::MAX_SIZE);
                 size
             };
         }
 
-        impl<$($a,)* $at, $($b,)* $bt> SerializeOwned<($($a,)* $at,)> for ($($b,)* $bt,)
+        impl<$($a,)* $at, $($b,)* $bt> Serialize<($($a,)* $at,)> for ($($b,)* $bt,)
         where
             $(
                 $a: Formula,
-                $b: SerializeOwned<$a::NonRef>,
+                $b: Serialize<$a>,
             )*
             $at: Formula + ?Sized,
-            $bt: SerializeOwned<$at::NonRef>,
+            $bt: Serialize<$at>,
         {
-            #[cfg_attr(feature = "inline-more", inline(always))]
-            fn serialize_owned<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+            #[inline(always)]
+            fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
             where
                 S: Serializer,
             {
@@ -80,17 +80,18 @@ macro_rules! impl_for_tuple {
             }
         }
 
-        impl<$($a,)* $at, $($b,)* $bt,> Serialize<($($a,)* $at,)> for ($($b,)* $bt,)
+        impl<'ser, $($a,)* $at, $($b,)* $bt,> Serialize<($($a,)* $at,)> for &'ser ($($b,)* $bt,)
         where
             $(
                 $a: Formula,
-                $b: Serialize<$a::NonRef>,
+                &'ser $b: Serialize<$a>,
             )*
             $at: Formula + ?Sized,
-            $bt: Serialize<$at::NonRef>,
+            &'ser $bt: Serialize<$at>,
+            $bt: ?Sized,
         {
-            #[cfg_attr(feature = "inline-more", inline(always))]
-            fn serialize<S>(&self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+            #[inline(always)]
+            fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
             where
                 S: Serializer,
             {
@@ -105,17 +106,17 @@ macro_rules! impl_for_tuple {
             }
         }
 
-        impl<'__de, $($a,)* $at, $($b,)* $bt> Deserialize<'__de, ($($a,)* $at,)> for ($($b,)* $bt,)
+        impl<'de, $($a,)* $at, $($b,)* $bt> Deserialize<'de, ($($a,)* $at,)> for ($($b,)* $bt,)
         where
             $(
                 $a: Formula,
-                $b: Deserialize<'__de, $a::NonRef>,
+                $b: Deserialize<'de, $a>,
             )*
             $at: Formula + ?Sized,
-            $bt: Deserialize<'__de, $at::NonRef>,
+            $bt: Deserialize<'de, $at>,
         {
-            #[cfg_attr(feature = "inline-more", inline(always))]
-            fn deserialize(mut de: Deserializer<'__de>) -> Result<($($b,)* $bt,), Error> {
+            #[inline(always)]
+            fn deserialize(mut de: Deserializer<'de>) -> Result<($($b,)* $bt,), Error> {
                 #![allow(non_snake_case)]
                 $(
                     let $b = de.read_value::<$a, $b>()?;
@@ -127,8 +128,8 @@ macro_rules! impl_for_tuple {
                 Ok(value)
             }
 
-            #[cfg_attr(feature = "inline-more", inline(always))]
-            fn deserialize_in_place(&mut self, mut de: Deserializer<'__de>) -> Result<(), Error> {
+            #[inline(always)]
+            fn deserialize_in_place(&mut self, mut de: Deserializer<'de>) -> Result<(), Error> {
                 #![allow(non_snake_case)]
 
                 let ($($b,)* $bt,) = self;

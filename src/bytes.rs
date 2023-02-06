@@ -1,7 +1,7 @@
 use crate::{
     deserialize::{Deserialize, Deserializer, Error},
     formula::NonRefFormula,
-    serialize::{SerializeOwned, Serializer},
+    serialize::{Serialize, Serializer},
 };
 
 /// A formula for a raw byte slices.
@@ -12,9 +12,9 @@ impl NonRefFormula for Bytes {
     const MAX_SIZE: Option<usize> = None;
 }
 
-impl SerializeOwned<Bytes> for &[u8] {
-    #[cfg_attr(feature = "inline-more", inline(always))]
-    fn serialize_owned<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+impl Serialize<Bytes> for &[u8] {
+    #[inline(always)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -25,12 +25,12 @@ impl SerializeOwned<Bytes> for &[u8] {
 }
 
 impl<'de> Deserialize<'de, Bytes> for &'de [u8] {
-    #[cfg_attr(feature = "inline-more", inline(always))]
+    #[inline(always)]
     fn deserialize(de: Deserializer<'de>) -> Result<Self, Error> {
         Ok(de.read_all_bytes())
     }
 
-    #[cfg_attr(feature = "inline-more", inline(always))]
+    #[inline(always)]
     fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), Error> {
         *self = de.read_all_bytes();
         Ok(())
