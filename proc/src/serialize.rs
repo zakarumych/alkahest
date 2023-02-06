@@ -14,14 +14,7 @@ struct Config {
 }
 
 impl Config {
-    fn for_struct(
-        args: Args,
-        data: &syn::DataStruct,
-        ident: &syn::Ident,
-        generics: &syn::Generics,
-    ) -> Self {
-        let (_, type_generics, _) = generics.split_for_impl();
-
+    fn for_struct(args: Args, data: &syn::DataStruct, generics: &syn::Generics) -> Self {
         match (args.serialize.or(args.common), args.owned) {
             (None, Some(None)) if generics.params.is_empty() => Config {
                 reference: None,
@@ -34,11 +27,11 @@ impl Config {
             },
             (None, None) if generics.params.is_empty() => Config {
                 reference: Some(Formula {
-                    ty: syn::parse_quote!(#ident #type_generics),
+                    ty: syn::parse_quote!(Self),
                     generics: syn::Generics {
-                        lt_token: Some(Default::default()),
-                        params: syn::parse_quote!('ser),
-                        gt_token: Some(Default::default()),
+                        lt_token: None,
+                        params: Default::default(),
+                        gt_token: None,
                         where_clause: None,
                     },
                 }),
@@ -54,20 +47,13 @@ impl Config {
                 variant: None,
                 check_fields: false,
             },
-            (None, Some(None)) => {
+            (None, None) => {
                 // Add predicates that fields implement
-                // `T: Formula` and `T: Serialize<T>`
-                let predicates = data
-                    .fields
-                    .iter()
-                    .map(|field| -> syn::WherePredicate {
+                // `T: Formula + Serialize<T>`
+                let predicates = data.fields.iter().map(|field| -> syn::WherePredicate {
                         let ty = &field.ty;
-                        syn::parse_quote! { #ty: ::alkahest::Formula }
+                        syn::parse_quote! { #ty: ::alkahest::private::Formula + ::alkahest::private::Serialize<#ty> }
                     })
-                    .chain(data.fields.iter().map(|field| -> syn::WherePredicate {
-                        let ty = &field.ty;
-                        syn::parse_quote! { #ty: ::alkahest::Serialize<#ty> }
-                    }))
                     .collect();
 
                 let generics = syn::Generics {
@@ -80,60 +66,17 @@ impl Config {
                     }),
                 };
 
-                Config {
-                    reference: None,
-                    owned: Some(Formula {
-                        ty: syn::parse_quote!(Self),
-                        generics,
-                    }),
-                    variant: None,
-                    check_fields: true,
-                }
-            }
-            (None, None) => {
-                // Add predicates that fields implement
-                // `T: Formula` and `&T: Serialize<T>`
-                let predicates = data
-                    .fields
-                    .iter()
-                    .map(|field| -> syn::WherePredicate {
-                        let ty = &field.ty;
-                        syn::parse_quote! { #ty: ::alkahest::Formula }
-                    })
-                    .chain(data.fields.iter().map(|field| -> syn::WherePredicate {
-                        let ty = &field.ty;
-                        syn::parse_quote! { &'ser #ty: ::alkahest::Serialize<#ty> }
-                    }))
-                    .collect();
-
-                let generics = syn::Generics {
-                    lt_token: Some(Default::default()),
-                    params: syn::parse_quote!('ser),
-                    gt_token: Some(Default::default()),
-                    where_clause: Some(syn::WhereClause {
-                        where_token: Default::default(),
-                        predicates,
-                    }),
-                };
-
                 let reference = Formula {
-                    ty: syn::parse_quote!(#ident #type_generics),
+                    ty: syn::parse_quote!(Self),
                     generics,
                 };
 
                 // Add predicates that fields implement
-                // `T: Formula` and `T: Serialize<T>`
-                let predicates = data
-                    .fields
-                    .iter()
-                    .map(|field| -> syn::WherePredicate {
+                // `T: Formula` and `T: SerializeOwned<T>`
+                let predicates = data.fields.iter().map(|field| -> syn::WherePredicate {
                         let ty = &field.ty;
-                        syn::parse_quote! { #ty: ::alkahest::Formula }
+                        syn::parse_quote! { #ty: ::alkahest::private::Formula + ::alkahest::private::SerializeOwned<#ty> }
                     })
-                    .chain(data.fields.iter().map(|field| -> syn::WherePredicate {
-                        let ty = &field.ty;
-                        syn::parse_quote! { #ty: ::alkahest::Serialize<#ty> }
-                    }))
                     .collect();
 
                 let generics = syn::Generics {
@@ -158,6 +101,42 @@ impl Config {
                     check_fields: false,
                 }
             }
+            (None, Some(None)) => {
+                // Add predicates that fields implement
+                // `T: Formula` and `T: SerializeOwned<T>`
+                let predicates = data
+                    .fields
+                    .iter()
+                    .map(|field| -> syn::WherePredicate {
+                        let ty = &field.ty;
+                        syn::parse_quote! { #ty: ::alkahest::private::Formula }
+                    })
+                    .chain(data.fields.iter().map(|field| -> syn::WherePredicate {
+                        let ty = &field.ty;
+                        syn::parse_quote! { #ty: ::alkahest::private::SerializeOwned<#ty> }
+                    }))
+                    .collect();
+
+                let generics = syn::Generics {
+                    lt_token: None,
+                    params: Default::default(),
+                    gt_token: None,
+                    where_clause: Some(syn::WhereClause {
+                        where_token: Default::default(),
+                        predicates,
+                    }),
+                };
+
+                Config {
+                    reference: None,
+                    owned: Some(Formula {
+                        ty: syn::parse_quote!(Self),
+                        generics,
+                    }),
+                    variant: None,
+                    check_fields: true,
+                }
+            }
             (None, Some(Some(owned))) => Config {
                 owned: Some(owned),
                 reference: None,
@@ -165,14 +144,12 @@ impl Config {
                 check_fields: true,
             },
             (Some(mut reference), None | Some(None)) => {
-                if reference.generics.params.is_empty() {
-                    reference.generics.lt_token = Some(Default::default());
-                    reference.generics.gt_token = Some(Default::default());
-                    reference
-                        .generics
-                        .params
-                        .push(syn::GenericParam::Lifetime(syn::parse_quote!('ser)));
-                }
+                reference.generics.lt_token = Some(Default::default());
+                reference.generics.gt_token = Some(Default::default());
+                reference
+                    .generics
+                    .params
+                    .push(syn::GenericParam::Lifetime(syn::parse_quote!('__ser)));
                 Config {
                     reference: Some(reference.clone()),
                     owned: None,
@@ -181,14 +158,12 @@ impl Config {
                 }
             }
             (Some(mut reference), Some(Some(owned))) => {
-                if reference.generics.params.is_empty() {
-                    reference.generics.lt_token = Some(Default::default());
-                    reference.generics.gt_token = Some(Default::default());
-                    reference
-                        .generics
-                        .params
-                        .push(syn::GenericParam::Lifetime(syn::parse_quote!('ser)));
-                }
+                reference.generics.lt_token = Some(Default::default());
+                reference.generics.gt_token = Some(Default::default());
+                reference
+                    .generics
+                    .params
+                    .push(syn::GenericParam::Lifetime(syn::parse_quote!('__ser)));
                 Config {
                     reference: Some(reference),
                     owned: Some(owned),
@@ -211,10 +186,10 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
     match input.data {
         syn::Data::Union(_) => Err(syn::Error::new_spanned(
             input,
-            "Serialize cannot be derived for unions",
+            "SerializeOwned cannot be derived for unions",
         )),
         syn::Data::Struct(data) => {
-            let cfg = Config::for_struct(args, &data, ident, generics);
+            let cfg = Config::for_struct(args, &data, generics);
 
             if cfg.variant.is_some() {
                 unimplemented!("Add support for enums");
@@ -280,10 +255,24 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
 
                     let (impl_generics, _type_generics, where_clause) = generics.split_for_impl();
                     Ok(quote::quote! {
-                        impl #impl_generics ::alkahest::Serialize<#formula_type> for &'ser #ident #type_generics #where_clause {
-                            fn serialize<S>(self, ser: impl ::alkahest::private::Into<S>) -> ::alkahest::private::Result<S::Ok, S::Error>
+                        impl #impl_generics ::alkahest::private::NonRefSerializeOwned<#formula_type> for #ident #type_generics #where_clause {
+                            fn serialize_owned<S>(self, ser: impl ::alkahest::private::Into<S>) -> ::alkahest::private::Result<S::Ok, S::Error>
                             where
-                                S: ::alkahest::Serializer
+                                S: ::alkahest::private::Serializer
+                            {
+                                let mut ser = ser.into();
+                                #(
+                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names);
+                                    with_formula.write_value(&mut ser, &self.#field_names)?;
+                                )*
+                                ser.finish()
+                            }
+                        }
+
+                        impl #impl_generics ::alkahest::private::NonRefSerialize<#formula_type> for #ident #type_generics #where_clause {
+                            fn serialize<S>(&self, ser: impl ::alkahest::private::Into<S>) -> ::alkahest::private::Result<S::Ok, S::Error>
+                            where
+                                S: ::alkahest::private::Serializer
                             {
                                 // Checks compilation of code in the block.
                                 #[allow(unused)]
@@ -296,20 +285,6 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                 #(
                                     let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names);
                                     with_formula.write_value(&mut ser, &self.#field_names)?;
-                                )*
-                                ser.finish()
-                            }
-                        }
-
-                        impl #impl_generics ::alkahest::Serialize<#formula_type> for #ident #type_generics #where_clause {
-                            fn serialize<S>(self, ser: impl ::alkahest::private::Into<S>) -> ::alkahest::private::Result<S::Ok, S::Error>
-                            where
-                                S: ::alkahest::Serializer
-                            {
-                                let mut ser = ser.into();
-                                #(
-                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names);
-                                    with_formula.write_value(&mut ser, self.#field_names)?;
                                 )*
                                 ser.finish()
                             }
@@ -342,10 +317,10 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                     let (impl_generics, _type_generics, where_clause) = generics.split_for_impl();
 
                     let mut tokens = quote::quote! {
-                        impl #impl_generics ::alkahest::Serialize<#formula_type> for #ident #type_generics #where_clause {
-                            fn serialize<S>(self, ser: impl ::alkahest::private::Into<S>) -> ::alkahest::private::Result<S::Ok, S::Error>
+                        impl #impl_generics ::alkahest::private::NonRefSerializeOwned<#formula_type> for #ident #type_generics #where_clause {
+                            fn serialize_owned<S>(self, ser: impl ::alkahest::private::Into<S>) -> ::alkahest::private::Result<S::Ok, S::Error>
                             where
-                                S: ::alkahest::Serializer
+                                S: ::alkahest::private::Serializer
                             {
                                 // Checks compilation of code in the block.
                                 #[allow(unused)]
@@ -385,10 +360,10 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                             generics.split_for_impl();
 
                         tokens.extend(quote::quote! {
-                            impl #impl_generics ::alkahest::Serialize<#formula_type> for &'ser #ident #type_generics #where_clause {
-                                fn serialize<S>(self, ser: impl ::alkahest::private::Into<S>) -> ::alkahest::private::Result<S::Ok, S::Error>
+                            impl #impl_generics ::alkahest::private::NonRefSerialize<#formula_type> for #ident #type_generics #where_clause {
+                                fn serialize<S>(&self, ser: impl ::alkahest::private::Into<S>) -> ::alkahest::private::Result<S::Ok, S::Error>
                                 where
-                                    S: ::alkahest::Serializer
+                                    S: ::alkahest::private::Serializer
                                 {
                                     let mut ser = ser.into();
                                     #(

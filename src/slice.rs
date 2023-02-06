@@ -1,46 +1,76 @@
 use core::iter::FusedIterator;
 
 use crate::{
-    deserialize::{DeIter, Deserialize, Deserializer, Error},
+    deserialize::{DeIter, Deserializer, Error, NonRefDeserialize},
     formula::{Formula, NonRefFormula},
-    serialize::{Serialize, Serializer},
+    serialize::{NonRefSerializeOwned, SerializeOwned, Serializer},
 };
 
-impl<F> Formula for [F]
+impl<F> NonRefFormula for [F]
 where
     F: Formula,
 {
     const MAX_SIZE: Option<usize> = None;
 }
-impl<F> NonRefFormula for [F] where F: Formula {}
 
-impl<F, T, I> Serialize<[F]> for I
+/// Wrapper for iterators to implement `NonRefSerializeOwned` into slice formula.
+#[repr(transparent)]
+pub struct SerIter<I>(pub I);
+
+impl<F, T, I> NonRefSerializeOwned<[F]> for SerIter<I>
 where
     F: Formula,
     I: IntoIterator<Item = T>,
-    T: Serialize<F>,
+    T: SerializeOwned<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize_owned<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         let mut ser = ser.into();
-        for elem in self.into_iter() {
+        for elem in self.0.into_iter() {
             ser.write_value::<F, T>(elem)?;
         }
         ser.finish()
     }
 }
+macro_rules! impl_iter_to_slice {
+    (for<F $(,$a:ident)*> $iter:ty where $($predicates:tt)*) => {
+        impl<F $(, $a)*> NonRefSerializeOwned<[F]> for $iter
+        where $($predicates)*
+        {
+            #[inline(always)]
+            fn serialize_owned<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
+                let mut ser = ser.into();
+                for elem in self {
+                    ser.write_value::<F, _>(elem)?;
+                }
+                ser.finish()
+            }
+        }
+    };
+}
+
+impl_iter_to_slice!(for<F, T> core::ops::Range<T> where F: Formula, T: SerializeOwned<F>, core::ops::Range<T>: IntoIterator<Item = T>);
+
+#[cfg(feature = "alloc")]
+impl_iter_to_slice!(for<F, T> alloc::vec::Vec<T> where F: Formula, T: SerializeOwned<F>);
+
+#[cfg(feature = "alloc")]
+impl_iter_to_slice!(for<F, T> alloc::collections::VecDeque<T> where F: Formula, T: SerializeOwned<F>);
 
 pub struct SliceIter<'de, F, T = F> {
     inner: DeIter<'de, F, T>,
 }
 
-impl<'de, F, T> Deserialize<'de, [F]> for SliceIter<'de, F, T>
+impl<'de, F, T> NonRefDeserialize<'de, [F]> for SliceIter<'de, F, T>
 where
     F: Formula,
-    T: Deserialize<'de, F>,
+    T: NonRefDeserialize<'de, F::NonRef>,
 {
     #[inline(always)]
     fn deserialize(de: Deserializer<'de>) -> Result<Self, Error> {
@@ -56,10 +86,10 @@ where
     }
 }
 
-impl<'de, F, T, const N: usize> Deserialize<'de, [F; N]> for SliceIter<'de, F, T>
+impl<'de, F, T, const N: usize> NonRefDeserialize<'de, [F; N]> for SliceIter<'de, F, T>
 where
     F: Formula,
-    T: Deserialize<'de, F>,
+    T: NonRefDeserialize<'de, F::NonRef>,
 {
     #[inline(always)]
     fn deserialize(de: Deserializer<'de>) -> Result<Self, Error> {
@@ -78,7 +108,7 @@ where
 impl<'de, F, T> Iterator for SliceIter<'de, F, T>
 where
     F: Formula,
-    T: Deserialize<'de, F>,
+    T: NonRefDeserialize<'de, F::NonRef>,
 {
     type Item = Result<T, Error>;
 
@@ -114,7 +144,7 @@ where
 impl<'de, F, T> DoubleEndedIterator for SliceIter<'de, F, T>
 where
     F: Formula,
-    T: Deserialize<'de, F>,
+    T: NonRefDeserialize<'de, F::NonRef>,
 {
     #[inline(always)]
     fn next_back(&mut self) -> Option<Result<T, Error>> {
@@ -138,7 +168,7 @@ where
 impl<'de, F, T> ExactSizeIterator for SliceIter<'de, F, T>
 where
     F: Formula,
-    T: Deserialize<'de, F>,
+    T: NonRefDeserialize<'de, F::NonRef>,
 {
     #[inline(always)]
     fn len(&self) -> usize {
@@ -149,6 +179,6 @@ where
 impl<'de, F, T> FusedIterator for SliceIter<'de, F, T>
 where
     F: Formula,
-    T: Deserialize<'de, F>,
+    T: NonRefDeserialize<'de, F::NonRef>,
 {
 }

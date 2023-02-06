@@ -5,9 +5,9 @@
 use core::{marker::PhantomData, mem::size_of};
 
 use crate::{
-    deserialize::{Deserialize, Deserializer, Error},
+    deserialize::{Deserializer, Error, NonRefDeserialize},
     formula::{Formula, NonRefFormula},
-    serialize::{Serialize, Serializer},
+    serialize::{SerializeOwned, Serializer},
     size::FixedUsize,
 };
 
@@ -27,46 +27,38 @@ where
     F: NonRefFormula,
 {
     const MAX_SIZE: Option<usize> = Some(size_of::<[FixedUsize; 2]>());
-}
 
-impl<F, T> Serialize<Ref<F>> for T
-where
-    F: NonRefFormula + ?Sized,
-    T: Serialize<F>,
-{
+    type NonRef = F;
+
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<T, S>(value: T, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
+        T: SerializeOwned<F>,
         S: Serializer,
     {
         let mut ser = ser.into();
-        ser.write_ref::<F, T>(self)?;
+        ser.write_ref::<F, T>(value)?;
         ser.finish()
     }
-}
 
-impl<'de, F, T> Deserialize<'de, Ref<F>> for T
-where
-    F: NonRefFormula + ?Sized,
-    T: Deserialize<'de, F> + ?Sized,
-{
     #[inline(always)]
-    fn deserialize(mut de: Deserializer<'de>) -> Result<Self, Error>
+    fn deserialize<'de, T>(de: Deserializer<'de>) -> Result<T, Error>
     where
-        Self: Sized,
+        T: NonRefDeserialize<'de, F>,
     {
-        let mut deref = de.deref()?;
-        let value = deref.read_value::<F, T>()?;
-        deref.finish()?;
+        let mut de = de.deref()?;
+        let value = de.read_value::<F, T>()?;
         de.finish()?;
         Ok(value)
     }
 
     #[inline(always)]
-    fn deserialize_in_place(&mut self, mut de: Deserializer<'de>) -> Result<(), Error> {
-        let mut deref = de.deref()?;
-        deref.read_in_place::<F, T>(self)?;
-        deref.finish()?;
+    fn deserialize_in_place<'de, T>(place: &mut T, de: Deserializer<'de>) -> Result<(), Error>
+    where
+        T: NonRefDeserialize<'de, F> + ?Sized,
+    {
+        let mut de = de.deref()?;
+        de.read_in_place::<F, T>(place)?;
         de.finish()?;
         Ok(())
     }

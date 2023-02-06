@@ -1,24 +1,23 @@
 use crate::{
-    deserialize::{Deserialize, Deserializer, Error},
+    deserialize::{Deserializer, Error, NonRefDeserialize},
     formula::{combine_sizes, Formula, NonRefFormula},
-    serialize::{Serialize, Serializer},
+    serialize::{NonRefSerializeOwned, Serializer},
 };
 
-impl<F> Formula for Option<F>
+impl<F> NonRefFormula for Option<F>
 where
     F: Formula,
 {
     const MAX_SIZE: Option<usize> = combine_sizes(Some(1), F::MAX_SIZE);
 }
-impl<T> NonRefFormula for Option<T> where T: Formula {}
 
-impl<T, U> Serialize<Option<T>> for Option<U>
+impl<F, T> NonRefSerializeOwned<Option<F>> for Option<T>
 where
-    T: Formula,
-    U: Serialize<T>,
+    F: Formula,
+    T: NonRefSerializeOwned<F::NonRef>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize_owned<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -29,23 +28,23 @@ where
             }
             Some(value) => {
                 ser.write_bytes(&[1u8])?;
-                ser.write_value(value)?;
+                ser.write_value::<F, T>(value)?;
             }
         }
         ser.finish()
     }
 }
 
-impl<'de, F, T> Deserialize<'de, Option<F>> for Option<T>
+impl<'de, F, T> NonRefDeserialize<'de, Option<F>> for Option<T>
 where
     F: Formula,
-    T: Deserialize<'de, F>,
+    T: NonRefDeserialize<'de, F::NonRef>,
 {
     #[inline(always)]
     fn deserialize(mut de: Deserializer<'de>) -> Result<Self, Error> {
         let is_some: u8 = de.read_bytes(1)?[0];
         if is_some != 0 {
-            Ok(Some(de.read_value()?))
+            Ok(Some(de.read_value::<F, T>()?))
         } else {
             Ok(None)
         }
@@ -60,7 +59,7 @@ where
                     de.read_in_place::<F, T>(value)?;
                 }
                 None => {
-                    *self = Some(de.read_value()?);
+                    *self = Some(de.read_value::<F, T>()?);
                 }
             }
         } else {

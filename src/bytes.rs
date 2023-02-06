@@ -1,24 +1,20 @@
 use crate::{
-    deserialize::{Deserialize, Deserializer, Error},
-    formula::{Formula, NonRefFormula},
-    serialize::{Serialize, Serializer},
+    deserialize::{Deserializer, Error, NonRefDeserialize},
+    formula::NonRefFormula,
+    serialize::{NonRefSerializeOwned, Serializer},
 };
 
 /// A formula for a raw byte slices.
 /// Serializable from anything that implements `AsRef<[u8]>`.
 pub struct Bytes;
 
-impl Formula for Bytes {
+impl NonRefFormula for Bytes {
     const MAX_SIZE: Option<usize> = None;
 }
-impl NonRefFormula for Bytes {}
 
-impl<T> Serialize<Bytes> for T
-where
-    T: AsRef<[u8]>,
-{
+impl NonRefSerializeOwned<Bytes> for &[u8] {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize_owned<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -28,7 +24,7 @@ where
     }
 }
 
-impl<'de> Deserialize<'de, Bytes> for &'de [u8] {
+impl<'de> NonRefDeserialize<'de, Bytes> for &'de [u8] {
     #[inline(always)]
     fn deserialize(de: Deserializer<'de>) -> Result<Self, Error> {
         Ok(de.read_all_bytes())

@@ -1,9 +1,9 @@
 use core::{borrow::Borrow, mem::size_of};
 
 use crate::{
-    deserialize::{Deserialize, Deserializer, Error},
-    formula::{Formula, NonRefFormula},
-    serialize::{Serialize, Serializer},
+    deserialize::{Deserializer, Error, NonRefDeserialize},
+    formula::NonRefFormula,
+    serialize::{NonRefSerialize, NonRefSerializeOwned, Serializer},
 };
 
 macro_rules! impl_primitive {
@@ -15,17 +15,13 @@ macro_rules! impl_primitive {
     };
 
     (impl $ty:ty) => {
-        impl Formula for $ty {
+        impl NonRefFormula for $ty {
             const MAX_SIZE: Option<usize> = Some(size_of::<$ty>());
         }
-        impl NonRefFormula for $ty {}
 
-        impl<T> Serialize<$ty> for T
-        where
-            T: Borrow<$ty>,
-        {
+        impl NonRefSerializeOwned<$ty> for $ty {
             #[inline(always)]
-            fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+            fn serialize_owned<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
             where
                 S: Serializer,
             {
@@ -35,7 +31,19 @@ macro_rules! impl_primitive {
             }
         }
 
-        impl<T> Deserialize<'_, $ty> for T
+        impl NonRefSerialize<$ty> for $ty {
+            #[inline(always)]
+            fn serialize<S>(&self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
+                let mut ser = ser.into();
+                ser.write_bytes(&self.borrow().to_le_bytes())?;
+                ser.finish()
+            }
+        }
+
+        impl<T> NonRefDeserialize<'_, $ty> for T
         where
             T: From<$ty>,
         {
@@ -50,7 +58,7 @@ macro_rules! impl_primitive {
 
             #[inline(always)]
             fn deserialize_in_place(&mut self, de: Deserializer) -> Result<(), Error> {
-                let value = <T as Deserialize<'_, $ty>>::deserialize(de)?;
+                let value = <T as NonRefDeserialize<'_, $ty>>::deserialize(de)?;
                 *self = value;
                 Ok(())
             }
@@ -73,37 +81,43 @@ impl_primitive! {
     f64,
 }
 
-impl Formula for bool {
+impl NonRefFormula for bool {
     const MAX_SIZE: Option<usize> = Some(1);
 }
-impl NonRefFormula for bool {}
 
-impl<T> Serialize<bool> for T
-where
-    T: Borrow<bool>,
-{
+impl NonRefSerializeOwned<bool> for bool {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize_owned<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        <u8 as Serialize<u8>>::serialize((*self.borrow()) as u8, ser)
+        <u8 as NonRefSerializeOwned<u8>>::serialize_owned(self as u8, ser)
     }
 }
 
-impl<T> Deserialize<'_, bool> for T
+impl NonRefSerializeOwned<bool> for &bool {
+    #[inline(always)]
+    fn serialize_owned<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        <u8 as NonRefSerializeOwned<u8>>::serialize_owned(*self as u8, ser)
+    }
+}
+
+impl<T> NonRefDeserialize<'_, bool> for T
 where
     T: From<bool>,
 {
     #[inline(always)]
     fn deserialize(de: Deserializer) -> Result<Self, Error> {
-        let value = <u8 as Deserialize<u8>>::deserialize(de)?;
+        let value = <u8 as NonRefDeserialize<u8>>::deserialize(de)?;
         Ok(From::from(value != 0))
     }
 
     #[inline(always)]
     fn deserialize_in_place(&mut self, de: Deserializer) -> Result<(), Error> {
-        let value = <u8 as Deserialize<u8>>::deserialize(de)?;
+        let value = <u8 as NonRefDeserialize<u8>>::deserialize(de)?;
         *self = From::from(value != 0);
         Ok(())
     }

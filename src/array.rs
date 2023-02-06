@@ -1,24 +1,23 @@
 use crate::{
-    deserialize::{Deserialize, Deserializer, Error},
+    deserialize::{Deserializer, Error, NonRefDeserialize},
     formula::{repeat_size, Formula, NonRefFormula},
-    serialize::{Serialize, Serializer},
+    serialize::{NonRefSerializeOwned, Serializer},
 };
 
-impl<F, const N: usize> Formula for [F; N]
+impl<F, const N: usize> NonRefFormula for [F; N]
 where
     F: Formula,
 {
     const MAX_SIZE: Option<usize> = repeat_size(F::MAX_SIZE, N);
 }
-impl<F, const N: usize> NonRefFormula for [F; N] where F: Formula {}
 
-impl<F, T, const N: usize> Serialize<[F; N]> for [T; N]
+impl<F, T, const N: usize> NonRefSerializeOwned<[F; N]> for [T; N]
 where
-    F: Formula,
-    T: Serialize<F>,
+    F: NonRefFormula,
+    T: NonRefSerializeOwned<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize_owned<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -29,27 +28,27 @@ where
     }
 }
 
-impl<'ser, F, T, const N: usize> Serialize<[F; N]> for &'ser [T; N]
+impl<F, T, const N: usize> NonRefSerializeOwned<[F; N]> for &[T; N]
 where
-    F: Formula,
-    &'ser T: Serialize<F>,
+    F: NonRefFormula,
+    for<'ser> &'ser T: NonRefSerializeOwned<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize_owned<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         let mut ser = ser.into();
         self.iter()
-            .try_for_each(|elem: &'ser T| ser.write_value::<F, &'ser T>(elem))?;
+            .try_for_each(|elem: &T| ser.write_value::<F, &T>(elem))?;
         ser.finish()
     }
 }
 
-impl<'de, F, T, const N: usize> Deserialize<'de, [F; N]> for [T; N]
+impl<'de, F, T, const N: usize> NonRefDeserialize<'de, [F; N]> for [T; N]
 where
-    F: Formula,
-    T: Deserialize<'de, F>,
+    F: NonRefFormula,
+    T: NonRefDeserialize<'de, F>,
 {
     #[inline(always)]
     fn deserialize(mut de: Deserializer<'de>) -> Result<Self, Error> {

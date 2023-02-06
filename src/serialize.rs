@@ -4,7 +4,10 @@ use core::{
     mem::{replace, size_of},
 };
 
-use crate::{formula::Formula, size::FixedUsize};
+use crate::{
+    formula::{Formula, NonRefFormula},
+    size::FixedUsize,
+};
 
 /// Trait for types that can be serialized
 /// into raw bytes with specified `F: `[`Formula`].
@@ -13,14 +16,89 @@ use crate::{formula::Formula, size::FixedUsize};
 /// Doing otherwise may result in errors during deserialization.
 /// Where errors may be both failures to deserialize and
 /// incorrect deserialized values.
-pub trait Serialize<T: Formula + ?Sized> {
+pub trait SerializeOwned<F: Formula + ?Sized>: NonRefSerializeOwned<F::NonRef> {
     /// Serializes `self` into given serializer.
-    fn serialize<S>(self, serializer: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize_owned<S>(self, serializer: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer;
 }
 
-/// Instances of this trait are provided to `Serialize::serialize` method.
+impl<F, T> SerializeOwned<F> for T
+where
+    F: Formula + ?Sized,
+    T: NonRefSerializeOwned<F::NonRef>,
+{
+    fn serialize_owned<S>(self, serializer: impl Into<S>) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        F::serialize::<T, S>(self, serializer)
+    }
+}
+
+pub trait Serialize<F: Formula + ?Sized>: SerializeOwned<F> + NonRefSerialize<F::NonRef> {
+    /// Serializes `self` into given serializer.
+    fn serialize<S>(&self, serializer: impl Into<S>) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer;
+}
+
+impl<F, T> Serialize<F> for T
+where
+    F: Formula + ?Sized,
+    T: NonRefSerialize<F::NonRef>,
+{
+    fn serialize<S>(&self, serializer: impl Into<S>) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        F::serialize::<&T, S>(self, serializer)
+    }
+}
+
+pub trait NonRefSerializeOwned<F: NonRefFormula + ?Sized> {
+    /// Serializes `self` into given serializer.
+    fn serialize_owned<S>(self, serializer: impl Into<S>) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer;
+}
+
+pub trait NonRefSerialize<F: NonRefFormula + ?Sized>: NonRefSerializeOwned<F> {
+    /// Serializes `self` into given serializer.
+    fn serialize<S>(&self, serializer: impl Into<S>) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer;
+}
+
+impl<F, T> NonRefSerialize<F> for &T
+where
+    F: NonRefFormula + ?Sized,
+    for<'s> &'s T: NonRefSerializeOwned<F>,
+{
+    #[inline(always)]
+    fn serialize<S>(&self, serializer: impl Into<S>) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        <&T as NonRefSerializeOwned<F>>::serialize_owned(self, serializer)
+    }
+}
+
+impl<F, T> NonRefSerializeOwned<F> for &T
+where
+    F: NonRefFormula + ?Sized,
+    T: NonRefSerialize<F>,
+{
+    #[inline(always)]
+    fn serialize_owned<S>(self, serializer: impl Into<S>) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        <T as NonRefSerialize<F>>::serialize(self, serializer)
+    }
+}
+
+/// Instances of this trait are provided to `NonRefSerializeOwned::serialize` method.
 /// It should be used to perform the serialization process.
 /// Primitives use `Serializer::write_bytes` to store bytes representation
 /// of the value.
@@ -31,7 +109,7 @@ pub trait Serialize<T: Formula + ?Sized> {
 /// Enums *should* serialize the discriminant
 /// and then serialize the variant fields using `Serializer::write_value`.
 /// `Ref` formula uses `Serializer::write_ref`.
-/// `Serialize::serialize` implementation *must* call `Serializer::finish` or diverge.
+/// `NonRefSerializeOwned::serialize` implementation *must* call `Serializer::finish` or diverge.
 pub trait Serializer {
     type Ok;
     type Error;
@@ -43,7 +121,7 @@ pub trait Serializer {
     fn write_value<F, T>(&mut self, value: T) -> Result<(), Self::Error>
     where
         F: Formula + ?Sized,
-        T: Serialize<F>;
+        T: SerializeOwned<F>;
 
     /// Writes a value with specific formula into serializer.
     /// It avoids padding the value with zeros to `F::MAX_SIZE`.
@@ -58,7 +136,7 @@ pub trait Serializer {
     fn write_ref<F, T>(&mut self, value: T) -> Result<(), Self::Error>
     where
         F: Formula + ?Sized,
-        T: Serialize<F>;
+        T: SerializeOwned<F>;
 
     /// Writes padding bytes into serializer.
     /// Padding it automatically calculated.
@@ -102,7 +180,7 @@ impl Pad {
             Pad::Unsized { serialize, formula } => {
                 panic!(
                     "Unsized formula should be the last one. Use `Ref` to break the chain.
-                    Unsized serialized here <{} as Serialize<{}>",
+                    Unsized serialized here <{} as NonRefSerializeOwned<{}>",
                     serialize, formula
                 );
             }
@@ -144,7 +222,7 @@ impl Serializer for DrySerializer {
     fn write_value<F, T>(&mut self, value: T) -> Result<(), Self::Error>
     where
         F: Formula + ?Sized,
-        T: Serialize<F>,
+        T: SerializeOwned<F>,
     {
         self.write_pad()?;
         let (heap, stack) = serialized_sizes::<F, T>(value);
@@ -158,7 +236,7 @@ impl Serializer for DrySerializer {
     fn write_ref<F, T>(&mut self, value: T) -> Result<(), Self::Error>
     where
         F: Formula + ?Sized,
-        T: Serialize<F>,
+        T: SerializeOwned<F>,
     {
         self.write_pad()?;
         let (heap, stack) = serialized_sizes::<F, T>(value);
@@ -234,13 +312,16 @@ impl<'ser> FailFastSerializer<'ser> {
     fn sub_value<F, T>(&mut self, value: T) -> Result<(usize, usize), ()>
     where
         F: Formula + ?Sized,
-        T: Serialize<F>,
+        T: SerializeOwned<F>,
     {
         let at = self.output.len() - self.stack;
-        value.serialize::<FailFastSerializer>(IntoSerializer {
-            output: &mut self.output[..at],
-            heap: self.heap,
-        })
+        <T as SerializeOwned<F>>::serialize_owned::<FailFastSerializer>(
+            value,
+            IntoSerializer {
+                output: &mut self.output[..at],
+                heap: self.heap,
+            },
+        )
     }
 }
 
@@ -264,7 +345,7 @@ impl<'ser> Serializer for FailFastSerializer<'ser> {
     fn write_value<F, T>(&mut self, value: T) -> Result<(), ()>
     where
         F: Formula + ?Sized,
-        T: Serialize<F>,
+        T: SerializeOwned<F>,
     {
         self.write_pad()?;
         let (heap, stack) = self.sub_value::<F, T>(value)?;
@@ -279,7 +360,7 @@ impl<'ser> Serializer for FailFastSerializer<'ser> {
     fn write_ref<F, T>(&mut self, value: T) -> Result<(), ()>
     where
         F: Formula + ?Sized,
-        T: Serialize<F>,
+        T: SerializeOwned<F>,
     {
         self.write_pad()?;
         let (heap, stack) = self.sub_value::<F, T>(value)?;
@@ -313,7 +394,7 @@ impl<'ser> Serializer for FailFastSerializer<'ser> {
 }
 
 /// Wraps output buffer and provides methods for serializing data.
-/// Implementors of `Serialize` trait may use this type.
+/// Implementors of `NonRefSerializeOwned` trait may use this type.
 #[must_use]
 struct ExactSizeSerializer<'ser> {
     /// Output buffer sub-slice usable for serialization.
@@ -345,16 +426,16 @@ impl<'ser> ExactSizeSerializer<'ser> {
     fn sub_value<F, T>(&mut self, value: T) -> (usize, usize)
     where
         F: Formula + ?Sized,
-        T: Serialize<F>,
+        T: NonRefSerializeOwned<F::NonRef>,
     {
         match &mut self.output {
-            None => match value.serialize::<DrySerializer>(IntoDrySerializer) {
+            None => match value.serialize_owned::<DrySerializer>(IntoDrySerializer) {
                 Err(never) => match never {},
                 Ok((heap, stack)) => (heap, stack),
             },
             Some(output) => {
                 let at = output.len() - self.stack;
-                match value.serialize::<ExactSizeSerializer>(IntoSerializer {
+                match value.serialize_owned::<ExactSizeSerializer>(IntoSerializer {
                     output: &mut output[..at],
                     heap: self.heap,
                 }) {
@@ -392,7 +473,7 @@ impl<'ser> Serializer for ExactSizeSerializer<'ser> {
     fn write_value<F, T>(&mut self, value: T) -> Result<(), (usize, usize)>
     where
         F: Formula + ?Sized,
-        T: Serialize<F>,
+        T: SerializeOwned<F>,
     {
         self.write_pad()?;
         let (heap, stack) = self.sub_value::<F, T>(value);
@@ -407,7 +488,7 @@ impl<'ser> Serializer for ExactSizeSerializer<'ser> {
     fn write_ref<F, T>(&mut self, value: T) -> Result<(), (usize, usize)>
     where
         F: Formula + ?Sized,
-        T: Serialize<F>,
+        T: SerializeOwned<F>,
     {
         self.write_pad()?;
         let (heap, stack) = self.sub_value::<F, T>(value);
@@ -455,7 +536,7 @@ impl<'ser> Serializer for ExactSizeSerializer<'ser> {
 pub fn serialize<F, T>(value: T, output: &mut [u8]) -> Result<usize, ()>
 where
     F: Formula + ?Sized,
-    T: Serialize<F>,
+    T: SerializeOwned<F>,
 {
     if output.len() < HEADER_SIZE {
         return Err(());
@@ -479,10 +560,10 @@ where
 pub fn serialize_or_size<F, T>(value: T, output: &mut [u8]) -> Result<usize, usize>
 where
     F: Formula + ?Sized,
-    T: Serialize<F>,
+    T: SerializeOwned<F>,
 {
     if output.len() < HEADER_SIZE {
-        return Err(serialized_size(value));
+        return Err(serialized_size::<F, T>(value));
     }
 
     let mut ser = ExactSizeSerializer::new(HEADER_SIZE, output);
@@ -505,9 +586,9 @@ where
 fn serialized_sizes<F, T>(value: T) -> (usize, usize)
 where
     F: Formula + ?Sized,
-    T: Serialize<F>,
+    T: SerializeOwned<F>,
 {
-    match value.serialize::<DrySerializer>(IntoDrySerializer) {
+    match F::serialize::<T, DrySerializer>(value, IntoDrySerializer) {
         Ok((heap, stack)) => (heap, stack),
         Err(never) => match never {},
     }
@@ -516,7 +597,7 @@ where
 pub fn serialized_size<F, T>(value: T) -> usize
 where
     F: Formula + ?Sized,
-    T: Serialize<F>,
+    T: SerializeOwned<F>,
 {
     let (heap, stack) = serialized_sizes::<F, T>(value);
     heap + stack + HEADER_SIZE
@@ -527,12 +608,12 @@ where
 fn check_stack<F, T>(stack: usize)
 where
     F: Formula + ?Sized,
-    T: Serialize<F>,
+    T: SerializeOwned<F>,
 {
     if let Some(max_size) = F::MAX_SIZE {
         assert!(
             stack <= max_size,
-            "Incorrect `<{} as Serialize<{}>>` implementation. `stack` size is `{}` but must be at most `{}`",
+            "Incorrect `<{} as SerializeOwned<{}>>` implementation. `stack` size is `{}` but must be at most `{}`",
             type_name::<T>(),
             type_name::<F>(),
             stack,
@@ -546,7 +627,7 @@ where
 fn find_pad<F, T>(stack: usize, pad: &mut Pad)
 where
     F: Formula + ?Sized,
-    T: Serialize<F>,
+    T: SerializeOwned<F>,
 {
     check_stack::<F, T>(stack);
 

@@ -1,5 +1,5 @@
 use crate::{
-    deserialize::{Deserialize, Deserializer, Error},
+    deserialize::{Deserializer, Error, NonRefDeserialize},
     formula::NonRefFormula,
 };
 
@@ -15,23 +15,23 @@ pub struct Lazy<'de, T> {
 }
 
 impl<'de, T> Lazy<'de, T> {
-    /// Deserialize the lazy value.
+    /// NonRefDeserialize the lazy value.
     #[inline(always)]
     pub fn get(&self) -> Result<T, Error> {
         (self.value)(self.de.clone())
     }
 
-    /// Deserialize the lazy value in place.
+    /// NonRefDeserialize the lazy value in place.
     #[inline(always)]
     pub fn get_in_place(&self, place: &mut T) -> Result<(), Error> {
         (self.in_place)(place, self.de.clone())
     }
 }
 
-impl<'de, F, T> Deserialize<'de, F> for Lazy<'de, T>
+impl<'de, F, T> NonRefDeserialize<'de, F> for Lazy<'de, T>
 where
     F: NonRefFormula + ?Sized,
-    T: Deserialize<'de, F>,
+    T: NonRefDeserialize<'de, F>,
 {
     #[inline(always)]
     fn deserialize(de: Deserializer<'de>) -> Result<Self, Error> {

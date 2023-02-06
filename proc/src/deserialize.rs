@@ -25,7 +25,7 @@ impl Config {
                 // Except that last one if `non_exhaustive` is not set.
                 let predicates = data.fields.iter().map(|field| -> syn::WherePredicate {
                         let ty = &field.ty;
-                        syn::parse_quote! { #ty: ::alkahest::Formula + ::alkahest::Deserialize<'de, #ty> }
+                        syn::parse_quote! { #ty: ::alkahest::private::Formula + ::alkahest::private::Deserialize<'de, #ty> }
                     }).collect();
 
                 // Add `'de` generic parameter
@@ -153,8 +153,8 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
             let (impl_deserialize_generics, _type_deserialize_generics, where_serialize_clause) =
                 deserialize_generics.split_for_impl();
             Ok(quote::quote! {
-                impl #impl_deserialize_generics ::alkahest::Deserialize<'de, #formula_type> for #ident #type_generics #where_serialize_clause {
-                    fn deserialize(mut de: ::alkahest::Deserializer<'de>) -> ::alkahest::private::Result<Self, ::alkahest::Error> {
+                impl #impl_deserialize_generics ::alkahest::private::NonRefDeserialize<'de, #formula_type> for #ident #type_generics #where_serialize_clause {
+                    fn deserialize(mut de: ::alkahest::private::Deserializer<'de>) -> ::alkahest::private::Result<Self, ::alkahest::private::Error> {
                         // Checks compilation of code in the block.
                         #[allow(unused)]
                         let _ = || {
@@ -174,9 +174,9 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         })
                     }
 
-                    fn deserialize_in_place(&mut self, mut de: ::alkahest::Deserializer<'de>) -> Result<(), ::alkahest::Error> {
+                    fn deserialize_in_place(&mut self, mut de: ::alkahest::private::Deserializer<'de>) -> Result<(), ::alkahest::private::Error> {
                         #(
-                            let #field_names = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names).read_in_place(&mut self.#field_names, &mut de)?;
+                            ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names).read_in_place(&mut self.#field_names, &mut de)?;
                         )*
                         #consume_tail
                         de.finish()

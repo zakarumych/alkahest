@@ -1,4 +1,4 @@
-// #![no_std]
+#![no_std]
 #![deny(unsafe_code)]
 
 extern crate self as alkahest;
@@ -6,33 +6,33 @@ extern crate self as alkahest;
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
-mod array;
-mod bytes;
+pub mod array;
+pub mod bytes;
 pub mod deserialize;
-mod formula;
-mod lazy;
-mod option;
-mod primitive;
-mod reference;
+pub mod formula;
+pub mod lazy;
+pub mod option;
+pub mod primitive;
+pub mod reference;
 pub mod serialize;
-mod size;
-mod skip;
-mod slice;
-mod tuple;
+pub mod size;
+pub mod skip;
+pub mod slice;
+pub mod tuple;
 
 #[cfg(feature = "alloc")]
-mod vec;
+pub mod vec;
 
-pub use self::{
-    bytes::Bytes,
-    deserialize::{self as de, deserialize, value_size, Deserialize, Deserializer, Error},
-    formula::{Formula, NonRefFormula},
-    lazy::Lazy,
-    reference::Ref,
-    serialize::{serialize, serialize_or_size, serialized_size, Serialize, Serializer},
-    skip::Skip,
-    slice::SliceIter,
-};
+pub mod prelude {
+    pub use crate::{
+        deserialize::{deserialize, deserialize_in_place, Deserialize, Error},
+        formula::Formula,
+        serialize::{serialize, serialize_or_size, serialized_size, Serialize, SerializeOwned},
+    };
+
+    #[cfg(feature = "derive")]
+    pub use alkahest_proc::{Deserialize, Formula, Serialize};
+}
 
 #[cfg(feature = "derive")]
 pub use alkahest_proc::{Deserialize, Formula, Serialize};
@@ -46,9 +46,9 @@ pub mod private {
     use core::marker::PhantomData;
 
     pub use crate::{
-        deserialize::{Deserialize, Deserializer, Error},
-        formula::{combine_sizes, Formula},
-        serialize::{Serialize, Serializer},
+        deserialize::{Deserialize, Deserializer, Error, NonRefDeserialize},
+        formula::{combine_sizes, Formula, NonRefFormula},
+        serialize::{NonRefSerialize, NonRefSerializeOwned, Serialize, SerializeOwned, Serializer},
     };
 
     pub struct WithFormula<F: Formula + ?Sized> {
@@ -63,7 +63,7 @@ pub mod private {
         pub fn write_value<T, S>(self, ser: &mut S, value: T) -> Result<(), S::Error>
         where
             S: Serializer,
-            T: Serialize<F>,
+            T: SerializeOwned<F>,
         {
             ser.write_value::<F, T>(value)
         }

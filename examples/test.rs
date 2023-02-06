@@ -1,4 +1,4 @@
-use alkahest::{deserialize, serialize, serialized_size, Deserialize, Formula, Serialize};
+use alkahest::prelude::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Formula, Serialize, Deserialize)]
 struct X;
@@ -11,8 +11,8 @@ struct Test<T: ?Sized> {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[alkahest(serialize(for<'ser, U: ?Sized> Test<U> where U: Formula + 'ser, T: 'ser, &'ser T: Serialize<U>))]
-#[alkahest(serialize(owned(for<U: ?Sized> Test<U> where U: Formula, T: Serialize<U>)))]
+#[alkahest(serialize(for<U: ?Sized> Test<U> where U: Formula, T: Serialize<U>))]
+#[alkahest(serialize(owned(for<U: ?Sized> Test<U> where U: Formula, T: SerializeOwned<U>)))]
 #[alkahest(deserialize(for<'de, U: ?Sized> Test<U> where U: Formula, T: Deserialize<'de, U>))]
 struct TestS<T> {
     a: u32,
@@ -32,7 +32,7 @@ fn main() {
 
     let mut buffer = vec![0; size];
 
-    let size = serialize::<Test<[Vec<u32>]>, _>(value, &mut buffer).unwrap();
+    let size = serialize::<Test<[Vec<u32>]>, _>(value.clone(), &mut buffer).unwrap();
     assert_eq!(size, buffer.len());
 
     let (value, size) = deserialize::<Test<[Vec<u32>]>, TestS<Vec<Vec<u32>>>>(&buffer).unwrap();

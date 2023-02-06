@@ -1,12 +1,12 @@
 use crate::{
-    deserialize::{Deserialize, Deserializer, Error},
+    deserialize::{Deserializer, Error, NonRefDeserialize},
     formula::NonRefFormula,
 };
 
 /// No-op deserializer for any formula.
 pub struct Skip;
 
-impl<'de, F> Deserialize<'de, F> for Skip
+impl<'de, F> NonRefDeserialize<'de, F> for Skip
 where
     F: NonRefFormula + ?Sized,
 {

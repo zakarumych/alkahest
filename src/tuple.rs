@@ -1,17 +1,16 @@
 use crate::{
-    deserialize::{Deserialize, Deserializer, Error},
+    deserialize::{Deserializer, Error, NonRefDeserialize},
     formula::{combine_sizes, Formula, NonRefFormula},
-    serialize::{Serialize, Serializer},
+    serialize::{NonRefSerialize, NonRefSerializeOwned, Serializer},
 };
 
-impl Formula for () {
+impl NonRefFormula for () {
     const MAX_SIZE: Option<usize> = Some(0);
 }
-impl NonRefFormula for () {}
 
-impl Serialize<()> for () {
+impl NonRefSerializeOwned<()> for () {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize_owned<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -19,9 +18,9 @@ impl Serialize<()> for () {
     }
 }
 
-impl Serialize<()> for &'_ () {
+impl NonRefSerializeOwned<()> for &'_ () {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize_owned<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -29,7 +28,7 @@ impl Serialize<()> for &'_ () {
     }
 }
 
-impl Deserialize<'_, ()> for () {
+impl NonRefDeserialize<'_, ()> for () {
     #[inline(always)]
     fn deserialize(_de: Deserializer) -> Result<(), Error> {
         Ok(())
@@ -43,7 +42,7 @@ impl Deserialize<'_, ()> for () {
 
 macro_rules! impl_for_tuple {
     ([$at:ident $(,$a:ident)* $(,)?] [$bt:ident $(,$b:ident)* $(,)?]) => {
-        impl<$($a,)* $at> Formula for ($($a,)* $at,)
+        impl<$($a,)* $at> NonRefFormula for ($($a,)* $at,)
         where
             $($a: Formula,)*
             $at: Formula + ?Sized,
@@ -56,23 +55,17 @@ macro_rules! impl_for_tuple {
             };
         }
 
-        impl<$($a,)* $at> NonRefFormula for ($($a,)* $at,)
-        where
-            $($a: Formula,)*
-            $at: Formula + ?Sized,
-        {}
-
-        impl<$($a,)* $at, $($b,)* $bt> Serialize<($($a,)* $at,)> for ($($b,)* $bt,)
+        impl<$($a,)* $at, $($b,)* $bt> NonRefSerializeOwned<($($a,)* $at,)> for ($($b,)* $bt,)
         where
             $(
                 $a: Formula,
-                $b: Serialize<$a>,
+                $b: NonRefSerializeOwned<$a::NonRef>,
             )*
             $at: Formula + ?Sized,
-            $bt: Serialize<$at>,
+            $bt: NonRefSerializeOwned<$at::NonRef>,
         {
             #[inline(always)]
-            fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+            fn serialize_owned<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
             where
                 S: Serializer,
             {
@@ -87,17 +80,17 @@ macro_rules! impl_for_tuple {
             }
         }
 
-        impl<'__ser, $($a,)* $at, $($b,)* $bt,> Serialize<($($a,)* $at,)> for &'__ser ($($b,)* $bt,)
+        impl<$($a,)* $at, $($b,)* $bt,> NonRefSerialize<($($a,)* $at,)> for ($($b,)* $bt,)
         where
             $(
                 $a: Formula,
-                &'__ser $b: Serialize<$a>,
+                $b: NonRefSerialize<$a::NonRef>,
             )*
             $at: Formula + ?Sized,
-            &'__ser $bt: Serialize<$at>,
+            $bt: NonRefSerialize<$at::NonRef>,
         {
             #[inline(always)]
-            fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+            fn serialize<S>(&self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
             where
                 S: Serializer,
             {
@@ -105,21 +98,21 @@ macro_rules! impl_for_tuple {
                 let mut ser = ser.into();
                 let ($($b,)* $bt,) = self;
                 $(
-                    ser.write_value::<$a, &'__ser $b>($b)?;
+                    ser.write_value::<$a, &$b>($b)?;
                 )*
-                ser.write_value::<$at, &'__ser $bt>($bt)?;
+                ser.write_value::<$at, &$bt>($bt)?;
                 ser.finish()
             }
         }
 
-        impl<'__de, $($a,)* $at, $($b,)* $bt> Deserialize<'__de, ($($a,)* $at,)> for ($($b,)* $bt,)
+        impl<'__de, $($a,)* $at, $($b,)* $bt> NonRefDeserialize<'__de, ($($a,)* $at,)> for ($($b,)* $bt,)
         where
             $(
                 $a: Formula,
-                $b: Deserialize<'__de, $a>,
+                $b: NonRefDeserialize<'__de, $a::NonRef>,
             )*
             $at: Formula + ?Sized,
-            $bt: Deserialize<'__de, $at>,
+            $bt: NonRefDeserialize<'__de, $at::NonRef>,
         {
             #[inline(always)]
             fn deserialize(mut de: Deserializer<'__de>) -> Result<($($b,)* $bt,), Error> {

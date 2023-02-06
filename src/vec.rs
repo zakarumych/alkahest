@@ -2,10 +2,11 @@ use alloc::vec::Vec;
 
 use crate::{
     bytes::Bytes,
-    deserialize::{Deserialize, Deserializer, Error},
+    // bytes::Bytes,
+    deserialize::{Deserializer, Error, NonRefDeserialize},
     formula::Formula,
     reference::Ref,
-    serialize::{Serialize, Serializer},
+    serialize::{NonRefSerializeOwned, Serializer},
 };
 
 impl<F> Formula for Vec<F>
@@ -13,46 +14,39 @@ where
     F: Formula,
 {
     const MAX_SIZE: Option<usize> = <Ref<[F]> as Formula>::MAX_SIZE;
-}
 
-impl<F, T, I> Serialize<Vec<F>> for I
-where
-    F: Formula,
-    I: IntoIterator<Item = T>,
-    T: Serialize<F>,
-{
+    type NonRef = [F];
+
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<T, S>(value: T, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
+        T: NonRefSerializeOwned<[F]>,
         S: Serializer,
     {
-        <I as Serialize<Ref<[F]>>>::serialize(self, ser)
+        <Ref<[F]>>::serialize(value, ser)
     }
-}
 
-impl<'de, F, T> Deserialize<'de, Vec<F>> for T
-where
-    F: Formula,
-    T: Deserialize<'de, Ref<[F]>> + ?Sized,
-{
     #[inline(always)]
-    fn deserialize(de: Deserializer<'de>) -> Result<Self, Error>
+    fn deserialize<'de, T>(de: Deserializer<'de>) -> Result<T, Error>
     where
-        T: Sized,
+        T: NonRefDeserialize<'de, [F]>,
     {
-        <T as Deserialize<'de, Ref<[F]>>>::deserialize(de)
+        <Ref<[F]>>::deserialize(de)
     }
 
     #[inline(always)]
-    fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), Error> {
-        <T as Deserialize<'de, Ref<[F]>>>::deserialize_in_place(self, de)
+    fn deserialize_in_place<'de, T>(place: &mut T, de: Deserializer<'de>) -> Result<(), Error>
+    where
+        T: NonRefDeserialize<'de, [F]> + ?Sized,
+    {
+        <Ref<[F]>>::deserialize_in_place(place, de)
     }
 }
 
-impl<'de, F, T> Deserialize<'de, [F]> for Vec<T>
+impl<'de, F, T, const N: usize> NonRefDeserialize<'de, [F; N]> for Vec<T>
 where
     F: Formula,
-    T: Deserialize<'de, F>,
+    T: NonRefDeserialize<'de, F::NonRef>,
 {
     #[inline(always)]
     fn deserialize(de: Deserializer<'de>) -> Result<Self, Error> {
@@ -70,10 +64,10 @@ where
     }
 }
 
-impl<'de, F, T, const N: usize> Deserialize<'de, [F; N]> for Vec<T>
+impl<'de, F, T> NonRefDeserialize<'de, [F]> for Vec<T>
 where
     F: Formula,
-    T: Deserialize<'de, F>,
+    T: NonRefDeserialize<'de, F::NonRef>,
 {
     #[inline(always)]
     fn deserialize(de: Deserializer<'de>) -> Result<Self, Error> {
@@ -91,7 +85,7 @@ where
     }
 }
 
-impl<'de> Deserialize<'de, Bytes> for Vec<u8> {
+impl<'de> NonRefDeserialize<'de, Bytes> for Vec<u8> {
     #[inline(always)]
     fn deserialize(de: Deserializer) -> Result<Self, Error> {
         Ok(de.read_all_bytes().to_vec())
