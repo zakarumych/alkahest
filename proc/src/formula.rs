@@ -183,6 +183,27 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                     })
                     .collect();
 
+            let field_variant_name_ids: Vec<syn::Ident> = data
+                .variants
+                .iter()
+                .map(|variant| {
+                    quote::format_ident!("__alkahest_formula_variant_{}_idx", variant.ident,)
+                })
+                .collect();
+
+            let field_variant_ids: Vec<_> = (0..data.variants.len() as u32).collect();
+
+            let field_count_checks: Vec<syn::Ident> =
+                data.variants
+                    .iter()
+                    .map(|variant| {
+                        quote::format_ident!(
+                            "__alkahest_formula_variant_{}_field_count",
+                            variant.ident,
+                        )
+                    })
+                    .collect();
+
             let (impl_generics, type_generics, where_clause) = input.generics.split_for_impl();
 
             let (formula_impl_generics, formula_type_generics, formula_where_clause) =
@@ -211,6 +232,14 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         #[inline(always)]
                         pub const fn #field_count_checks() -> [(); #field_count] {
                             [(); #field_count]
+                        }
+                    )*
+
+                    #(
+                        #[doc(hidden)]
+                        #[inline(always)]
+                        pub const fn #field_variant_name_ids() -> u32 {
+                            #field_variant_ids
                         }
                     )*
                 }

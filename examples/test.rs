@@ -20,8 +20,12 @@ struct TestS<T> {
     c: T,
 }
 
-#[derive(Formula)]
-enum Test2 {}
+#[derive(Formula, Serialize)]
+enum Test2 {
+    Unit,
+    Tuple(u32, X),
+    Struct { a: u32, b: X },
+}
 
 fn main() {
     type MyFormula = Test<[Vec<u32>]>;

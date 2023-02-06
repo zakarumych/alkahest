@@ -13,11 +13,7 @@ where
     const MAX_SIZE: Option<usize> = None;
 }
 
-/// Wrapper for iterators to implement `Serialize` into slice formula.
-#[repr(transparent)]
-pub struct SerIter<I>(pub I);
-
-impl<F, T, I> Serialize<[F]> for SerIter<I>
+impl<F, T, I> Serialize<[F]> for I
 where
     F: Formula,
     I: IntoIterator<Item = T>,
