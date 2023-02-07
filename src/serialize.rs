@@ -218,8 +218,8 @@ struct FailFastSerializer<'ser> {
 }
 
 impl<'ser> FailFastSerializer<'ser> {
-    #[inline(always)]
     #[must_use]
+    #[inline(always)]
     fn new(heap: usize, output: &'ser mut [u8]) -> Self {
         FailFastSerializer {
             heap,
@@ -333,8 +333,8 @@ struct ExactSizeSerializer<'ser> {
 }
 
 impl<'ser> ExactSizeSerializer<'ser> {
-    #[inline(always)]
     #[must_use]
+    #[inline(always)]
     fn new(heap: usize, output: &'ser mut [u8]) -> Self {
         ExactSizeSerializer {
             heap,
@@ -458,7 +458,7 @@ impl<'ser> Serializer for ExactSizeSerializer<'ser> {
     }
 }
 
-#[inline]
+#[inline(always)]
 pub fn serialize<F, T>(value: T, output: &mut [u8]) -> Result<usize, ()>
 where
     F: Formula + ?Sized,
@@ -482,7 +482,7 @@ where
     Ok(heap + stack)
 }
 
-#[inline]
+#[inline(always)]
 pub fn serialize_or_size<F, T>(value: T, output: &mut [u8]) -> Result<usize, usize>
 where
     F: Formula + ?Sized,
@@ -509,6 +509,7 @@ where
     Ok(heap + stack)
 }
 
+#[inline(always)]
 fn serialized_sizes<F, T>(value: T) -> (usize, usize)
 where
     F: Formula + ?Sized,
@@ -520,6 +521,7 @@ where
     }
 }
 
+#[inline(always)]
 pub fn serialized_size<F, T>(value: T) -> usize
 where
     F: Formula + ?Sized,
@@ -548,8 +550,8 @@ where
     };
 }
 
-#[inline(always)]
 #[track_caller]
+#[inline(always)]
 fn find_pad<F, T>(stack: usize, pad: &mut Pad)
 where
     F: Formula + ?Sized,

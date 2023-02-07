@@ -47,13 +47,15 @@ pub use alkahest_proc::{Deserialize, Formula, Serialize};
 pub mod private {
     pub use {bool, u32, u8, usize, Into, Option, Result};
 
-    use core::marker::PhantomData;
-
     pub use crate::{
         deserialize::{Deserialize, Deserializer, Error},
         formula::{max_size, sum_size, Formula, NonRefFormula},
         serialize::{Serialize, Serializer},
     };
+
+    use core::marker::PhantomData;
+
+    pub const VARIANT_SIZE: Option<usize> = Some(core::mem::size_of::<u32>());
 
     pub struct WithFormula<F: Formula + ?Sized> {
         marker: PhantomData<fn(&F) -> &F>,

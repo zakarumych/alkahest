@@ -6,11 +6,23 @@ use crate::{
     serialize::{Serialize, Serializer},
 };
 
+#[cfg(feature = "fixed8")]
+pub type FixedUsizeType = u32;
+
+#[cfg(feature = "fixed16")]
+pub type FixedUsizeType = u64;
+
 #[cfg(feature = "fixed32")]
 pub type FixedUsizeType = u32;
 
 #[cfg(feature = "fixed64")]
 pub type FixedUsizeType = u64;
+
+#[cfg(feature = "fixed8")]
+pub type FixedIsizeType = i32;
+
+#[cfg(feature = "fixed16")]
+pub type FixedIsizeType = i64;
 
 #[cfg(feature = "fixed32")]
 pub type FixedIsizeType = i32;

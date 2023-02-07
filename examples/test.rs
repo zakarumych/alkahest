@@ -1,17 +1,18 @@
 use alkahest::*;
 
-#[derive(Formula, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Formula, Serialize, Deserialize)]
 // #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Formula, Serialize, Deserialize)]
 struct X;
 
-#[derive(Formula)]
+#[derive(Debug, Formula)]
 struct Test<T: ?Sized> {
     a: u32,
     b: X,
     c: T,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+// TODO: Infer trivial cases
 #[alkahest(serialize(for<U: ?Sized> Test<U> where U: Formula, for<'ser> &'ser T: Serialize<U>))]
 #[alkahest(serialize(owned(for<U: ?Sized> Test<U> where U: Formula, T: Serialize<U>)))]
 #[alkahest(deserialize(for<'de, U: ?Sized> Test<U> where U: Formula, T: Deserialize<'de, U>))]
@@ -21,38 +22,38 @@ struct TestS<T> {
     c: T,
 }
 
-#[derive(Formula, Serialize)]
+#[derive(Formula, Serialize, Deserialize)]
 enum Test2 {
     Unit,
     Tuple(u32, u64),
     Struct { a: u32, b: u64 },
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize)]
 #[alkahest(Test2, @Unit)]
 struct Test2U;
 
-#[derive(Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize)]
 #[alkahest(Test2, @Tuple)]
 struct Test2T(u32, u64);
 
-#[derive(Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize)]
 #[alkahest(Test2, @Struct)]
 struct Test2S {
     a: u32,
     b: u64,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize)]
 #[alkahest(Test2)]
 enum Test2E {
     Unit,
-    Tuple(u32, u64),
+    // Tuple(u32, u64), // variants may be omitted for `Serialize`
     Struct { a: u32, b: u64 },
 }
 
 fn main() {
-    // type MyFormula = Test<[Vec<u32>]>;
+    // type MyFormula = Test<Vec<Vec<u32>>>;
 
     // let value = TestS {
     //     a: 1,
@@ -61,8 +62,6 @@ fn main() {
     // };
 
     // let size = serialized_size::<MyFormula, _>(value.clone());
-    // println!("size: {}", size);
-
     // let mut buffer = vec![0; size];
 
     // let size = serialize::<MyFormula, _>(value.clone(), &mut buffer).unwrap();
@@ -75,5 +74,24 @@ fn main() {
     // assert_eq!(value.b, X);
     // assert_eq!(value.c, vec![vec![2, 3], vec![4, 5]]);
 
-    // println!("{:?}", value);
+    // let value = Test2E::Unit;
+    // let size = serialized_size::<Test2, _>(value);
+    // let mut buffer = vec![0; size];
+
+    // let size = serialize::<Test2, _>(value, &mut buffer).unwrap();
+    // assert_eq!(size, buffer.len());
+
+    // let value = Test2E::Tuple(1, 2);
+    // let size = serialized_size::<Test2, _>(value);
+    // let mut buffer = vec![0; size];
+
+    // let size = serialize::<Test2, _>(value, &mut buffer).unwrap();
+    // assert_eq!(size, buffer.len());
+
+    let value = Test2S { a: 1, b: 2 };
+    let size = serialized_size::<Test2, _>(value);
+    let mut buffer = vec![0; size];
+
+    let size = serialize::<Test2, _>(value, &mut buffer).unwrap();
+    assert_eq!(size, buffer.len());
 }

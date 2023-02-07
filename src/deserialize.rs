@@ -23,6 +23,9 @@ pub enum Error {
 
     /// Size value exceeds the maximum `isize` for current architecture.
     InvalidIsize(FixedIsizeType),
+
+    /// Enum variant is invalid.
+    WrongVariant(u32),
 }
 
 /// Trait for types that can be deserialized
@@ -46,8 +49,8 @@ pub trait Deserialize<'de, F: Formula + ?Sized> {
     fn deserialize_in_place(&mut self, deserializer: Deserializer<'de>) -> Result<(), Error>;
 }
 
-#[derive(Clone)]
 #[must_use]
+#[derive(Clone)]
 pub struct Deserializer<'de> {
     /// Input buffer sub-slice usable for deserialization.
     input: &'de [u8],
@@ -55,8 +58,8 @@ pub struct Deserializer<'de> {
 }
 
 impl<'de> Deserializer<'de> {
-    #[inline(always)]
     #[must_use]
+    #[inline(always)]
     pub const fn new(stack: usize, input: &'de [u8]) -> Result<Self, Error> {
         if stack > input.len() {
             return Err(Error::OutOfBounds);
@@ -64,15 +67,15 @@ impl<'de> Deserializer<'de> {
         Ok(Self::new_unchecked(stack, input))
     }
 
-    #[inline(always)]
     #[must_use]
+    #[inline(always)]
     pub const fn new_unchecked(stack: usize, input: &'de [u8]) -> Self {
         debug_assert!(stack <= input.len());
         Deserializer { input, stack }
     }
 
-    #[inline(always)]
     #[must_use]
+    #[inline(always)]
     fn sub<F>(&mut self) -> Self
     where
         F: Formula + ?Sized,
@@ -184,7 +187,7 @@ impl<'de> Deserializer<'de> {
     }
 }
 
-pub struct DeIter<'de, F, T> {
+pub struct DeIter<'de, F: ?Sized, T> {
     input: &'de [u8],
     count: usize,
     marker: PhantomData<fn(&F) -> T>,
@@ -192,7 +195,7 @@ pub struct DeIter<'de, F, T> {
 
 impl<'de, F, T> Iterator for DeIter<'de, F, T>
 where
-    F: Formula,
+    F: Formula + ?Sized,
     T: Deserialize<'de, F>,
 {
     type Item = Result<T, Error>;
@@ -257,7 +260,7 @@ where
 
 impl<'de, F, T> DoubleEndedIterator for DeIter<'de, F, T>
 where
-    F: Formula,
+    F: Formula + ?Sized,
     T: Deserialize<'de, F>,
 {
     #[inline(always)]
@@ -308,7 +311,7 @@ where
 
 impl<'de, F, T> ExactSizeIterator for DeIter<'de, F, T>
 where
-    F: Formula,
+    F: Formula + ?Sized,
     T: Deserialize<'de, F>,
 {
     #[inline(always)]
@@ -319,11 +322,12 @@ where
 
 impl<'de, F, T> FusedIterator for DeIter<'de, F, T>
 where
-    F: Formula,
+    F: Formula + ?Sized,
     T: Deserialize<'de, F>,
 {
 }
 
+#[inline(always)]
 pub fn value_size(input: &[u8]) -> Result<usize, Error> {
     if input.len() < FIELD_SIZE {
         return Err(Error::OutOfBounds);
@@ -333,7 +337,7 @@ pub fn value_size(input: &[u8]) -> Result<usize, Error> {
     de.read_auto::<FixedUsize>().map(usize::from)
 }
 
-#[inline]
+#[inline(always)]
 pub fn deserialize<'de, F, T>(input: &'de [u8]) -> Result<(T, usize), Error>
 where
     F: Formula + ?Sized,
@@ -362,7 +366,7 @@ where
     Ok((value, end))
 }
 
-#[inline]
+#[inline(always)]
 pub fn deserialize_in_place<'de, F, T>(place: &mut T, input: &'de [u8]) -> Result<usize, Error>
 where
     F: NonRefFormula + ?Sized,

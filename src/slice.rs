@@ -32,7 +32,7 @@ where
     }
 }
 
-pub struct SliceIter<'de, F, T = F> {
+pub struct SliceIter<'de, F: ?Sized, T = F> {
     inner: DeIter<'de, F, T>,
 }
 
@@ -76,7 +76,7 @@ where
 
 impl<'de, F, T> Iterator for SliceIter<'de, F, T>
 where
-    F: Formula,
+    F: Formula + ?Sized,
     T: Deserialize<'de, F>,
 {
     type Item = Result<T, Error>;
@@ -112,7 +112,7 @@ where
 
 impl<'de, F, T> DoubleEndedIterator for SliceIter<'de, F, T>
 where
-    F: Formula,
+    F: Formula + ?Sized,
     T: Deserialize<'de, F>,
 {
     #[inline(always)]
@@ -136,7 +136,7 @@ where
 
 impl<'de, F, T> ExactSizeIterator for SliceIter<'de, F, T>
 where
-    F: Formula,
+    F: Formula + ?Sized,
     T: Deserialize<'de, F>,
 {
     #[inline(always)]
@@ -147,7 +147,7 @@ where
 
 impl<'de, F, T> FusedIterator for SliceIter<'de, F, T>
 where
-    F: Formula,
+    F: Formula + ?Sized,
     T: Deserialize<'de, F>,
 {
 }
