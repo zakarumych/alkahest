@@ -13,13 +13,18 @@ struct Config {
     /// formulas with appended fields.
     /// This requires that last field is `SizedFormula`
     non_exhaustive: bool,
+
+    /// Deserializer lifetime
+    de: syn::Lifetime,
 }
 
 impl Config {
-    fn for_struct(args: Args, data: &syn::DataStruct) -> Self {
+    fn for_struct(args: Args, data: &syn::DataStruct) -> syn::Result<Self> {
         let non_exhaustive = args.non_exhaustive.is_some();
         match args.deserialize.or(args.common) {
             None => {
+                let de: syn::LifetimeDef = syn::parse_quote!('de);
+
                 // Add predicates that fields implement
                 // `SizedFormula + Deserialize<'de, #field_type>`
                 // Except that last one if `non_exhaustive` is not set.
@@ -31,8 +36,7 @@ impl Config {
                 // Add `'de` generic parameter
                 let generics = syn::Generics {
                     lt_token: Some(Default::default()),
-                    params: std::iter::once(syn::GenericParam::Lifetime(syn::parse_quote!('de)))
-                        .collect(),
+                    params: std::iter::once(syn::GenericParam::Lifetime(de.clone())).collect(),
                     gt_token: Some(Default::default()),
                     where_clause: Some(syn::WhereClause {
                         where_token: Default::default(),
@@ -40,33 +44,53 @@ impl Config {
                     }),
                 };
 
-                Config {
+                Ok(Config {
                     formula: Formula {
                         path: syn::parse_quote!(Self),
                         generics,
                     },
                     check_fields: false,
                     non_exhaustive,
-                }
+                    de: de.lifetime,
+                })
             }
             Some(mut formula) => {
+                let de: syn::LifetimeDef;
+
                 // If no parameters specified, add `'de` parameter
                 if formula.generics.params.is_empty() {
-                    formula.generics.params.push(syn::parse_quote!('de));
+                    de = syn::parse_quote!('de);
+                    formula.generics.params.push(de.clone().into());
+                } else {
+                    let first = formula.generics.params.first().unwrap().clone();
+
+                    de = match first {
+                        syn::GenericParam::Lifetime(lt) => lt,
+                        param => {
+                            return Err(syn::Error::new_spanned(
+                                param,
+                                "First parameter must be deserializer's lifetime",
+                            ));
+                        }
+                    };
                 }
-                Config {
+
+                Ok(Config {
                     formula,
                     check_fields: true,
                     non_exhaustive,
-                }
+                    de: de.lifetime,
+                })
             }
         }
     }
 
-    fn for_enum(args: Args, data: &syn::DataEnum) -> Self {
+    fn for_enum(args: Args, data: &syn::DataEnum) -> syn::Result<Self> {
         let non_exhaustive = args.non_exhaustive.is_some();
         match args.deserialize.or(args.common) {
             None => {
+                let de: syn::LifetimeDef = syn::parse_quote!('de);
+
                 // Add predicates that fields implement
                 // `SizedFormula + Deserialize<'de, #field_type>`
                 // Except that last one if `non_exhaustive` is not set.
@@ -78,8 +102,7 @@ impl Config {
                 // Add `'de` generic parameter
                 let generics = syn::Generics {
                     lt_token: Some(Default::default()),
-                    params: std::iter::once(syn::GenericParam::Lifetime(syn::parse_quote!('de)))
-                        .collect(),
+                    params: std::iter::once(syn::GenericParam::Lifetime(de.clone())).collect(),
                     gt_token: Some(Default::default()),
                     where_clause: Some(syn::WhereClause {
                         where_token: Default::default(),
@@ -87,25 +110,43 @@ impl Config {
                     }),
                 };
 
-                Config {
+                Ok(Config {
                     formula: Formula {
                         path: syn::parse_quote!(Self),
                         generics,
                     },
                     check_fields: false,
                     non_exhaustive,
-                }
+                    de: de.lifetime,
+                })
             }
             Some(mut formula) => {
+                let de: syn::LifetimeDef;
+
                 // If no parameters specified, add `'de` parameter
                 if formula.generics.params.is_empty() {
-                    formula.generics.params.push(syn::parse_quote!('de));
+                    de = syn::parse_quote!('de);
+                    formula.generics.params.push(de.clone().into());
+                } else {
+                    let first = formula.generics.params.first().unwrap().clone();
+
+                    de = match first {
+                        syn::GenericParam::Lifetime(lt) => lt,
+                        param => {
+                            return Err(syn::Error::new_spanned(
+                                param,
+                                "First parameter must be deserializer's lifetime",
+                            ));
+                        }
+                    };
                 }
-                Config {
+
+                Ok(Config {
                     formula,
                     check_fields: true,
                     non_exhaustive,
-                }
+                    de: de.lifetime,
+                })
             }
         }
     }
@@ -129,7 +170,8 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 formula,
                 check_fields,
                 non_exhaustive,
-            } = Config::for_struct(args, &data);
+                de,
+            } = Config::for_struct(args, &data)?;
 
             let formula_path = &formula.path;
 
@@ -277,9 +319,9 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
             let (impl_deserialize_generics, _type_deserialize_generics, where_serialize_clause) =
                 deserialize_generics.split_for_impl();
             Ok(quote::quote! {
-                impl #impl_deserialize_generics ::alkahest::private::Deserialize<'de, #formula_path> for #ident #type_generics #where_serialize_clause {
+                impl #impl_deserialize_generics ::alkahest::private::Deserialize<#de, #formula_path> for #ident #type_generics #where_serialize_clause {
                     #[inline(always)]
-                    fn deserialize(mut de: ::alkahest::private::Deserializer<'de>) -> ::alkahest::private::Result<Self, ::alkahest::private::Error> {
+                    fn deserialize(mut de: ::alkahest::private::Deserializer<#de>) -> ::alkahest::private::Result<Self, ::alkahest::private::Error> {
                         // Checks compilation of code in the block.
                         #[allow(unused)]
                         {
@@ -302,7 +344,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                     }
 
                     #[inline(always)]
-                    fn deserialize_in_place(&mut self, mut de: ::alkahest::private::Deserializer<'de>) -> Result<(), ::alkahest::private::Error> {
+                    fn deserialize_in_place(&mut self, mut de: ::alkahest::private::Deserializer<#de>) -> Result<(), ::alkahest::private::Error> {
                         let #ident #bind_ref_mut_names = *self;
 
                         #(
@@ -323,7 +365,8 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 formula,
                 check_fields,
                 non_exhaustive,
-            } = Config::for_enum(args, &data);
+                de,
+            } = Config::for_enum(args, &data)?;
             let formula_path = &formula.path;
 
             let mut deserialize_generics = input.generics.clone();
@@ -530,9 +573,9 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
             let (impl_deserialize_generics, _type_deserialize_generics, where_serialize_clause) =
                 deserialize_generics.split_for_impl();
             Ok(quote::quote! {
-                impl #impl_deserialize_generics ::alkahest::private::Deserialize<'de, #formula_path> for #ident #type_generics #where_serialize_clause {
+                impl #impl_deserialize_generics ::alkahest::private::Deserialize<#de, #formula_path> for #ident #type_generics #where_serialize_clause {
                     #[inline(always)]
-                    fn deserialize(mut de: ::alkahest::private::Deserializer<'de>) -> ::alkahest::private::Result<Self, ::alkahest::private::Error> {
+                    fn deserialize(mut de: ::alkahest::private::Deserializer<#de>) -> ::alkahest::private::Result<Self, ::alkahest::private::Error> {
                         // Checks compilation of code in the block.
                         #[allow(unused)]
                         {
@@ -563,7 +606,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                     }
 
                     #[inline(always)]
-                    fn deserialize_in_place(&mut self, mut de: ::alkahest::private::Deserializer<'de>) -> Result<(), ::alkahest::private::Error> {
+                    fn deserialize_in_place(&mut self, mut de: ::alkahest::private::Deserializer<#de>) -> Result<(), ::alkahest::private::Error> {
                         // Checks compilation of code in the block.
                         #[allow(unused)]
                         let _ = || {

@@ -18,15 +18,15 @@ enum TestData {
 }
 
 #[derive(Deserialize)]
-#[alkahest(for<'de2: 'de> TestData)]
-enum TestDataLazy<'de> {
+#[alkahest(for<'de: 'a> TestData)]
+enum TestDataLazy<'a> {
     Foo {
         a: u32,
         b: u32,
     },
     Bar {
-        c: SliceIter<'de, u32>,
-        d: SliceIter<'de, Vec<u32>, SliceIter<'de, u32>>,
+        c: SliceIter<'a, u32>,
+        d: SliceIter<'a, Vec<u32>, SliceIter<'a, u32>>,
     },
 }
 

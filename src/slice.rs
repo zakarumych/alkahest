@@ -32,43 +32,77 @@ where
     }
 }
 
+pub struct LazySlice<'de, F: ?Sized, T = F> {
+    inner: DeIter<'de, F, T>,
+}
+
+impl<'de, F, T> LazySlice<'de, F, T>
+where
+    F: ?Sized,
+{
+    #[inline(always)]
+    pub fn iter(&self) -> SliceIter<'de, F, T>
+    where
+        F: Formula,
+        T: Deserialize<'de, F>,
+    {
+        SliceIter {
+            inner: self.inner.clone(),
+        }
+    }
+}
+
+impl<'de, F, T> IntoIterator for LazySlice<'de, F, T>
+where
+    F: Formula + ?Sized,
+    T: Deserialize<'de, F>,
+{
+    type Item = Result<T, Error>;
+    type IntoIter = SliceIter<'de, F, T>;
+
+    #[inline(always)]
+    fn into_iter(self) -> Self::IntoIter {
+        SliceIter { inner: self.inner }
+    }
+}
+
 pub struct SliceIter<'de, F: ?Sized, T = F> {
     inner: DeIter<'de, F, T>,
 }
 
-impl<'de, F, T> Deserialize<'de, [F]> for SliceIter<'de, F, T>
+impl<'de, 'fe: 'de, F, T> Deserialize<'fe, [F]> for LazySlice<'de, F, T>
 where
     F: Formula,
     T: Deserialize<'de, F>,
 {
     #[inline(always)]
-    fn deserialize(de: Deserializer<'de>) -> Result<Self, Error> {
-        Ok(SliceIter {
+    fn deserialize(de: Deserializer<'fe>) -> Result<Self, Error> {
+        Ok(LazySlice {
             inner: de.into_iter()?,
         })
     }
 
     #[inline(always)]
-    fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), Error> {
+    fn deserialize_in_place(&mut self, de: Deserializer<'fe>) -> Result<(), Error> {
         self.inner = de.into_iter()?;
         Ok(())
     }
 }
 
-impl<'de, F, T, const N: usize> Deserialize<'de, [F; N]> for SliceIter<'de, F, T>
+impl<'de, 'fe: 'de, F, T, const N: usize> Deserialize<'fe, [F; N]> for LazySlice<'de, F, T>
 where
     F: Formula,
     T: Deserialize<'de, F>,
 {
     #[inline(always)]
-    fn deserialize(de: Deserializer<'de>) -> Result<Self, Error> {
-        Ok(SliceIter {
+    fn deserialize(de: Deserializer<'fe>) -> Result<Self, Error> {
+        Ok(LazySlice {
             inner: de.into_iter()?,
         })
     }
 
     #[inline(always)]
-    fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), Error> {
+    fn deserialize_in_place(&mut self, de: Deserializer<'fe>) -> Result<(), Error> {
         self.inner = de.into_iter()?;
         Ok(())
     }

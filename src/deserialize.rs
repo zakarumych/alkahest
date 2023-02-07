@@ -1,4 +1,4 @@
-use core::{iter::FusedIterator, marker::PhantomData, mem::size_of};
+use core::{iter::FusedIterator, marker::PhantomData, mem::size_of, str::Utf8Error};
 
 use crate::{
     formula::{Formula, NonRefFormula},
@@ -26,6 +26,9 @@ pub enum Error {
 
     /// Enum variant is invalid.
     WrongVariant(u32),
+
+    /// Bytes slice is not UTF8 where `str` is expected.
+    NonUtf8(Utf8Error),
 }
 
 /// Trait for types that can be deserialized
@@ -191,6 +194,26 @@ pub struct DeIter<'de, F: ?Sized, T> {
     input: &'de [u8],
     count: usize,
     marker: PhantomData<fn(&F) -> T>,
+}
+
+impl<'de, F, T> Clone for DeIter<'de, F, T>
+where
+    F: ?Sized,
+{
+    #[inline(always)]
+    fn clone(&self) -> Self {
+        DeIter {
+            input: self.input,
+            count: self.count,
+            marker: PhantomData,
+        }
+    }
+
+    #[inline(always)]
+    fn clone_from(&mut self, source: &Self) {
+        self.input = source.input;
+        self.count = source.count;
+    }
 }
 
 impl<'de, F, T> Iterator for DeIter<'de, F, T>

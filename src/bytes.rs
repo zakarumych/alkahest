@@ -24,14 +24,14 @@ impl Serialize<Bytes> for &[u8] {
     }
 }
 
-impl<'de> Deserialize<'de, Bytes> for &'de [u8] {
+impl<'de, 'fe: 'de> Deserialize<'fe, Bytes> for &'de [u8] {
     #[inline(always)]
-    fn deserialize(de: Deserializer<'de>) -> Result<Self, Error> {
+    fn deserialize(de: Deserializer<'fe>) -> Result<Self, Error> {
         Ok(de.read_all_bytes())
     }
 
     #[inline(always)]
-    fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), Error> {
+    fn deserialize_in_place(&mut self, de: Deserializer<'fe>) -> Result<(), Error> {
         *self = de.read_all_bytes();
         Ok(())
     }

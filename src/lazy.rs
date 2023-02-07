@@ -37,12 +37,12 @@ where
     }
 }
 
-impl<'de, F> Deserialize<'de, F> for Lazy<'de, F>
+impl<'de, 'fe: 'de, F> Deserialize<'fe, F> for Lazy<'de, F>
 where
     F: NonRefFormula + ?Sized,
 {
     #[inline(always)]
-    fn deserialize(de: Deserializer<'de>) -> Result<Self, Error> {
+    fn deserialize(de: Deserializer<'fe>) -> Result<Self, Error> {
         Ok(Lazy {
             de,
             marker: PhantomData,
@@ -50,7 +50,7 @@ where
     }
 
     #[inline(always)]
-    fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), Error> {
+    fn deserialize_in_place(&mut self, de: Deserializer<'fe>) -> Result<(), Error> {
         self.de = de;
         Ok(())
     }

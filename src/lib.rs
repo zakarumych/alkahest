@@ -18,6 +18,7 @@ mod serialize;
 mod size;
 mod skip;
 mod slice;
+mod str;
 mod tuple;
 
 #[cfg(feature = "alloc")]
@@ -25,6 +26,9 @@ mod vec;
 
 #[cfg(feature = "alloc")]
 mod vec_deque;
+
+#[cfg(feature = "alloc")]
+mod string;
 
 pub use crate::{
     bytes::Bytes,
@@ -35,7 +39,7 @@ pub use crate::{
     serialize::{serialize, serialize_or_size, serialized_size, Serialize},
     size::{FixedIsize, FixedUsize},
     skip::Skip,
-    slice::SliceIter,
+    slice::{LazySlice, SliceIter},
 };
 
 #[cfg(feature = "derive")]

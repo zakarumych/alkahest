@@ -35,6 +35,30 @@ where
     }
 }
 
+impl<F, T> Serialize<Option<F>> for &Option<T>
+where
+    F: Formula,
+    for<'a> &'a T: Serialize<F>,
+{
+    #[inline(always)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut ser = ser.into();
+        match self {
+            None => {
+                ser.write_bytes(&[0u8])?;
+            }
+            Some(value) => {
+                ser.write_bytes(&[1u8])?;
+                ser.write_value::<F, &T>(value)?;
+            }
+        }
+        ser.finish()
+    }
+}
+
 impl<'de, F, T> Deserialize<'de, Option<F>> for Option<T>
 where
     F: Formula,
