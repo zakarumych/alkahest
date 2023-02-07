@@ -1,4 +1,4 @@
-use core::{iter::FusedIterator, ops::Range};
+use core::iter::FusedIterator;
 
 use crate::{
     deserialize::{DeIter, Deserialize, Deserializer, Error},
@@ -25,28 +25,10 @@ where
         S: Serializer,
     {
         let mut ser = ser.into();
-        for elem in self.0.into_iter() {
+        for elem in self {
             ser.write_value::<F, T>(elem)?;
         }
         ser.finish()
-    }
-}
-
-impl<F, T> Serialize<[F]> for Range<T>
-where
-    Range<T>: IntoIterator<Item = T>,
-    T: Serialize<F>,
-    F: Formula,
-{
-    fn serialize<S>(self, er: impl Into<S>) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut er = er.into();
-        for elem in self {
-            er.write_value::<F, _>(elem)?;
-        }
-        er.finish()
     }
 }
 

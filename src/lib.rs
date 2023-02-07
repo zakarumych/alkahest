@@ -35,7 +35,7 @@ pub use crate::{
     serialize::{serialize, serialize_or_size, serialized_size, Serialize},
     size::{FixedIsize, FixedUsize},
     skip::Skip,
-    slice::{SerIter, SliceIter},
+    slice::SliceIter,
 };
 
 #[cfg(feature = "derive")]

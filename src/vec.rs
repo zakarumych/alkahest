@@ -69,40 +69,6 @@ where
     }
 }
 
-impl<F, T> Serialize<[F]> for Vec<T>
-where
-    T: Serialize<F>,
-    F: Formula,
-{
-    fn serialize<S>(self, er: impl Into<S>) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut er = er.into();
-        for elem in self {
-            er.write_value::<F, _>(elem)?;
-        }
-        er.finish()
-    }
-}
-
-impl<'ser, F, T> Serialize<[F]> for &'ser Vec<T>
-where
-    &'ser T: Serialize<F>,
-    F: Formula,
-{
-    fn serialize<S>(self, er: impl Into<S>) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut er = er.into();
-        for elem in self {
-            er.write_value::<F, _>(elem)?;
-        }
-        er.finish()
-    }
-}
-
 impl<'de, F, T> Deserialize<'de, [F]> for Vec<T>
 where
     F: Formula,
