@@ -17,7 +17,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
         .or(args.owned.flatten())
     {
         return Err(syn::Error::new_spanned(
-            formula.ty,
+            formula.path,
             "Formula type should not be specified for `Serialize` and `Deserialize` when type is also `Formula`",
         ));
     }
@@ -57,7 +57,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                     .iter()
                     .map(|field| {
                         quote::format_ident!(
-                            "__alkahest_formula_field_{}_idx_is",
+                            "__ALKAHEST_FORMULA_FIELD_{}_IDX",
                             field.ident.as_ref().unwrap(),
                         )
                     })
@@ -88,16 +88,13 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                     #(
                         #[doc(hidden)]
                         #[inline(always)]
-                        pub const fn #field_check_names() -> [(); #field_check_ids] {
-                            [(); #field_check_ids]
-                        }
+                        #[allow(non_upper_case_globals)]
+                        pub const #field_check_names: [(); #field_check_ids] = [(); #field_check_ids];
                     )*
 
                     #[doc(hidden)]
                     #[inline(always)]
-                    pub const fn __alkahest_formula_field_count() -> [(); #field_count] {
-                        [(); #field_count]
-                    }
+                    pub const __ALKAHEST_FORMULA_FIELD_COUNT: [(); #field_count] = [(); #field_count];
                 }
 
                 impl #formula_impl_generics ::alkahest::private::NonRefFormula for #ident #formula_type_generics #formula_where_clause {
@@ -147,7 +144,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         .iter()
                         .map(|field| {
                             quote::format_ident!(
-                                "__alkahest_formula_variant_{}_field_{}_idx_is",
+                                "__ALKAHEST_FORMULA_VARIANT_{}_FIELD_{}_IDX",
                                 variant.ident,
                                 field.ident.as_ref().unwrap(),
                             )
@@ -172,22 +169,11 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 .map(|variant| variant.fields.len())
                 .collect();
 
-            let field_count_checks: Vec<syn::Ident> =
-                data.variants
-                    .iter()
-                    .map(|variant| {
-                        quote::format_ident!(
-                            "__alkahest_formula_variant_{}_field_count",
-                            variant.ident,
-                        )
-                    })
-                    .collect();
-
             let field_variant_name_ids: Vec<syn::Ident> = data
                 .variants
                 .iter()
                 .map(|variant| {
-                    quote::format_ident!("__alkahest_formula_variant_{}_idx", variant.ident,)
+                    quote::format_ident!("__ALKAHEST_FORMULA_VARIANT_{}_IDX", variant.ident,)
                 })
                 .collect();
 
@@ -198,7 +184,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                     .iter()
                     .map(|variant| {
                         quote::format_ident!(
-                            "__alkahest_formula_variant_{}_field_count",
+                            "__ALKAHEST_FORMULA_VARIANT_{}_FIELD_COUNT",
                             variant.ident,
                         )
                     })
@@ -222,25 +208,22 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                     #(#(
                         #[doc(hidden)]
                         #[inline(always)]
-                        pub const fn #field_check_names() -> [(); #field_check_ids] {
-                            [(); #field_check_ids]
-                        }
+                        #[allow(non_upper_case_globals)]
+                        pub const #field_check_names: [(); #field_check_ids] = [(); #field_check_ids];
                     )*)*
 
                     #(
                         #[doc(hidden)]
                         #[inline(always)]
-                        pub const fn #field_count_checks() -> [(); #field_count] {
-                            [(); #field_count]
-                        }
+                        #[allow(non_upper_case_globals)]
+                        pub const #field_count_checks: [(); #field_count] = [(); #field_count];
                     )*
 
                     #(
                         #[doc(hidden)]
                         #[inline(always)]
-                        pub const fn #field_variant_name_ids() -> u32 {
-                            #field_variant_ids
-                        }
+                        #[allow(non_upper_case_globals)]
+                        pub const #field_variant_name_ids: u32 = #field_variant_ids;
                     )*
                 }
 

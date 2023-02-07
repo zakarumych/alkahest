@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
 
-use crate::attrs::{parse_attributes, Args, Formula};
+use crate::attrs::{parse_attributes, path_make_expr_style, Args, Formula};
 
 struct Config {
     reference: Option<Formula>,
@@ -26,7 +26,7 @@ impl Config {
             (None, Some(None)) if generics.params.is_empty() => Config {
                 reference: None,
                 owned: Some(Formula {
-                    ty: syn::parse_quote!(Self),
+                    path: syn::parse_quote!(#ident),
                     generics: Default::default(),
                 }),
                 variant: None,
@@ -34,7 +34,7 @@ impl Config {
             },
             (None, None) if generics.params.is_empty() => Config {
                 reference: Some(Formula {
-                    ty: syn::parse_quote!(#ident #type_generics),
+                    path: syn::parse_quote!(#ident),
                     generics: syn::Generics {
                         lt_token: None,
                         params: Default::default(),
@@ -43,7 +43,7 @@ impl Config {
                     },
                 }),
                 owned: Some(Formula {
-                    ty: syn::parse_quote!(Self),
+                    path: syn::parse_quote!(#ident),
                     generics: syn::Generics {
                         lt_token: None,
                         params: Default::default(),
@@ -62,7 +62,7 @@ impl Config {
                         syn::parse_quote! { #ty: ::alkahest::private::Formula }
                     }).chain(data.fields.iter().map(|field| -> syn::WherePredicate {
                         let ty = &field.ty;
-                        syn::parse_quote! { for<'ser> &'ser #ty: ::alkahest::private::Serialize<<#ty as ::alkahest::private::Formula>> }
+                        syn::parse_quote! { for<'ser> &'ser #ty: ::alkahest::private::Serialize<#ty> }
                     }))
                     .collect();
 
@@ -77,7 +77,7 @@ impl Config {
                 };
 
                 let reference = Formula {
-                    ty: syn::parse_quote!(Self),
+                    path: path_make_expr_style(syn::parse_quote!(#ident #type_generics)),
                     generics,
                 };
 
@@ -85,7 +85,7 @@ impl Config {
                 // `T: Formula` and `T: Serialize<T>`
                 let predicates = data.fields.iter().map(|field| -> syn::WherePredicate {
                         let ty = &field.ty;
-                        syn::parse_quote! { #ty: ::alkahest::private::Formula + ::alkahest::private::Serialize<<#ty as ::alkahest::private::Formula>> }
+                        syn::parse_quote! { #ty: ::alkahest::private::Formula + ::alkahest::private::Serialize<#ty> }
                     })
                     .collect();
 
@@ -100,7 +100,7 @@ impl Config {
                 };
 
                 let owned = Formula {
-                    ty: syn::parse_quote!(Self),
+                    path: syn::parse_quote!(Self),
                     generics,
                 };
 
@@ -140,7 +140,7 @@ impl Config {
                 Config {
                     reference: None,
                     owned: Some(Formula {
-                        ty: syn::parse_quote!(Self),
+                        path: syn::parse_quote!(Self),
                         generics,
                     }),
                     variant: None,
@@ -182,7 +182,7 @@ impl Config {
             (None, Some(None)) if generics.params.is_empty() => Config {
                 reference: None,
                 owned: Some(Formula {
-                    ty: syn::parse_quote!(Self),
+                    path: syn::parse_quote!(Self),
                     generics: Default::default(),
                 }),
                 variant: None,
@@ -190,7 +190,7 @@ impl Config {
             },
             (None, None) if generics.params.is_empty() => Config {
                 reference: Some(Formula {
-                    ty: syn::parse_quote!(#ident #type_generics),
+                    path: syn::parse_quote!(#ident),
                     generics: syn::Generics {
                         lt_token: None,
                         params: Default::default(),
@@ -199,7 +199,7 @@ impl Config {
                     },
                 }),
                 owned: Some(Formula {
-                    ty: syn::parse_quote!(Self),
+                    path: syn::parse_quote!(Self),
                     generics: syn::Generics {
                         lt_token: None,
                         params: Default::default(),
@@ -233,7 +233,7 @@ impl Config {
                 };
 
                 let reference = Formula {
-                    ty: syn::parse_quote!(Self),
+                    path: path_make_expr_style(syn::parse_quote!(#ident #type_generics)),
                     generics,
                 };
 
@@ -256,7 +256,7 @@ impl Config {
                 };
 
                 let owned = Formula {
-                    ty: syn::parse_quote!(Self),
+                    path: syn::parse_quote!(Self),
                     generics,
                 };
 
@@ -295,7 +295,7 @@ impl Config {
                 Config {
                     reference: None,
                     owned: Some(Formula {
-                        ty: syn::parse_quote!(Self),
+                        path: syn::parse_quote!(Self),
                         generics,
                     }),
                     variant: None,
@@ -340,21 +340,22 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
         syn::Data::Struct(data) => {
             let cfg = Config::for_struct(args, &data, ident, generics);
 
-            if cfg.variant.is_some() {
-                unimplemented!("Add support for enums");
-            }
-
             let field_count = data.fields.len();
 
-            let field_names_check = match (cfg.check_fields, &data.fields) {
+            let field_names_order_check = match (cfg.check_fields, &data.fields) {
                 (true, syn::Fields::Named(_)) => data
                     .fields
                     .iter()
-                    .map(|field| {
-                        quote::format_ident!(
-                            "__alkahest_formula_field_{}_idx_is",
+                    .map(|field| match &cfg.variant {
+                        None => quote::format_ident!(
+                            "__ALKAHEST_FORMULA_FIELD_{}_IDX",
                             field.ident.as_ref().unwrap(),
-                        )
+                        ),
+                        Some(v) => quote::format_ident!(
+                            "__ALKAHEST_FORMULA_VARIANT_{}_FIELD_{}_IDX",
+                            v,
+                            field.ident.as_ref().unwrap(),
+                        ),
                     })
                     .collect(),
                 _ => Vec::new(),
@@ -365,26 +366,90 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 _ => Vec::new(),
             };
 
-            let field_names = data
+            let bound_names = data
                 .fields
                 .iter()
                 .enumerate()
-                .map(|(index, field)| match &field.ident {
-                    Some(ident) => syn::Member::from(ident.clone()),
-                    None => syn::Member::from(index),
+                .map(|(idx, field)| match &field.ident {
+                    Some(ident) => ident.clone(),
+                    None => quote::format_ident!("_{}", idx),
                 })
                 .collect::<Vec<_>>();
+
+            let bind_names = match &data.fields {
+                syn::Fields::Named(fields) => {
+                    let names = fields
+                        .named
+                        .iter()
+                        .map(|field| field.ident.as_ref().unwrap().clone());
+
+                    quote::quote! {
+                        { #(#names),* }
+                    }
+                }
+                syn::Fields::Unnamed(fields) => {
+                    let names = fields
+                        .unnamed
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, _)| quote::format_ident!("_{}", idx));
+
+                    quote::quote! {
+                        ( #(#names),* )
+                    }
+                }
+                syn::Fields::Unit => quote::quote! {},
+            };
+
+            let bind_ref_names = match &data.fields {
+                syn::Fields::Named(fields) => {
+                    let names = fields
+                        .named
+                        .iter()
+                        .map(|field| field.ident.as_ref().unwrap().clone());
+
+                    quote::quote! {
+                        { #(ref #names),* }
+                    }
+                }
+                syn::Fields::Unnamed(fields) => {
+                    let names = fields
+                        .unnamed
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, _)| quote::format_ident!("_{}", idx));
+
+                    quote::quote! {
+                        ( #(ref #names),* )
+                    }
+                }
+                syn::Fields::Unit => quote::quote! {},
+            };
+
+            let with_variant = match &cfg.variant {
+                None => quote::quote! {},
+                Some(v) => quote::quote! { :: #v },
+            };
 
             match (cfg.reference, cfg.owned) {
                 (None, None) => unreachable!(),
                 (Some(reference), None) => {
-                    let formula_type = &reference.ty;
-                    let field_count_check = if cfg.check_fields {
-                        quote::quote! {
-                            let _: [(); #field_count] = <#formula_type>::__alkahest_formula_field_count();
+                    let formula_path = &reference.path;
+                    let field_count_check = match (cfg.check_fields, &cfg.variant) {
+                        (false, None) => quote::quote! {},
+                        (false, Some(_)) => unreachable!(),
+                        (true, None) => quote::quote! {
+                            let _: [(); #field_count] = #formula_path::__ALKAHEST_FORMULA_FIELD_COUNT;
+                        },
+                        (true, Some(v)) => {
+                            let ident = quote::format_ident!(
+                                "__ALKAHEST_FORMULA_VARIANT_{}_FIELD_COUNT",
+                                v
+                            );
+                            quote::quote! {
+                                let _: [(); #field_count] = #formula_path::#ident;
+                            }
                         }
-                    } else {
-                        quote::quote! {}
                     };
 
                     let mut generics = input.generics.clone();
@@ -404,7 +469,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
 
                     let (impl_generics, _type_generics, where_clause) = generics.split_for_impl();
                     Ok(quote::quote! {
-                        impl #impl_generics ::alkahest::private::Serialize<#formula_type> for #ident #type_generics #where_clause {
+                        impl #impl_generics ::alkahest::private::Serialize<#formula_path> for #ident #type_generics #where_clause {
                             fn serialize<S>(self, ser: impl ::alkahest::private::Into<S>) -> ::alkahest::private::Result<S::Ok, S::Error>
                             where
                                 S: ::alkahest::private::Serializer
@@ -412,28 +477,38 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                 // Checks compilation of code in the block.
                                 #[allow(unused)]
                                 let _ = || {
-                                    #(let _: [(); #field_ids_check] = <#formula_type>::#field_names_check();)*
+                                    #(let _: [(); #field_ids_check] = #formula_path::#field_names_order_check;)*
                                     #field_count_check
                                 };
 
+                                let #ident #bind_names = self;
+
                                 let mut ser = ser.into();
                                 #(
-                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names);
-                                    with_formula.write_value(&mut ser, &self.#field_names)?;
+                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
+                                        #formula_path #with_variant #bind_ref_names => #bound_names,
+                                        _ => unreachable!(),
+                                    });
+                                    with_formula.write_value(&mut ser, #bound_names)?;
                                 )*
                                 ser.finish()
                             }
                         }
 
-                        impl #impl_generics ::alkahest::private::Serialize<#formula_type> for &#ident #type_generics #where_clause {
+                        impl #impl_generics ::alkahest::private::Serialize<#formula_path> for &#ident #type_generics #where_clause {
                             fn serialize<S>(self, ser: impl ::alkahest::private::Into<S>) -> ::alkahest::private::Result<S::Ok, S::Error>
                             where
                                 S: ::alkahest::private::Serializer
                             {
+                                let #ident #bind_ref_names = *self;
+
                                 let mut ser = ser.into();
                                 #(
-                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names);
-                                    with_formula.write_value(&mut ser, &self.#field_names)?;
+                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
+                                        #formula_path #with_variant #bind_ref_names => #bound_names,
+                                        _ => unreachable!(),
+                                    });
+                                    with_formula.write_value(&mut ser, #bound_names)?;
                                 )*
                                 ser.finish()
                             }
@@ -441,10 +516,10 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                     })
                 }
                 (reference, Some(owned)) => {
-                    let formula_type = &owned.ty;
+                    let formula_path = &owned.path;
                     let field_count_check = if cfg.check_fields {
                         quote::quote! {
-                            let _: [(); #field_count] = <#formula_type>::__alkahest_formula_field_count();
+                            let _: [(); #field_count] = #formula_path::__ALKAHEST_FORMULA_FIELD_COUNT;
                         }
                     } else {
                         quote::quote! {}
@@ -466,7 +541,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                     let (impl_generics, _type_generics, where_clause) = generics.split_for_impl();
 
                     let mut tokens = quote::quote! {
-                        impl #impl_generics ::alkahest::private::Serialize<#formula_type> for #ident #type_generics #where_clause {
+                        impl #impl_generics ::alkahest::private::Serialize<#formula_path> for #ident #type_generics #where_clause {
                             fn serialize<S>(self, ser: impl ::alkahest::private::Into<S>) -> ::alkahest::private::Result<S::Ok, S::Error>
                             where
                                 S: ::alkahest::private::Serializer
@@ -474,14 +549,19 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                 // Checks compilation of code in the block.
                                 #[allow(unused)]
                                 let _ = || {
-                                    #(let _: [(); #field_ids_check] = <#formula_type>::#field_names_check();)*
+                                    #(let _: [(); #field_ids_check] = #formula_path::#field_names_order_check;)*
                                     #field_count_check
                                 };
 
+                                let #ident #bind_names = self;
+
                                 let mut ser = ser.into();
                                 #(
-                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names);
-                                    with_formula.write_value(&mut ser, self.#field_names)?;
+                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
+                                        #formula_path #with_variant #bind_ref_names => #bound_names,
+                                        _ => unreachable!(),
+                                    });
+                                    with_formula.write_value(&mut ser, #bound_names)?;
                                 )*
                                 ser.finish()
                             }
@@ -489,7 +569,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                     };
 
                     if let Some(reference) = reference {
-                        let formula_type = &reference.ty;
+                        let formula_path = &reference.path;
                         generics = input.generics.clone();
 
                         generics.lt_token = generics.lt_token.or(reference.generics.lt_token);
@@ -509,15 +589,20 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                             generics.split_for_impl();
 
                         tokens.extend(quote::quote! {
-                            impl #impl_generics ::alkahest::private::Serialize<#formula_type> for &#ident #type_generics #where_clause {
+                            impl #impl_generics ::alkahest::private::Serialize<#formula_path> for &#ident #type_generics #where_clause {
                                 fn serialize<S>(self, ser: impl ::alkahest::private::Into<S>) -> ::alkahest::private::Result<S::Ok, S::Error>
                                 where
                                     S: ::alkahest::private::Serializer
                                 {
+                                    let #ident #bind_ref_names = *self;
+
                                     let mut ser = ser.into();
                                     #(
-                                        let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names);
-                                        with_formula.write_value(&mut ser, &self.#field_names)?;
+                                        let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
+                                            #formula_path #with_variant #bind_ref_names => #bound_names,
+                                            _ => unreachable!(),
+                                        });
+                                        with_formula.write_value(&mut ser, #bound_names)?;
                                     )*
                                     ser.finish()
                                 }
@@ -539,7 +624,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 ));
             }
 
-            let field_names_checks: Vec<_> = data
+            let field_names_order_checks: Vec<_> = data
                 .variants
                 .iter()
                 .flat_map(|v| match (cfg.check_fields, &v.fields) {
@@ -548,7 +633,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         .iter()
                         .map(|field| {
                             quote::format_ident!(
-                                "__alkahest_formula_variant_{}_field_{}_idx_is",
+                                "__ALKAHEST_FORMULA_VARIANT_{}_FIELD_{}_IDX",
                                 v.ident,
                                 field.ident.as_ref().unwrap(),
                             )
@@ -572,7 +657,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                     .iter()
                     .map(|variant| {
                         quote::format_ident!(
-                            "__alkahest_formula_variant_{}_field_count",
+                            "__ALKAHEST_FORMULA_VARIANT_{}_FIELD_COUNT",
                             variant.ident,
                         )
                     })
@@ -582,22 +667,22 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
 
             let variant_names = data.variants.iter().map(|v| &v.ident).collect::<Vec<_>>();
 
-            let bound_field_names = data
+            let bound_names = data
                 .variants
                 .iter()
                 .map(|v| {
                     v.fields
                         .iter()
                         .enumerate()
-                        .map(|(index, field)| match &field.ident {
+                        .map(|(idx, field)| match &field.ident {
                             Some(ident) => ident.clone(),
-                            None => quote::format_ident!("_{}", index),
+                            None => quote::format_ident!("_{}", idx),
                         })
                         .collect::<Vec<_>>()
                 })
                 .collect::<Vec<_>>();
 
-            let field_bind_names = data
+            let bind_names = data
                 .variants
                 .iter()
                 .map(|v| match v.fields {
@@ -616,7 +701,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                             .fields
                             .iter()
                             .enumerate()
-                            .map(|(index, _)| quote::format_ident!("_{}", index));
+                            .map(|(idx, _)| quote::format_ident!("_{}", idx));
 
                         quote::quote! {
                             ( #(#names),* )
@@ -626,21 +711,50 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 })
                 .collect::<Vec<_>>();
 
-            let field_variant_name_ids: Vec<syn::Ident> = data
+            let bind_ref_names = data
+                .variants
+                .iter()
+                .map(|v| match v.fields {
+                    syn::Fields::Named(_) => {
+                        let names = v
+                            .fields
+                            .iter()
+                            .map(|field| field.ident.as_ref().unwrap().clone());
+
+                        quote::quote! {
+                            { #(ref #names),* }
+                        }
+                    }
+                    syn::Fields::Unnamed(_) => {
+                        let names = v
+                            .fields
+                            .iter()
+                            .enumerate()
+                            .map(|(idx, _)| quote::format_ident!("_{}", idx));
+
+                        quote::quote! {
+                            ( #(ref #names),* )
+                        }
+                    }
+                    syn::Fields::Unit => quote::quote! {},
+                })
+                .collect::<Vec<_>>();
+
+            let variant_name_ids: Vec<syn::Ident> = data
                 .variants
                 .iter()
                 .map(|variant| {
-                    quote::format_ident!("__alkahest_formula_variant_{}_idx", variant.ident,)
+                    quote::format_ident!("__ALKAHEST_FORMULA_VARIANT_{}_IDX", variant.ident,)
                 })
                 .collect();
 
             match (cfg.reference, cfg.owned) {
                 (None, None) => unreachable!(),
                 (Some(reference), None) => {
-                    let formula_type = &reference.ty;
+                    let formula_path = &reference.path;
                     let field_count_check = if cfg.check_fields {
                         quote::quote! {
-                            #(let _: [(); #field_counts] = <#formula_type>::#field_count_checks();)*
+                            #(let _: [(); #field_counts] = #formula_path::#field_count_checks;)*
                         }
                     } else {
                         quote::quote! {}
@@ -663,7 +777,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
 
                     let (impl_generics, _type_generics, where_clause) = generics.split_for_impl();
                     Ok(quote::quote! {
-                        impl #impl_generics ::alkahest::private::Serialize<#formula_type> for #ident #type_generics #where_clause {
+                        impl #impl_generics ::alkahest::private::Serialize<#formula_path> for #ident #type_generics #where_clause {
                             fn serialize<S>(self, ser: impl ::alkahest::private::Into<S>) -> ::alkahest::private::Result<S::Ok, S::Error>
                             where
                                 S: ::alkahest::private::Serializer
@@ -671,59 +785,61 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                 // Checks compilation of code in the block.
                                 #[allow(unused)]
                                 let _ = || {
-                                    #(let _: [(); #field_ids_checks] = <#formula_type>::#field_names_checks();)*
+                                    #(let _: [(); #field_ids_checks] = #formula_path::#field_names_order_checks;)*
                                     #field_count_check
                                 };
 
-                                let mut ser = ser.into();
                                 match self {
                                     #(
-                                        #ident::#variant_names #field_bind_names => {
-                                            ser.write_value::<u32, u32>(<#formula_type>::#field_variant_name_ids())?;
+                                        #ident::#variant_names #bind_names => {
+                                            let mut ser = ser.into();
+                                            ser.write_value::<u32, u32>(#formula_path::#variant_name_ids)?;
                                             #(
-                                                let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| match s {
-                                                    #formula_type::#variant_names { #field_bind_names } => #bound_field_names,
+                                                let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
+                                                    #[allow(unused_variables)]
+                                                    #formula_path::#variant_names #bind_ref_names => #bound_names,
                                                     _ => unreachable!(),
                                                 });
-                                                with_formula.write_value(&mut ser, #bound_field_names)?;
+                                                with_formula.write_value(&mut ser, #bound_names)?;
                                             )*
+                                            ser.finish()
                                         }
                                     )*
                                 }
-                                ser.finish()
                             }
                         }
 
-                        impl #impl_generics ::alkahest::private::Serialize<#formula_type> for &#ident #type_generics #where_clause {
+                        impl #impl_generics ::alkahest::private::Serialize<#formula_path> for &#ident #type_generics #where_clause {
                             fn serialize<S>(self, ser: impl ::alkahest::private::Into<S>) -> ::alkahest::private::Result<S::Ok, S::Error>
                             where
                                 S: ::alkahest::private::Serializer
                             {
-                                let mut ser = ser.into();
-                                match self {
+                                match *self {
                                     #(
-                                        #ident::#variant_names #field_bind_names => {
-                                            ser.write_value::<u32, u32>(<#formula_type>::#field_variant_name_ids())?;
+                                        #ident::#variant_names #bind_ref_names => {
+                                            let mut ser = ser.into();
+                                            ser.write_value::<u32, u32>(#formula_path::#variant_name_ids)?;
                                             #(
-                                                let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| match s {
-                                                    #formula_type::#variant_names { #field_bind_names } => #bound_field_names,
+                                                let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
+                                                    #[allow(unused_variables)]
+                                                    #formula_path::#variant_names #bind_ref_names => #bound_names,
                                                     _ => unreachable!(),
                                                 });
-                                                with_formula.write_value(&mut ser, #bound_field_names)?;
+                                                with_formula.write_value(&mut ser, #bound_names)?;
                                             )*
+                                            ser.finish()
                                         }
                                     )*
                                 }
-                                ser.finish()
                             }
                         }
                     })
                 }
                 (reference, Some(owned)) => {
-                    let formula_type = &owned.ty;
+                    let formula_path = &owned.path;
                     let field_count_check = if cfg.check_fields {
                         quote::quote! {
-                            #(let _: [(); #field_counts] = <#formula_type>::#field_count_checks();)*
+                            #(let _: [(); #field_counts] = #formula_path::#field_count_checks;)*
                         }
                     } else {
                         quote::quote! {}
@@ -745,7 +861,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                     let (impl_generics, _type_generics, where_clause) = generics.split_for_impl();
 
                     let mut tokens = quote::quote! {
-                        impl #impl_generics ::alkahest::private::Serialize<#formula_type> for #ident #type_generics #where_clause {
+                        impl #impl_generics ::alkahest::private::Serialize<#formula_path> for #ident #type_generics #where_clause {
                             fn serialize<S>(self, ser: impl ::alkahest::private::Into<S>) -> ::alkahest::private::Result<S::Ok, S::Error>
                             where
                                 S: ::alkahest::private::Serializer
@@ -753,32 +869,33 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                 // Checks compilation of code in the block.
                                 #[allow(unused)]
                                 let _ = || {
-                                    #(let _: [(); #field_ids_checks] = <#formula_type>::#field_names_checks();)*
+                                    #(let _: [(); #field_ids_checks] = #formula_path::#field_names_order_checks;)*
                                     #field_count_check
                                 };
 
-                                let mut ser = ser.into();
                                 match self {
                                     #(
-                                        #ident::#variant_names #field_bind_names => {
-                                            ser.write_value::<u32, u32>(<#formula_type>::#field_variant_name_ids())?;
+                                        #ident::#variant_names #bind_names => {
+                                            let mut ser = ser.into();
+                                            ser.write_value::<u32, u32>(#formula_path::#variant_name_ids)?;
                                             #(
-                                                let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| match s {
-                                                    #formula_type::#variant_names { #field_bind_names } => #bound_field_names,
+                                                let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
+                                                    #[allow(unused_variables)]
+                                                    #formula_path::#variant_names #bind_ref_names => #bound_names,
                                                     _ => unreachable!(),
                                                 });
-                                                with_formula.write_value(&mut ser, #bound_field_names)?;
+                                                with_formula.write_value(&mut ser, #bound_names)?;
                                             )*
+                                            ser.finish()
                                         }
                                     )*
                                 }
-                                ser.finish()
                             }
                         }
                     };
 
                     if let Some(reference) = reference {
-                        let formula_type = &reference.ty;
+                        let formula_path = &reference.path;
                         generics = input.generics.clone();
 
                         generics.lt_token = generics.lt_token.or(reference.generics.lt_token);
@@ -798,27 +915,28 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                             generics.split_for_impl();
 
                         tokens.extend(quote::quote! {
-                            impl #impl_generics ::alkahest::private::Serialize<#formula_type> for &#ident #type_generics #where_clause {
+                            impl #impl_generics ::alkahest::private::Serialize<#formula_path> for &#ident #type_generics #where_clause {
                                 fn serialize<S>(self, ser: impl ::alkahest::private::Into<S>) -> ::alkahest::private::Result<S::Ok, S::Error>
                                 where
                                     S: ::alkahest::private::Serializer
                                 {
-                                    let mut ser = ser.into();
-                                    match self {
+                                    match *self {
                                         #(
-                                            #ident::#variant_names #field_bind_names => {
-                                                ser.write_value::<u32, u32>(<#formula_type>::#field_variant_name_ids())?;
+                                            #ident::#variant_names #bind_ref_names => {
+                                                let mut ser = ser.into();
+                                                ser.write_value::<u32, u32>(#formula_path::#variant_name_ids)?;
                                                 #(
-                                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_type| match s {
-                                                        #formula_type::#variant_names { #field_bind_names } => #bound_field_names,
+                                                    let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
+                                                        #[allow(unused_variables)]
+                                                        #formula_path::#variant_names #bind_ref_names => #bound_names,
                                                         _ => unreachable!(),
                                                     });
-                                                    with_formula.write_value(&mut ser, #bound_field_names)?;
+                                                    with_formula.write_value(&mut ser, #bound_names)?;
                                                 )*
+                                                ser.finish()
                                             }
                                         )*
                                     }
-                                    ser.finish()
                                 }
                             }
                         });

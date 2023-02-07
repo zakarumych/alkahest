@@ -19,7 +19,7 @@ proc_easy::easy_parse! {
 
 struct FormulaRef {
     params: Option<FormulaParams>,
-    ty: syn::Type,
+    path: syn::Path,
     where_clause: Option<syn::WhereClause>,
 }
 
@@ -34,8 +34,8 @@ impl From<FormulaRef> for Formula {
             generics.make_where_clause().predicates = where_clause.predicates;
         }
 
-        Self {
-            ty: formula.ty,
+        Formula {
+            path: path_make_expr_style(formula.path),
             generics,
         }
     }
@@ -67,7 +67,7 @@ impl Parse for FormulaRef {
             None
         };
 
-        let ty = input.parse()?;
+        let path = input.parse()?;
 
         let where_clause = if input.peek(syn::Token![where]) {
             Some(input.parse()?)
@@ -75,9 +75,9 @@ impl Parse for FormulaRef {
             None
         };
 
-        Ok(Self {
+        Ok(FormulaRef {
             params: params.into(),
-            ty,
+            path,
             where_clause,
         })
     }
@@ -85,7 +85,7 @@ impl Parse for FormulaRef {
 
 impl Spanned for FormulaRef {
     fn span(&self) -> Span {
-        let mut span = self.ty.span();
+        let mut span = self.path.span();
 
         if let Some(params) = &self.params {
             span = params.token.span().join(span).unwrap_or(span);
@@ -143,7 +143,7 @@ proc_easy::easy_attributes! {
 
 #[derive(Clone)]
 pub struct Formula {
-    pub ty: syn::Type,
+    pub path: syn::Path,
     pub generics: syn::Generics,
 }
 
@@ -219,4 +219,13 @@ pub fn parse_attributes(attrs: &[syn::Attribute]) -> syn::Result<Args> {
         owned: owned_opt.map(|owned| owned.formula.map(Formula::from)),
         variant: attrs.variant.map(|v| v.variant),
     })
+}
+
+pub fn path_make_expr_style(mut path: syn::Path) -> syn::Path {
+    for seg in &mut path.segments {
+        if let syn::PathArguments::AngleBracketed(ref mut args) = seg.arguments {
+            args.colon2_token = Some(Default::default());
+        }
+    }
+    path
 }

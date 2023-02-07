@@ -42,7 +42,7 @@ impl Config {
 
                 Config {
                     formula: Formula {
-                        ty: syn::parse_quote!(Self),
+                        path: syn::parse_quote!(Self),
                         generics,
                     },
                     check_fields: false,
@@ -82,7 +82,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 non_exhaustive,
             } = Config::for_struct(args, &data);
 
-            let formula_type = &formula.ty;
+            let formula_path = &formula.path;
 
             let mut deserialize_generics = input.generics.clone();
 
@@ -107,7 +107,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                     .iter()
                     .map(|field| {
                         quote::format_ident!(
-                            "__alkahest_formula_field_{}_idx_is",
+                            "__ALKAHEST_FORMULA_FIELD_{}_IDX",
                             field.ident.as_ref().unwrap(),
                         )
                     })
@@ -143,7 +143,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
             let field_count = data.fields.len();
             let check_field_count = if check_fields && !non_exhaustive {
                 quote::quote! {
-                    let _: [(); #field_count] = <#formula_type>::__alkahest_formula_field_count();
+                    let _: [(); #field_count] = <#formula_path>::__ALKAHEST_FORMULA_FIELD_COUNT;
                 }
             } else {
                 quote::quote! {}
@@ -153,17 +153,17 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
             let (impl_deserialize_generics, _type_deserialize_generics, where_serialize_clause) =
                 deserialize_generics.split_for_impl();
             Ok(quote::quote! {
-                impl #impl_deserialize_generics ::alkahest::private::Deserialize<'de, #formula_type> for #ident #type_generics #where_serialize_clause {
+                impl #impl_deserialize_generics ::alkahest::private::Deserialize<'de, #formula_path> for #ident #type_generics #where_serialize_clause {
                     fn deserialize(mut de: ::alkahest::private::Deserializer<'de>) -> ::alkahest::private::Result<Self, ::alkahest::private::Error> {
                         // Checks compilation of code in the block.
                         #[allow(unused)]
                         let _ = || {
-                            #(let _: [(); #field_check_idxs] = <#formula_type>::#field_check_names();)*
+                            #(let _: [(); #field_check_idxs] = <#formula_path>::#field_check_names;)*
                         };
                         #check_field_count
 
                         #(
-                            let #field_names = ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names).read_value(&mut de)?;
+                            let #field_names = ::alkahest::private::with_formula(|s: &#formula_path| &s.#field_names).read_value(&mut de)?;
                         )*
                         #consume_tail
 
@@ -176,7 +176,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
 
                     fn deserialize_in_place(&mut self, mut de: ::alkahest::private::Deserializer<'de>) -> Result<(), ::alkahest::private::Error> {
                         #(
-                            ::alkahest::private::with_formula(|s: &#formula_type| &s.#field_names).read_in_place(&mut self.#field_names, &mut de)?;
+                            ::alkahest::private::with_formula(|s: &#formula_path| &s.#field_names).read_in_place(&mut self.#field_names, &mut de)?;
                         )*
                         #consume_tail
                         de.finish()
