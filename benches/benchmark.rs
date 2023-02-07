@@ -1,4 +1,4 @@
-use alkahest::{Deserialize, Formula, Serialize, SliceIter};
+use alkahest::{Deserialize, Formula, LazySlice, Serialize};
 use bytecheck::CheckBytes;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
@@ -25,8 +25,8 @@ enum TestDataLazy<'a> {
         b: u32,
     },
     Bar {
-        c: SliceIter<'a, u32>,
-        d: SliceIter<'a, Vec<u32>, SliceIter<'a, u32>>,
+        c: LazySlice<'a, u32>,
+        d: LazySlice<'a, Vec<u32>, LazySlice<'a, u32>>,
     },
 }
 
@@ -61,10 +61,10 @@ fn de_alkahest(bytes: &[u8]) {
             black_box(b);
         }
         TestDataLazy::Bar { c, d } => {
-            c.into_iter().for_each(|c| {
+            c.iter().for_each(|c| {
                 black_box(c.unwrap());
             });
-            d.into_iter().for_each(|d| {
+            d.iter().for_each(|d| {
                 d.unwrap().into_iter().for_each(|d| {
                     black_box(d.unwrap());
                 })
@@ -80,11 +80,11 @@ fn de_json(bytes: &[u8]) {
             black_box(b);
         }
         TestData::Bar { c, d } => {
-            c.into_iter().for_each(|c| {
+            c.iter().for_each(|c| {
                 black_box(c);
             });
-            d.into_iter().for_each(|d| {
-                d.into_iter().for_each(|d| {
+            d.iter().for_each(|d| {
+                d.iter().for_each(|d| {
                     black_box(d);
                 })
             });
@@ -147,33 +147,37 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     let len = rkyv::ser::Serializer::pos(&rkyv_ser);
     let rkyv_vec = rkyv_ser.into_serializer().into_inner()[..len].to_vec();
 
-    c.bench_function("ser/alkahest", |b| {
+    c.bench_function("first/alkahest/ser", |b| {
         b.iter(|| ser_alkahest(&mut bytes, black_box(&data)))
     });
 
-    c.bench_function("ser/json", |b| {
+    c.bench_function("first/json/ser", |b| {
         b.iter(|| ser_json(&mut bytes, black_box(&data)))
     });
 
-    c.bench_function("ser/bincode", |b| {
+    c.bench_function("first/bincode/ser", |b| {
         b.iter(|| ser_bincode(&mut bytes, black_box(&data)))
     });
 
-    c.bench_function("ser/rkyv", |b| {
+    c.bench_function("first/rkyv/ser", |b| {
         b.iter(|| ser_rkyv(&mut bytes, black_box(&data)))
     });
 
-    c.bench_function("de/alkahest", |b| {
+    c.bench_function("first/alkahest/de", |b| {
         b.iter(|| de_alkahest(black_box(&alkahest_vec)))
     });
 
-    c.bench_function("de/json", |b| b.iter(|| de_json(black_box(&json_vec))));
+    c.bench_function("first/json/de", |b| {
+        b.iter(|| de_json(black_box(&json_vec)))
+    });
 
-    c.bench_function("de/bincode", |b| {
+    c.bench_function("first/bincode/de", |b| {
         b.iter(|| de_bincode(black_box(&bincode_vec)))
     });
 
-    c.bench_function("de/rkyv", |b| b.iter(|| de_rkyv(black_box(&rkyv_vec))));
+    c.bench_function("first/rkyv/de", |b| {
+        b.iter(|| de_rkyv(black_box(&rkyv_vec)))
+    });
 }
 
 criterion_group!(benches, criterion_benchmark);
