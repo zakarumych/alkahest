@@ -10,11 +10,11 @@ macro_rules! impl_primitive {
     () => {};
 
     ($head:ty $(, $tail:ty)* $(,)?) => {
-        impl_primitive!(impl $head);
+        impl_primitive!(@ $head);
         impl_primitive!($($tail,)*);
     };
 
-    (impl $ty:ty) => {
+    (@ $ty:ty) => {
         impl NonRefFormula for $ty {
             const MAX_SIZE: Option<usize> = Some(size_of::<$ty>());
         }
