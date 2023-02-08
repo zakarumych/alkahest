@@ -53,26 +53,26 @@ enum Test2E {
 }
 
 fn main() {
-    // type MyFormula = Test<Vec<Vec<u32>>>;
+    type MyFormula = Test<Vec<Vec<u32>>>;
 
-    // let value = TestS {
-    //     a: 1,
-    //     b: X,
-    //     c: vec![2..4, 4..6],
-    // };
+    let value = TestS {
+        a: 1,
+        b: X,
+        c: vec![2..4, 4..6],
+    };
 
-    // let size = serialized_size::<MyFormula, _>(value.clone());
-    // let mut buffer = vec![0; size];
+    let size = serialized_size::<MyFormula, _>(value.clone());
+    let mut buffer = vec![0; size];
 
-    // let size = serialize::<MyFormula, _>(value.clone(), &mut buffer).unwrap();
-    // assert_eq!(size, buffer.len());
+    let size = serialize::<MyFormula, _>(value.clone(), &mut buffer).unwrap();
+    assert_eq!(size, buffer.len());
 
-    // let (value, size) = deserialize::<MyFormula, TestS<Vec<Vec<u32>>>>(&buffer).unwrap();
-    // assert_eq!(size, buffer.len());
+    let (value, size) = deserialize::<MyFormula, TestS<Vec<Vec<u32>>>>(&buffer).unwrap();
+    assert_eq!(size, buffer.len());
 
-    // assert_eq!(value.a, 1);
-    // assert_eq!(value.b, X);
-    // assert_eq!(value.c, vec![vec![2, 3], vec![4, 5]]);
+    assert_eq!(value.a, 1);
+    assert_eq!(value.b, X);
+    assert_eq!(value.c, vec![vec![2, 3], vec![4, 5]]);
 
     // let value = Test2E::Unit;
     // let size = serialized_size::<Test2, _>(value);

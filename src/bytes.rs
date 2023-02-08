@@ -1,6 +1,6 @@
 use crate::{
     deserialize::{Deserialize, Deserializer, Error},
-    formula::NonRefFormula,
+    formula::{Formula, NonRefFormula},
     serialize::{Serialize, Serializer},
 };
 
@@ -8,9 +8,12 @@ use crate::{
 /// Serializable from anything that implements `AsRef<[u8]>`.
 pub struct Bytes;
 
-impl NonRefFormula for Bytes {
-    const MAX_SIZE: Option<usize> = None;
+impl Formula for Bytes {
+    const MAX_STACK_SIZE: Option<usize> = None;
+    const EXACT_SIZE: bool = true;
 }
+
+impl NonRefFormula for Bytes {}
 
 impl Serialize<Bytes> for &[u8] {
     #[inline(always)]
@@ -19,8 +22,13 @@ impl Serialize<Bytes> for &[u8] {
         S: Serializer,
     {
         let mut ser = ser.into();
-        ser.write_bytes(self.as_ref())?;
+        ser.write_bytes(self)?;
         ser.finish()
+    }
+
+    #[inline(always)]
+    fn fast_sizes(&self) -> Option<(usize, usize)> {
+        Some((0, self.len()))
     }
 }
 

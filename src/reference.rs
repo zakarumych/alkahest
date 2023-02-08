@@ -26,9 +26,8 @@ impl<F> Formula for Ref<F>
 where
     F: NonRefFormula + ?Sized,
 {
-    const MAX_SIZE: Option<usize> = Some(size_of::<[FixedUsize; 2]>());
-
-    type NonRef = F;
+    const MAX_STACK_SIZE: Option<usize> = Some(size_of::<[FixedUsize; 2]>());
+    const EXACT_SIZE: bool = false;
 }
 
 impl<F, T> Serialize<Ref<F>> for T

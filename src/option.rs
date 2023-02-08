@@ -4,12 +4,15 @@ use crate::{
     serialize::{Serialize, Serializer},
 };
 
-impl<F> NonRefFormula for Option<F>
+impl<F> Formula for Option<F>
 where
     F: Formula,
 {
-    const MAX_SIZE: Option<usize> = sum_size(Some(1), F::MAX_SIZE);
+    const MAX_STACK_SIZE: Option<usize> = sum_size(Some(1), F::MAX_STACK_SIZE);
+    const EXACT_SIZE: bool = F::EXACT_SIZE;
 }
+
+impl<F> NonRefFormula for Option<F> where F: Formula {}
 
 impl<F, T> Serialize<Option<F>> for Option<T>
 where

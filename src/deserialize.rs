@@ -1,6 +1,7 @@
 use core::{iter::FusedIterator, marker::PhantomData, mem::size_of, str::Utf8Error};
 
 use crate::{
+    err,
     formula::{Formula, NonRefFormula},
     size::{FixedIsizeType, FixedUsize, FixedUsizeType},
 };
@@ -18,10 +19,10 @@ pub enum Error {
     /// Incorrect expected value length.
     WrongLength,
 
-    /// Size value exceeds the maximum `usize` for current architecture.
+    /// Size value exceeds the maximum `usize` for current platform.
     InvalidUsize(FixedUsizeType),
 
-    /// Size value exceeds the maximum `isize` for current architecture.
+    /// Size value exceeds the maximum `isize` for current platform.
     InvalidIsize(FixedIsizeType),
 
     /// Enum variant is invalid.
@@ -65,7 +66,7 @@ impl<'de> Deserializer<'de> {
     #[inline(always)]
     pub const fn new(stack: usize, input: &'de [u8]) -> Result<Self, Error> {
         if stack > input.len() {
-            return Err(Error::OutOfBounds);
+            return err(Error::OutOfBounds);
         }
         Ok(Self::new_unchecked(stack, input))
     }
@@ -83,7 +84,7 @@ impl<'de> Deserializer<'de> {
     where
         F: Formula + ?Sized,
     {
-        let sub_stack = match F::MAX_SIZE {
+        let sub_stack = match F::MAX_STACK_SIZE {
             None => self.stack,
             Some(max_size) => self.stack.min(max_size),
         };
@@ -99,7 +100,7 @@ impl<'de> Deserializer<'de> {
     #[inline(always)]
     pub fn read_bytes(&mut self, len: usize) -> Result<&'de [u8], Error> {
         if len > self.stack {
-            return Err(Error::OutOfBounds);
+            return err(Error::OutOfBounds);
         }
         let at = self.input.len() - len;
         let (head, tail) = self.input.split_at(at);
@@ -153,7 +154,7 @@ impl<'de> Deserializer<'de> {
         let [address, size] = self.read_auto::<[FixedUsize; 2]>()?;
 
         if usize::from(address) > self.input.len() {
-            return Err(Error::WrongAddress);
+            return err(Error::WrongAddress);
         }
 
         let input = &self.input[..address.into()];
@@ -168,9 +169,9 @@ impl<'de> Deserializer<'de> {
         F: Formula,
         T: Deserialize<'de, F>,
     {
-        let size = F::MAX_SIZE.expect("Sized formula should have some MAX_SIZE");
+        let size = F::MAX_STACK_SIZE.expect("Sized formula should have some MAX_STACK_SIZE");
         if self.stack % size != 0 {
-            return Err(Error::WrongLength);
+            return err(Error::WrongLength);
         }
         let count = self.stack / size;
         Ok(DeIter {
@@ -185,7 +186,7 @@ impl<'de> Deserializer<'de> {
         if self.stack == 0 {
             Ok(())
         } else {
-            Err(Error::WrongLength)
+            err(Error::WrongLength)
         }
     }
 }
@@ -234,7 +235,7 @@ where
             return None;
         }
 
-        let size = F::MAX_SIZE.unwrap_or(0);
+        let size = F::MAX_STACK_SIZE.unwrap_or(0);
         let input = self.input;
         self.count -= 1;
         let end = self.input.len() - size;
@@ -257,7 +258,7 @@ where
             return None;
         }
         self.count -= n;
-        let size = F::MAX_SIZE.unwrap_or(0);
+        let size = F::MAX_STACK_SIZE.unwrap_or(0);
         let end = self.input.len() - size * n;
         self.input = &self.input[..end];
         self.next()
@@ -269,7 +270,7 @@ where
         Fun: FnMut(B, Result<T, Error>) -> B,
     {
         let end = self.input.len();
-        let size = F::MAX_SIZE.unwrap_or(0);
+        let size = F::MAX_STACK_SIZE.unwrap_or(0);
         let mut accum = init;
         for elem in 0..self.count {
             let at = end - size * elem;
@@ -292,7 +293,7 @@ where
             return None;
         }
         self.count -= 1;
-        let size = F::MAX_SIZE.unwrap_or(0);
+        let size = F::MAX_STACK_SIZE.unwrap_or(0);
         let at = self.input.len() - size * self.count;
         let input = &self.input[at..];
 
@@ -319,7 +320,7 @@ where
         if self.count == 0 {
             return init;
         }
-        let size = F::MAX_SIZE.unwrap_or(0);
+        let size = F::MAX_STACK_SIZE.unwrap_or(0);
         let start = self.input.len() - size * (self.count - 1);
         let mut accum = init;
         for elem in 0..self.count {
@@ -351,13 +352,13 @@ where
 }
 
 #[inline(always)]
-pub fn value_size(input: &[u8]) -> Result<usize, Error> {
+pub fn value_size(input: &[u8]) -> Option<usize> {
     if input.len() < FIELD_SIZE {
-        return Err(Error::OutOfBounds);
+        return None;
     }
 
-    let mut de = Deserializer::new(FIELD_SIZE, &input[..FIELD_SIZE])?;
-    de.read_auto::<FixedUsize>().map(usize::from)
+    let mut de = Deserializer::new_unchecked(FIELD_SIZE, &input[..FIELD_SIZE]);
+    Some(de.read_auto::<FixedUsize>().map(usize::from).unwrap())
 }
 
 #[inline(always)]
@@ -367,23 +368,23 @@ where
     T: Deserialize<'de, F>,
 {
     if input.len() < HEADER_SIZE {
-        return Err(Error::OutOfBounds);
+        return err(Error::OutOfBounds);
     }
 
-    let mut de = Deserializer::new(HEADER_SIZE, &input[..HEADER_SIZE])?;
-    let [address, size] = de.read_auto::<[FixedUsize; 2]>()?;
+    let mut de = Deserializer::new_unchecked(HEADER_SIZE, &input[..HEADER_SIZE]);
+    let [address, size] = de.read_auto::<[FixedUsize; 2]>().unwrap();
 
     if size > address {
-        return Err(Error::WrongAddress);
+        return err(Error::WrongAddress);
     }
 
     let end = usize::from(address);
 
     if end > input.len() {
-        return Err(Error::OutOfBounds);
+        return err(Error::OutOfBounds);
     }
 
-    let mut de = Deserializer::new(size.into(), &input[..end])?;
+    let mut de = Deserializer::new_unchecked(size.into(), &input[..end]);
     let value = de.read_value::<F, T>()?;
 
     Ok((value, end))
@@ -396,23 +397,23 @@ where
     T: Deserialize<'de, F> + ?Sized,
 {
     if input.len() < HEADER_SIZE {
-        return Err(Error::OutOfBounds);
+        return err(Error::OutOfBounds);
     }
 
-    let mut de = Deserializer::new(HEADER_SIZE, &input[..HEADER_SIZE])?;
+    let mut de = Deserializer::new_unchecked(HEADER_SIZE, &input[..HEADER_SIZE]);
     let [address, size] = de.read_auto::<[FixedUsize; 2]>()?;
 
     if size > address {
-        return Err(Error::WrongAddress);
+        return err(Error::WrongAddress);
     }
 
     let end = usize::from(address);
 
     if end > input.len() {
-        return Err(Error::OutOfBounds);
+        return err(Error::OutOfBounds);
     }
 
-    let mut de = Deserializer::new(size.into(), &input[..end])?;
+    let mut de = Deserializer::new_unchecked(size.into(), &input[..end]);
     de.read_in_place::<F, T>(place)?;
 
     Ok(end)

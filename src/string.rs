@@ -8,9 +8,8 @@ use crate::{
 };
 
 impl Formula for String {
-    const MAX_SIZE: Option<usize> = <Ref<str> as Formula>::MAX_SIZE;
-
-    type NonRef = str;
+    const MAX_STACK_SIZE: Option<usize> = <Ref<str> as Formula>::MAX_STACK_SIZE;
+    const EXACT_SIZE: bool = <Ref<str> as Formula>::EXACT_SIZE;
 }
 
 impl<T> Serialize<String> for T
@@ -50,6 +49,11 @@ impl Serialize<str> for String {
     {
         <&str as Serialize<str>>::serialize(&self, ser)
     }
+
+    #[inline(always)]
+    fn fast_sizes(&self) -> Option<(usize, usize)> {
+        Some((0, self.len()))
+    }
 }
 
 impl Serialize<str> for &String {
@@ -59,6 +63,11 @@ impl Serialize<str> for &String {
         S: Serializer,
     {
         <&str as Serialize<str>>::serialize(self, ser)
+    }
+
+    #[inline(always)]
+    fn fast_sizes(&self) -> Option<(usize, usize)> {
+        Some((0, self.len()))
     }
 }
 

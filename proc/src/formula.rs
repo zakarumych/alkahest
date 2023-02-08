@@ -123,17 +123,21 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                     }
                 }
 
-                impl #formula_impl_generics ::alkahest::private::NonRefFormula for #ident #formula_type_generics #formula_where_clause {
-                    const MAX_SIZE: ::alkahest::private::Option<::alkahest::private::usize> = {
+                impl #formula_impl_generics ::alkahest::private::Formula for #ident #formula_type_generics #formula_where_clause {
+                    const MAX_STACK_SIZE: ::alkahest::private::Option<::alkahest::private::usize> = {
                         #[allow(unused_mut)]
                         let mut max_size = Some(0);
                         #(
-                            max_size = ::alkahest::private::sum_size(max_size, <#all_field_types as ::alkahest::private::Formula>::MAX_SIZE);
+                            max_size = ::alkahest::private::sum_size(max_size, <#all_field_types as ::alkahest::private::Formula>::MAX_STACK_SIZE);
                         )*;
                         #expand_size
                         max_size
                     };
+
+                    const EXACT_SIZE: ::alkahest::private::bool = #(<#all_field_types as ::alkahest::private::Formula>::EXACT_SIZE &&)* !#non_exhaustive;
                 }
+
+                impl #formula_impl_generics ::alkahest::private::NonRefFormula for #ident #formula_type_generics #formula_where_clause {}
             })
         }
         syn::Data::Enum(data) => {
@@ -293,8 +297,8 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                     }
                 }
 
-                impl #formula_impl_generics ::alkahest::private::NonRefFormula for #ident #formula_type_generics #formula_where_clause {
-                    const MAX_SIZE: ::alkahest::private::Option<::alkahest::private::usize> = {
+                impl #formula_impl_generics ::alkahest::private::Formula for #ident #formula_type_generics #formula_where_clause {
+                    const MAX_STACK_SIZE: ::alkahest::private::Option<::alkahest::private::usize> = {
                         #[allow(unused_mut)]
                         let mut max_size = Some(0);
 
@@ -303,7 +307,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                 #[allow(unused_mut)]
                                 let mut max_size = Some(0);
                                 #(
-                                    max_size = ::alkahest::private::sum_size(max_size, <#all_field_types as ::alkahest::private::Formula>::MAX_SIZE);
+                                    max_size = ::alkahest::private::sum_size(max_size, <#all_field_types as ::alkahest::private::Formula>::MAX_STACK_SIZE);
                                 )*;
                                 max_size
                             };
@@ -313,7 +317,11 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         #expand_size
                         ::alkahest::private::sum_size(::alkahest::private::VARIANT_SIZE, max_size)
                     };
+
+                    const EXACT_SIZE: ::alkahest::private::bool = #(#(<#all_field_types as ::alkahest::private::Formula>::EXACT_SIZE &&)*)* !#non_exhaustive;
                 }
+
+                impl #formula_impl_generics ::alkahest::private::NonRefFormula for #ident #formula_type_generics #formula_where_clause {}
             })
         }
     }

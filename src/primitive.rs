@@ -1,8 +1,9 @@
 use core::{borrow::Borrow, mem::size_of};
 
 use crate::{
+    cold,
     deserialize::{Deserialize, Deserializer, Error},
-    formula::NonRefFormula,
+    formula::{Formula, NonRefFormula},
     serialize::{Serialize, Serializer},
 };
 
@@ -15,9 +16,12 @@ macro_rules! impl_primitive {
     };
 
     (@ $ty:ty) => {
-        impl NonRefFormula for $ty {
-            const MAX_SIZE: Option<usize> = Some(size_of::<$ty>());
+        impl Formula for $ty {
+            const MAX_STACK_SIZE: Option<usize> = Some(size_of::<$ty>());
+            const EXACT_SIZE: bool = true;
         }
+
+        impl NonRefFormula for $ty {}
 
         impl<T> Serialize<$ty> for T
         where
@@ -39,12 +43,21 @@ macro_rules! impl_primitive {
             T: From<$ty>,
         {
             #[inline(always)]
-            fn deserialize(mut de: Deserializer) -> Result<Self, Error> {
-                let mut bytes = [0; size_of::<$ty>()];
-                bytes.copy_from_slice(de.read_bytes(size_of::<$ty>())?);
-                de.finish()?;
-                let value = <$ty>::from_le_bytes(bytes);
-                Ok(From::from(value))
+            fn deserialize(de: Deserializer) -> Result<Self, Error> {
+                let input = de.read_all_bytes();
+                if input.len() == size_of::<$ty>() {
+                    let mut bytes = [0; size_of::<$ty>()];
+                    bytes.copy_from_slice(input);
+                    let value = <$ty>::from_le_bytes(bytes);
+                    return Ok(From::from(value));
+                }
+
+                cold();
+                if input.len() > size_of::<$ty>() {
+                    Err(Error::WrongLength)
+                } else {
+                    Err(Error::OutOfBounds)
+                }
             }
 
             #[inline(always)]
@@ -72,9 +85,12 @@ impl_primitive! {
     f64,
 }
 
-impl NonRefFormula for bool {
-    const MAX_SIZE: Option<usize> = Some(1);
+impl Formula for bool {
+    const MAX_STACK_SIZE: Option<usize> = Some(1);
+    const EXACT_SIZE: bool = true;
 }
+
+impl NonRefFormula for bool {}
 
 impl<T> Serialize<bool> for T
 where

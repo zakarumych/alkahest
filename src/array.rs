@@ -4,16 +4,19 @@ use crate::{
     serialize::{Serialize, Serializer},
 };
 
-impl<F, const N: usize> NonRefFormula for [F; N]
+impl<F, const N: usize> Formula for [F; N]
 where
     F: Formula,
 {
-    const MAX_SIZE: Option<usize> = repeat_size(F::MAX_SIZE, N);
+    const MAX_STACK_SIZE: Option<usize> = repeat_size(F::MAX_STACK_SIZE, N);
+    const EXACT_SIZE: bool = F::EXACT_SIZE;
 }
+
+impl<F, const N: usize> NonRefFormula for [F; N] where F: Formula {}
 
 impl<F, T, const N: usize> Serialize<[F; N]> for [T; N]
 where
-    F: NonRefFormula,
+    F: Formula,
     T: Serialize<F>,
 {
     #[inline(always)]
@@ -47,7 +50,7 @@ where
 
 impl<'de, F, T, const N: usize> Deserialize<'de, [F; N]> for [T; N]
 where
-    F: NonRefFormula,
+    F: Formula,
     T: Deserialize<'de, F>,
 {
     #[inline(always)]

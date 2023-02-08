@@ -4,9 +4,12 @@ use crate::{
     serialize::{Serialize, Serializer},
 };
 
-impl NonRefFormula for () {
-    const MAX_SIZE: Option<usize> = Some(0);
+impl Formula for () {
+    const MAX_STACK_SIZE: Option<usize> = Some(0);
+    const EXACT_SIZE: bool = true;
 }
+
+impl NonRefFormula for () {}
 
 impl Serialize<()> for () {
     #[inline(always)]
@@ -42,17 +45,26 @@ impl Deserialize<'_, ()> for () {
 
 macro_rules! impl_for_tuple {
     ([$at:ident $(,$a:ident)* $(,)?] [$bt:ident $(,$b:ident)* $(,)?]) => {
+        impl<$($a,)* $at> Formula for ($($a,)* $at,)
+        where
+            $($a: Formula,)*
+            $at: Formula + ?Sized,
+        {
+            const MAX_STACK_SIZE: Option<usize> = {
+                let mut size = Some(0);
+                $(size = sum_size(size, <$a as Formula>::MAX_STACK_SIZE);)*
+                size = sum_size(size, <$at as Formula>::MAX_STACK_SIZE);
+                size
+            };
+
+            const EXACT_SIZE: bool = $(<$a as Formula>::EXACT_SIZE &&)* <$at as Formula>::EXACT_SIZE;
+        }
+
         impl<$($a,)* $at> NonRefFormula for ($($a,)* $at,)
         where
             $($a: Formula,)*
             $at: Formula + ?Sized,
         {
-            const MAX_SIZE: Option<usize> = {
-                let mut size = Some(0);
-                $(size = sum_size(size, <$a as Formula>::MAX_SIZE);)*
-                size = sum_size(size, <$at as Formula>::MAX_SIZE);
-                size
-            };
         }
 
         impl<$($a,)* $at, $($b,)* $bt> Serialize<($($a,)* $at,)> for ($($b,)* $bt,)

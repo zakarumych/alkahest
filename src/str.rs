@@ -1,13 +1,16 @@
 use crate::{
     deserialize::{Deserialize, Deserializer, Error},
-    formula::Formula,
-    private::NonRefFormula,
+    err,
+    formula::{Formula, NonRefFormula},
     serialize::{Serialize, Serializer},
 };
 
-impl NonRefFormula for str {
-    const MAX_SIZE: Option<usize> = <[u8] as Formula>::MAX_SIZE;
+impl Formula for str {
+    const MAX_STACK_SIZE: Option<usize> = <[u8] as Formula>::MAX_STACK_SIZE;
+    const EXACT_SIZE: bool = true;
 }
+
+impl NonRefFormula for str {}
 
 impl Serialize<str> for &str {
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
@@ -17,6 +20,11 @@ impl Serialize<str> for &str {
         let mut ser = ser.into();
         ser.write_bytes(self.as_bytes())?;
         ser.finish()
+    }
+
+    #[inline(always)]
+    fn fast_sizes(&self) -> Option<(usize, usize)> {
+        Some((0, self.len()))
     }
 }
 
@@ -28,7 +36,7 @@ impl<'de, 'fe: 'de> Deserialize<'fe, str> for &'de str {
         let bytes = deserializer.read_all_bytes();
         match core::str::from_utf8(bytes) {
             Ok(s) => Ok(s),
-            Err(err) => Err(Error::NonUtf8(err)),
+            Err(error) => err(Error::NonUtf8(error)),
         }
     }
 
@@ -39,7 +47,7 @@ impl<'de, 'fe: 'de> Deserialize<'fe, str> for &'de str {
                 *self = s;
                 Ok(())
             }
-            Err(err) => Err(Error::NonUtf8(err)),
+            Err(error) => err(Error::NonUtf8(error)),
         }
     }
 }

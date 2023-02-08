@@ -12,9 +12,8 @@ impl<F> Formula for Vec<F>
 where
     F: Formula,
 {
-    const MAX_SIZE: Option<usize> = <Ref<[F]> as Formula>::MAX_SIZE;
-
-    type NonRef = [F];
+    const MAX_STACK_SIZE: Option<usize> = <Ref<[F]> as Formula>::MAX_STACK_SIZE;
+    const EXACT_SIZE: bool = <Ref<[F]> as Formula>::EXACT_SIZE;
 }
 
 impl<F, T> Serialize<Vec<F>> for T
@@ -55,7 +54,9 @@ where
 {
     #[inline(always)]
     fn deserialize(de: Deserializer<'de>) -> Result<Self, Error> {
-        de.into_iter::<F, T>()?.collect()
+        let mut vec = Vec::new();
+        Deserialize::<[F]>::deserialize_in_place(&mut vec, de)?;
+        Ok(vec)
     }
 
     #[inline(always)]
@@ -76,7 +77,9 @@ where
 {
     #[inline(always)]
     fn deserialize(de: Deserializer<'de>) -> Result<Self, Error> {
-        de.into_iter::<F, T>()?.collect()
+        let mut vec = Vec::new();
+        Deserialize::<[F]>::deserialize_in_place(&mut vec, de)?;
+        Ok(vec)
     }
 
     #[inline(always)]
@@ -98,6 +101,11 @@ impl Serialize<Bytes> for Vec<u8> {
     {
         Serialize::<Bytes>::serialize(&self, ser)
     }
+
+    #[inline(always)]
+    fn fast_sizes(&self) -> Option<(usize, usize)> {
+        Some((0, self.len()))
+    }
 }
 
 impl Serialize<Bytes> for &Vec<u8> {
@@ -109,6 +117,11 @@ impl Serialize<Bytes> for &Vec<u8> {
         let mut ser = ser.into();
         ser.write_bytes(&self)?;
         ser.finish()
+    }
+
+    #[inline(always)]
+    fn fast_sizes(&self) -> Option<(usize, usize)> {
+        Some((0, self.len()))
     }
 }
 

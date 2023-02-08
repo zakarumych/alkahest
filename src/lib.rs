@@ -30,16 +30,26 @@ mod vec_deque;
 #[cfg(feature = "alloc")]
 mod string;
 
+#[cold]
+#[inline(always)]
+const fn cold() {}
+
+#[cold]
+#[inline(always)]
+const fn err<T, E>(err: E) -> Result<T, E> {
+    Err(err)
+}
+
 pub use crate::{
     bytes::Bytes,
-    deserialize::{deserialize, deserialize_in_place, value_size, Deserialize, Error},
+    deserialize::{deserialize, deserialize_in_place, value_size, DeIter, Deserialize, Error},
     formula::Formula,
     lazy::Lazy,
     reference::Ref,
     serialize::{serialize, serialize_or_size, serialized_size, Serialize},
     size::{FixedIsize, FixedUsize},
     skip::Skip,
-    slice::{LazySlice, SliceIter},
+    slice::LazySlice,
 };
 
 #[cfg(feature = "derive")]

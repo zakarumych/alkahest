@@ -40,12 +40,21 @@
 /// of serialized data and deserialized values.
 /// It can't result in undefined behavior.
 pub trait Formula {
-    #[doc(hidden)]
-    const MAX_SIZE: Option<usize>;
+    /// Maximum size of stack this formula occupies.
+    const MAX_STACK_SIZE: Option<usize>;
 
-    #[doc(hidden)]
-    type NonRef: NonRefFormula + ?Sized;
+    /// Signals that `MAX_STACK_SIZE` is accurate
+    /// and heap is not used for serialization.
+    const EXACT_SIZE: bool;
 }
+
+/// Ad-hoc negative trait.
+/// It *should* be implemented for all formulas except [`Ref`]
+/// and its aliases, like [`Vec`]
+///
+/// [`Ref`]: crate::Ref
+/// [`Vec`]: alloc::vec::Vec
+pub trait NonRefFormula: Formula {}
 
 /// Function to combine sizes of formulas.
 /// Order of arguments is important.
@@ -83,37 +92,4 @@ pub const fn repeat_size(a: Option<usize>, n: usize) -> Option<usize> {
         Some(a) => ([Some(a * n)], 0),
     };
     arr[idx]
-}
-
-/// Ad-hoc negative trait.
-/// It *should* be implemented for all formulas except [`Ref`]
-/// and its aliases, like [`Vec`]
-///
-/// [`Ref`]: crate::Ref
-/// [`Vec`]: alloc::vec::Vec
-pub trait NonRefFormula {
-    /// Maximum number of bytes serialized values with this formula consume
-    /// from "stack" in output buffer.
-    ///
-    /// Values *may* use less number of bytes.
-    /// `Deserialize` implementations must be prepared to handle this.
-    ///
-    /// Formulas *should* specify as small value as possible.
-    /// Providing too large value may result in wasted space in serialized data.
-    ///
-    /// Unsized formulas like slices should specify `None`.
-    /// Same applies for `non_exhaustive` formulas,
-    /// as they may be extended in future without breaking
-    /// deserialization compatibility.
-    #[doc(hidden)]
-    const MAX_SIZE: Option<usize>;
-}
-
-impl<F> Formula for F
-where
-    F: NonRefFormula + ?Sized,
-{
-    type NonRef = Self;
-
-    const MAX_SIZE: Option<usize> = <Self as NonRefFormula>::MAX_SIZE;
 }

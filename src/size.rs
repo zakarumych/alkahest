@@ -2,7 +2,8 @@ use core::{mem::size_of, num::TryFromIntError};
 
 use crate::{
     deserialize::{Deserialize, Deserializer, Error},
-    formula::NonRefFormula,
+    err,
+    formula::{Formula, NonRefFormula},
     serialize::{Serialize, Serializer},
 };
 
@@ -88,9 +89,12 @@ impl From<FixedUsize> for FixedUsizeType {
     }
 }
 
-impl NonRefFormula for FixedUsize {
-    const MAX_SIZE: Option<usize> = Some(size_of::<FixedUsizeType>());
+impl Formula for FixedUsize {
+    const MAX_STACK_SIZE: Option<usize> = Some(size_of::<FixedUsizeType>());
+    const EXACT_SIZE: bool = true;
 }
+
+impl NonRefFormula for FixedUsize {}
 
 impl Serialize<FixedUsize> for FixedUsize {
     #[inline(always)]
@@ -117,7 +121,7 @@ impl Deserialize<'_, FixedUsize> for FixedUsize {
     fn deserialize(de: Deserializer) -> Result<Self, Error> {
         let value = <FixedUsizeType as Deserialize<FixedUsizeType>>::deserialize(de)?;
         if value > usize::MAX as FixedUsizeType {
-            return Err(Error::InvalidUsize(value));
+            return err(Error::InvalidUsize(value));
         }
 
         Ok(FixedUsize(value))
@@ -181,9 +185,12 @@ impl From<FixedIsize> for FixedIsizeType {
     }
 }
 
-impl NonRefFormula for FixedIsize {
-    const MAX_SIZE: Option<usize> = Some(size_of::<FixedIsizeType>());
+impl Formula for FixedIsize {
+    const MAX_STACK_SIZE: Option<usize> = Some(size_of::<FixedIsizeType>());
+    const EXACT_SIZE: bool = true;
 }
+
+impl NonRefFormula for FixedIsize {}
 
 impl Serialize<FixedIsize> for FixedIsize {
     #[inline(always)]
@@ -210,7 +217,7 @@ impl Deserialize<'_, FixedIsize> for FixedIsize {
     fn deserialize(de: Deserializer) -> Result<Self, Error> {
         let value = <FixedIsizeType as Deserialize<FixedIsizeType>>::deserialize(de)?;
         if value > usize::MAX as FixedIsizeType {
-            return Err(Error::InvalidIsize(value));
+            return err(Error::InvalidIsize(value));
         }
 
         Ok(FixedIsize(value))
