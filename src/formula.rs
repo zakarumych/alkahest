@@ -43,9 +43,11 @@ pub trait Formula {
     /// Maximum size of stack this formula occupies.
     const MAX_STACK_SIZE: Option<usize>;
 
-    /// Signals that `MAX_STACK_SIZE` is accurate
-    /// and heap is not used for serialization.
+    /// Signals that `MAX_STACK_SIZE` is accurate.
     const EXACT_SIZE: bool;
+
+    /// Signals that heap is not used for serialzation.
+    const HEAPLESS: bool;
 }
 
 /// Ad-hoc negative trait.

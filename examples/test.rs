@@ -1,3 +1,5 @@
+use std::char::MAX;
+
 use alkahest::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Formula, Serialize, Deserialize)]
@@ -89,6 +91,7 @@ fn main() {
     // assert_eq!(size, buffer.len());
 
     let value = Test2S { a: 1, b: 2 };
+
     let size = serialized_size::<Test2, _>(value);
     let mut buffer = vec![0; size];
 

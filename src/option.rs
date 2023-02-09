@@ -9,7 +9,8 @@ where
     F: Formula,
 {
     const MAX_STACK_SIZE: Option<usize> = sum_size(Some(1), F::MAX_STACK_SIZE);
-    const EXACT_SIZE: bool = F::EXACT_SIZE;
+    const EXACT_SIZE: bool = false;
+    const HEAPLESS: bool = true;
 }
 
 impl<F> NonRefFormula for Option<F> where F: Formula {}
@@ -36,12 +37,20 @@ where
         }
         ser.finish()
     }
+
+    #[inline(always)]
+    fn fast_sizes(&self) -> Option<usize> {
+        match self {
+            None => Some(1),
+            Some(value) => Some(value.fast_sizes()? + 1),
+        }
+    }
 }
 
-impl<F, T> Serialize<Option<F>> for &Option<T>
+impl<'ser, F, T> Serialize<Option<F>> for &'ser Option<T>
 where
     F: Formula,
-    for<'a> &'a T: Serialize<F>,
+    &'ser T: Serialize<F>,
 {
     #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
@@ -55,10 +64,18 @@ where
             }
             Some(value) => {
                 ser.write_bytes(&[1u8])?;
-                ser.write_value::<F, &T>(value)?;
+                ser.write_value::<F, &'ser T>(value)?;
             }
         }
         ser.finish()
+    }
+
+    #[inline(always)]
+    fn fast_sizes(&self) -> Option<usize> {
+        match self {
+            None => Some(1),
+            Some(value) => Some((&value).fast_sizes()? + 1),
+        }
     }
 }
 

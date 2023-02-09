@@ -1,3 +1,5 @@
+use core::mem::size_of;
+
 use alloc::{borrow::ToOwned, string::String};
 
 use crate::{
@@ -5,11 +7,13 @@ use crate::{
     formula::Formula,
     reference::Ref,
     serialize::{Serialize, Serializer},
+    FixedUsize,
 };
 
 impl Formula for String {
     const MAX_STACK_SIZE: Option<usize> = <Ref<str> as Formula>::MAX_STACK_SIZE;
     const EXACT_SIZE: bool = <Ref<str> as Formula>::EXACT_SIZE;
+    const HEAPLESS: bool = <Ref<str> as Formula>::HEAPLESS;
 }
 
 impl<T> Serialize<String> for T
@@ -22,7 +26,15 @@ where
         T: Serialize<str>,
         S: Serializer,
     {
-        <T as Serialize<Ref<str>>>::serialize(self, ser)
+        let mut ser = ser.into();
+        ser.write_ref::<str, T>(self)?;
+        ser.finish()
+    }
+
+    #[inline(always)]
+    fn fast_sizes(&self) -> Option<usize> {
+        let size = self.fast_sizes()?;
+        Some(size + size_of::<[FixedUsize; 2]>())
     }
 }
 
@@ -32,12 +44,14 @@ where
 {
     #[inline(always)]
     fn deserialize(de: Deserializer<'de>) -> Result<T, Error> {
-        <T as Deserialize<'de, Ref<str>>>::deserialize(de)
+        let de = de.deref()?;
+        <T as Deserialize<str>>::deserialize(de)
     }
 
     #[inline(always)]
     fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), Error> {
-        <T as Deserialize<'de, Ref<str>>>::deserialize_in_place(self, de)
+        let de = de.deref()?;
+        <T as Deserialize<str>>::deserialize_in_place(self, de)
     }
 }
 
@@ -47,12 +61,14 @@ impl Serialize<str> for String {
     where
         S: Serializer,
     {
-        <&str as Serialize<str>>::serialize(&self, ser)
+        let mut ser = ser.into();
+        ser.write_bytes(self.as_bytes())?;
+        ser.finish()
     }
 
     #[inline(always)]
-    fn fast_sizes(&self) -> Option<(usize, usize)> {
-        Some((0, self.len()))
+    fn fast_sizes(&self) -> Option<usize> {
+        Some(self.len())
     }
 }
 
@@ -62,12 +78,14 @@ impl Serialize<str> for &String {
     where
         S: Serializer,
     {
-        <&str as Serialize<str>>::serialize(self, ser)
+        let mut ser = ser.into();
+        ser.write_bytes(self.as_bytes())?;
+        ser.finish()
     }
 
     #[inline(always)]
-    fn fast_sizes(&self) -> Option<(usize, usize)> {
-        Some((0, self.len()))
+    fn fast_sizes(&self) -> Option<usize> {
+        Some(self.len())
     }
 }
 

@@ -1,6 +1,7 @@
 use crate::{
     deserialize::{Deserialize, Deserializer, Error},
     formula::{repeat_size, Formula, NonRefFormula},
+    private::formula_fast_sizes,
     serialize::{Serialize, Serializer},
 };
 
@@ -10,6 +11,7 @@ where
 {
     const MAX_STACK_SIZE: Option<usize> = repeat_size(F::MAX_STACK_SIZE, N);
     const EXACT_SIZE: bool = F::EXACT_SIZE;
+    const HEAPLESS: bool = F::HEAPLESS;
 }
 
 impl<F, const N: usize> NonRefFormula for [F; N] where F: Formula {}
@@ -29,6 +31,22 @@ where
             .try_for_each(|elem: T| ser.write_value::<F, T>(elem))?;
         ser.finish()
     }
+
+    #[inline(always)]
+    fn fast_sizes(&self) -> Option<usize> {
+        if let Some(size) = formula_fast_sizes::<[F; N]>() {
+            return Some(size);
+        }
+        if N <= 4 {
+            let mut size = 0;
+            for elem in self.iter() {
+                size += elem.fast_sizes()?;
+            }
+            Some(size)
+        } else {
+            None
+        }
+    }
 }
 
 impl<'ser, F, T, const N: usize> Serialize<[F; N]> for &'ser [T; N]
@@ -45,6 +63,22 @@ where
         self.iter()
             .try_for_each(|elem: &T| ser.write_value::<F, &T>(elem))?;
         ser.finish()
+    }
+
+    #[inline(always)]
+    fn fast_sizes(&self) -> Option<usize> {
+        if let Some(size) = formula_fast_sizes::<[F; N]>() {
+            return Some(size);
+        }
+        if N <= 4 {
+            let mut size = 0;
+            for elem in self.iter() {
+                size += (&elem).fast_sizes()?;
+            }
+            Some(size)
+        } else {
+            None
+        }
     }
 }
 

@@ -10,7 +10,8 @@ pub struct Bytes;
 
 impl Formula for Bytes {
     const MAX_STACK_SIZE: Option<usize> = None;
-    const EXACT_SIZE: bool = true;
+    const EXACT_SIZE: bool = false;
+    const HEAPLESS: bool = true;
 }
 
 impl NonRefFormula for Bytes {}
@@ -27,8 +28,8 @@ impl Serialize<Bytes> for &[u8] {
     }
 
     #[inline(always)]
-    fn fast_sizes(&self) -> Option<(usize, usize)> {
-        Some((0, self.len()))
+    fn fast_sizes(&self) -> Option<usize> {
+        Some(self.len())
     }
 }
 

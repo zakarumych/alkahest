@@ -134,7 +134,9 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         max_size
                     };
 
-                    const EXACT_SIZE: ::alkahest::private::bool = #(<#all_field_types as ::alkahest::private::Formula>::EXACT_SIZE &&)* !#non_exhaustive;
+                    const EXACT_SIZE: ::alkahest::private::bool = !#non_exhaustive #(&& <#all_field_types as ::alkahest::private::Formula>::EXACT_SIZE)*;
+
+                    const HEAPLESS: ::alkahest::private::bool = !#non_exhaustive #(&& <#all_field_types as ::alkahest::private::Formula>::HEAPLESS)*;
                 }
 
                 impl #formula_impl_generics ::alkahest::private::NonRefFormula for #ident #formula_type_generics #formula_where_clause {}
@@ -315,10 +317,32 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         )*
 
                         #expand_size
-                        ::alkahest::private::sum_size(::alkahest::private::VARIANT_SIZE, max_size)
+                        ::alkahest::private::sum_size(::alkahest::private::VARIANT_SIZE_OPT, max_size)
                     };
 
-                    const EXACT_SIZE: ::alkahest::private::bool = #(#(<#all_field_types as ::alkahest::private::Formula>::EXACT_SIZE &&)*)* !#non_exhaustive;
+                    const EXACT_SIZE: ::alkahest::private::bool = !#non_exhaustive && {
+                        let mut exact = true;
+                        let mut common_size = None;
+                        #(
+                            let var_size = {
+                                #[allow(unused_mut)]
+                                let mut max_size = Some(0);
+                                #(
+                                    max_size = ::alkahest::private::sum_size(max_size, <#all_field_types as ::alkahest::private::Formula>::MAX_STACK_SIZE);
+                                )*;
+                                max_size
+                            };
+                            exact &= match (common_size, var_size) {
+                                (_, None) => false,
+                                (None, _) => true,
+                                (Some(common_size), Some(var_size)) => common_size == var_size,
+                            };
+                            common_size = var_size;
+                        )*
+                        exact
+                    };
+
+                    const HEAPLESS: ::alkahest::private::bool = !#non_exhaustive #(#(&& <#all_field_types as ::alkahest::private::Formula>::HEAPLESS)*)*;
                 }
 
                 impl #formula_impl_generics ::alkahest::private::NonRefFormula for #ident #formula_type_generics #formula_where_clause {}

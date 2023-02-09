@@ -27,7 +27,8 @@ where
     F: NonRefFormula + ?Sized,
 {
     const MAX_STACK_SIZE: Option<usize> = Some(size_of::<[FixedUsize; 2]>());
-    const EXACT_SIZE: bool = false;
+    const EXACT_SIZE: bool = true;
+    const HEAPLESS: bool = false;
 }
 
 impl<F, T> Serialize<Ref<F>> for T
@@ -44,6 +45,12 @@ where
         ser.write_ref::<F, T>(self)?;
         ser.finish()
     }
+
+    #[inline(always)]
+    fn fast_sizes(&self) -> Option<usize> {
+        let size = self.fast_sizes()?;
+        Some(size + size_of::<[FixedUsize; 2]>())
+    }
 }
 
 impl<'de, F, T> Deserialize<'de, Ref<F>> for T
@@ -56,17 +63,13 @@ where
     where
         T: Sized,
     {
-        let mut de = de.deref()?;
-        let value = de.read_value::<F, T>()?;
-        de.finish()?;
-        Ok(value)
+        let de = de.deref()?;
+        <T as Deserialize<F>>::deserialize(de)
     }
 
     #[inline(always)]
     fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), Error> {
-        let mut de = de.deref()?;
-        de.read_in_place::<F, T>(self)?;
-        de.finish()?;
-        Ok(())
+        let de = de.deref()?;
+        <T as Deserialize<F>>::deserialize_in_place(self, de)
     }
 }

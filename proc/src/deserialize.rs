@@ -601,7 +601,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                     ::alkahest::private::Result::Ok(#ident::#variant_names #bind_names)
                                 }
                             )*
-                            invalid => ::alkahest::private::Result::Err(::alkahest::private::Error::WrongVariant(invalid)),
+                            invalid => ::alkahest::private::err(::alkahest::private::Error::WrongVariant(invalid)),
                         }
                     }
 
@@ -647,7 +647,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                     ::alkahest::private::Result::Ok(())
                                 }
                             )*
-                            (invalid, _) => ::alkahest::private::Result::Err(::alkahest::private::Error::WrongVariant(invalid)),
+                            (invalid, _) => ::alkahest::private::err(::alkahest::private::Error::WrongVariant(invalid)),
                         }
                     }
                 }

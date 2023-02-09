@@ -8,8 +8,10 @@ extern crate alloc;
 
 mod array;
 mod bytes;
+mod cold;
 mod deserialize;
 mod formula;
+mod iter;
 mod lazy;
 mod option;
 mod primitive;
@@ -30,26 +32,16 @@ mod vec_deque;
 #[cfg(feature = "alloc")]
 mod string;
 
-#[cold]
-#[inline(always)]
-const fn cold() {}
-
-#[cold]
-#[inline(always)]
-const fn err<T, E>(err: E) -> Result<T, E> {
-    Err(err)
-}
-
 pub use crate::{
     bytes::Bytes,
     deserialize::{deserialize, deserialize_in_place, value_size, DeIter, Deserialize, Error},
     formula::Formula,
     lazy::Lazy,
     reference::Ref,
-    serialize::{serialize, serialize_or_size, serialized_size, Serialize},
+    serialize::{serialize, serialize_or_size, serialized_size, Serialize, Serializer},
     size::{FixedIsize, FixedUsize},
     skip::Skip,
-    slice::LazySlice,
+    slice::{LazySlice, SerIter},
 };
 
 #[cfg(feature = "derive")]
@@ -62,6 +54,7 @@ pub mod private {
     pub use {bool, u32, u8, usize, Into, Option, Result};
 
     pub use crate::{
+        cold::{cold, err},
         deserialize::{Deserialize, Deserializer, Error},
         formula::{max_size, sum_size, Formula, NonRefFormula},
         serialize::{Serialize, Serializer},
@@ -69,7 +62,8 @@ pub mod private {
 
     use core::marker::PhantomData;
 
-    pub const VARIANT_SIZE: Option<usize> = Some(core::mem::size_of::<u32>());
+    pub const VARIANT_SIZE: usize = core::mem::size_of::<u32>();
+    pub const VARIANT_SIZE_OPT: Option<usize> = Some(VARIANT_SIZE);
 
     pub struct WithFormula<F: Formula + ?Sized> {
         marker: PhantomData<fn(&F) -> &F>,
@@ -89,25 +83,33 @@ pub mod private {
         }
 
         #[inline(always)]
-        pub fn read_value<'de, T>(self, des: &mut Deserializer<'de>) -> Result<T, Error>
+        pub fn read_value<'de, T>(self, de: &mut Deserializer<'de>) -> Result<T, Error>
         where
             F: Formula,
             T: Deserialize<'de, F>,
         {
-            des.read_value::<F, T>()
+            <T as Deserialize<F>>::deserialize(de.sub::<F>())
         }
 
         #[inline(always)]
         pub fn read_in_place<'de, T>(
             self,
             place: &mut T,
-            des: &mut Deserializer<'de>,
+            de: &mut Deserializer<'de>,
         ) -> Result<(), Error>
         where
             F: Formula,
             T: Deserialize<'de, F>,
         {
-            des.read_in_place::<F, T>(place)
+            <T as Deserialize<F>>::deserialize_in_place(place, de.sub::<F>())
+        }
+
+        #[inline(always)]
+        pub fn fast_sizes<T>(self, value: &T) -> Option<usize>
+        where
+            T: Serialize<F>,
+        {
+            <T as Serialize<F>>::fast_sizes(value)
         }
     }
 
@@ -117,6 +119,17 @@ pub mod private {
     ) -> WithFormula<L> {
         WithFormula {
             marker: PhantomData,
+        }
+    }
+
+    #[inline(always)]
+    pub fn formula_fast_sizes<F>() -> Option<usize>
+    where
+        F: Formula + ?Sized,
+    {
+        match (F::EXACT_SIZE, F::HEAPLESS, F::MAX_STACK_SIZE) {
+            (true, true, Some(max_stack_size)) => Some(max_stack_size),
+            _ => None,
         }
     }
 }

@@ -431,6 +431,11 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 Some(v) => quote::quote! { :: #v },
             };
 
+            let start_stack_size = match &cfg.variant {
+                None => quote::quote! { 0usize },
+                Some(_) => quote::quote! { ::alkahest::private::VARIANT_SIZE },
+            };
+
             let mut tokens = TokenStream::new();
             {
                 let formula_path = &cfg.owned.path;
@@ -502,6 +507,24 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                             )*
                             ser.finish()
                         }
+
+                        #[inline(always)]
+                        fn fast_sizes(&self) -> ::alkahest::private::Option<::alkahest::private::usize> {
+                            if let ::alkahest::private::Option::Some(size) = ::alkahest::private::formula_fast_sizes::<#formula_path>() {
+                                return Some(size);
+                            }
+
+                            let #ident #bind_ref_names = *self;
+                            let mut __size = #start_stack_size;
+                            #(
+                                let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
+                                    #formula_path #with_variant #bind_ref_names => #bound_names,
+                                    _ => unreachable!(),
+                                });
+                                __size += with_formula.fast_sizes(#bound_names)?;
+                            )*
+                            Some(__size)
+                        }
                     }
                 });
             }
@@ -553,6 +576,24 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                 with_formula.write_value(&mut ser, #bound_names)?;
                             )*
                             ser.finish()
+                        }
+
+                        #[inline(always)]
+                        fn fast_sizes(&self) -> ::alkahest::private::Option<::alkahest::private::usize> {
+                            if let ::alkahest::private::Option::Some(size) = ::alkahest::private::formula_fast_sizes::<#formula_path>() {
+                                return Some(size);
+                            }
+                            
+                            let #ident #bind_ref_names = **self;
+                            let mut __size = #start_stack_size;
+                            #(
+                                let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
+                                    #formula_path #with_variant #bind_ref_names => #bound_names,
+                                    _ => unreachable!(),
+                                });
+                                __size += with_formula.fast_sizes(&#bound_names)?;
+                            )*
+                            Some(__size)
                         }
                     }
                 });
@@ -754,6 +795,31 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                 )*
                             }
                         }
+
+                        #[inline(always)]
+                        fn fast_sizes(&self) -> ::alkahest::private::Option<::alkahest::private::usize> {
+                            if let ::alkahest::private::Option::Some(size) = ::alkahest::private::formula_fast_sizes::<#formula_path>() {
+                                return Some(size);
+                            }
+
+                            let mut __size = ::alkahest::private::VARIANT_SIZE;
+
+                            match *self {
+                                #(
+                                    #ident::#variant_names #bind_ref_names => {
+                                        #(
+                                            let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
+                                                #[allow(unused_variables)]
+                                                #formula_path::#variant_names #bind_ref_names => #bound_names,
+                                                _ => unreachable!(),
+                                            });
+                                            __size += with_formula.fast_sizes(#bound_names)?;
+                                        )*
+                                    }
+                                )*
+                            }
+                            Some(__size)
+                        }
                     }
                 });
             }
@@ -801,6 +867,31 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                     }
                                 )*
                             }
+                        }
+
+                        #[inline(always)]
+                        fn fast_sizes(&self) -> ::alkahest::private::Option<::alkahest::private::usize> {
+                            if let ::alkahest::private::Option::Some(size) = ::alkahest::private::formula_fast_sizes::<#formula_path>() {
+                                return Some(size);
+                            }
+                            
+                            let mut __size = ::alkahest::private::VARIANT_SIZE;
+
+                            match **self {
+                                #(
+                                    #ident::#variant_names #bind_ref_names => {
+                                        #(
+                                            let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
+                                                #[allow(unused_variables)]
+                                                #formula_path::#variant_names #bind_ref_names => #bound_names,
+                                                _ => unreachable!(),
+                                            });
+                                            __size += with_formula.fast_sizes(&#bound_names)?;
+                                        )*
+                                    }
+                                )*
+                            }
+                            Some(__size)
                         }
                     }
                 });

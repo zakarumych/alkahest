@@ -1,7 +1,7 @@
 use core::{iter::FusedIterator, marker::PhantomData, mem::size_of, str::Utf8Error};
 
 use crate::{
-    err,
+    cold::err,
     formula::{Formula, NonRefFormula},
     size::{FixedIsizeType, FixedUsize, FixedUsizeType},
 };
@@ -80,7 +80,7 @@ impl<'de> Deserializer<'de> {
 
     #[must_use]
     #[inline(always)]
-    fn sub<F>(&mut self) -> Self
+    pub(crate) fn sub<F>(&mut self) -> Self
     where
         F: Formula + ?Sized,
     {
@@ -170,6 +170,7 @@ impl<'de> Deserializer<'de> {
         T: Deserialize<'de, F>,
     {
         let size = F::MAX_STACK_SIZE.expect("Sized formula should have some MAX_STACK_SIZE");
+        #[cfg(debug_assertions)]
         if self.stack % size != 0 {
             return err(Error::WrongLength);
         }
@@ -177,6 +178,23 @@ impl<'de> Deserializer<'de> {
         Ok(DeIter {
             input: self.input,
             count,
+            marker: PhantomData,
+        })
+    }
+
+    #[inline(always)]
+    pub fn into_iter_hint<F, T>(self, len: usize) -> Result<DeIter<'de, F, T>, Error>
+    where
+        F: Formula,
+        T: Deserialize<'de, F>,
+    {
+        let size = F::MAX_STACK_SIZE.expect("Sized formula should have some MAX_STACK_SIZE");
+        if self.stack != len * size {
+            return err(Error::WrongLength);
+        }
+        Ok(DeIter {
+            input: self.input,
+            count: len,
             marker: PhantomData,
         })
     }

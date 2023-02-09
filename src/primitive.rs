@@ -1,7 +1,7 @@
 use core::{borrow::Borrow, mem::size_of};
 
 use crate::{
-    cold,
+    cold::cold,
     deserialize::{Deserialize, Deserializer, Error},
     formula::{Formula, NonRefFormula},
     serialize::{Serialize, Serializer},
@@ -19,6 +19,7 @@ macro_rules! impl_primitive {
         impl Formula for $ty {
             const MAX_STACK_SIZE: Option<usize> = Some(size_of::<$ty>());
             const EXACT_SIZE: bool = true;
+            const HEAPLESS: bool = true;
         }
 
         impl NonRefFormula for $ty {}
@@ -35,6 +36,11 @@ macro_rules! impl_primitive {
                 let mut ser = ser.into();
                 ser.write_bytes(&self.borrow().to_le_bytes())?;
                 ser.finish()
+            }
+
+            #[inline(always)]
+            fn fast_sizes(&self) -> Option<usize> {
+                Some(size_of::<$ty>())
             }
         }
 
@@ -88,6 +94,7 @@ impl_primitive! {
 impl Formula for bool {
     const MAX_STACK_SIZE: Option<usize> = Some(1);
     const EXACT_SIZE: bool = true;
+    const HEAPLESS: bool = true;
 }
 
 impl NonRefFormula for bool {}
@@ -102,6 +109,11 @@ where
         S: Serializer,
     {
         <u8 as Serialize<u8>>::serialize(*self.borrow() as u8, ser)
+    }
+
+    #[inline(always)]
+    fn fast_sizes(&self) -> Option<usize> {
+        Some(size_of::<u8>())
     }
 }
 

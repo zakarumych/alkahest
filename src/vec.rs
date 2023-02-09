@@ -1,3 +1,5 @@
+use core::mem::size_of;
+
 use alloc::vec::Vec;
 
 use crate::{
@@ -6,6 +8,8 @@ use crate::{
     formula::Formula,
     reference::Ref,
     serialize::{Serialize, Serializer},
+    slice::{default_iter_fast_sizes_by_ref, default_iter_fast_sizes_owned},
+    FixedUsize,
 };
 
 impl<F> Formula for Vec<F>
@@ -14,6 +18,7 @@ where
 {
     const MAX_STACK_SIZE: Option<usize> = <Ref<[F]> as Formula>::MAX_STACK_SIZE;
     const EXACT_SIZE: bool = <Ref<[F]> as Formula>::EXACT_SIZE;
+    const HEAPLESS: bool = <Ref<[F]> as Formula>::HEAPLESS;
 }
 
 impl<F, T> Serialize<Vec<F>> for T
@@ -27,7 +32,15 @@ where
         T: Serialize<[F]>,
         S: Serializer,
     {
-        <T as Serialize<Ref<[F]>>>::serialize(self, ser)
+        let mut ser = ser.into();
+        ser.write_ref::<[F], T>(self)?;
+        ser.finish()
+    }
+
+    #[inline(always)]
+    fn fast_sizes(&self) -> Option<usize> {
+        let size = self.fast_sizes()?;
+        Some(size + size_of::<[FixedUsize; 2]>())
     }
 }
 
@@ -38,24 +51,73 @@ where
 {
     #[inline(always)]
     fn deserialize(de: Deserializer<'de>) -> Result<T, Error> {
-        <T as Deserialize<'de, Ref<[F]>>>::deserialize(de)
+        let de = de.deref()?;
+        <T as Deserialize<[F]>>::deserialize(de)
     }
 
     #[inline(always)]
     fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), Error> {
-        <T as Deserialize<'de, Ref<[F]>>>::deserialize_in_place(self, de)
+        let de = de.deref()?;
+        <T as Deserialize<[F]>>::deserialize_in_place(self, de)
     }
 }
 
-impl<'de, F, T, const N: usize> Deserialize<'de, [F; N]> for Vec<T>
+impl<F, T> Serialize<[F]> for Vec<T>
+where
+    F: Formula,
+    T: Serialize<F>,
+{
+    #[inline(always)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut ser = ser.into();
+        self.into_iter()
+            .try_for_each(|elem| ser.write_value::<F, T>(elem))?;
+        ser.finish()
+    }
+
+    #[inline(always)]
+    fn fast_sizes(&self) -> Option<usize> {
+        default_iter_fast_sizes_by_ref::<F, T, _>(self.iter())
+    }
+}
+
+impl<'ser, F, T> Serialize<[F]> for &'ser Vec<T>
+where
+    F: Formula,
+    &'ser T: Serialize<F>,
+{
+    #[inline(always)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut ser = ser.into();
+        self.into_iter()
+            .try_for_each(|elem| ser.write_value::<F, &'ser T>(elem))?;
+        ser.finish()
+    }
+
+    #[inline(always)]
+    fn fast_sizes(&self) -> Option<usize> {
+        default_iter_fast_sizes_owned::<F, &'ser T, _>(self.iter())
+    }
+}
+
+impl<'de, F, T> Deserialize<'de, [F]> for Vec<T>
 where
     F: Formula,
     T: Deserialize<'de, F>,
 {
     #[inline(always)]
     fn deserialize(de: Deserializer<'de>) -> Result<Self, Error> {
-        let mut vec = Vec::new();
-        Deserialize::<[F]>::deserialize_in_place(&mut vec, de)?;
+        let iter = de.into_iter::<F, T>()?;
+        let mut vec = Vec::with_capacity(iter.len());
+        for elem in iter {
+            vec.push(elem?);
+        }
         Ok(vec)
     }
 
@@ -70,21 +132,24 @@ where
     }
 }
 
-impl<'de, F, T> Deserialize<'de, [F]> for Vec<T>
+impl<'de, F, T, const N: usize> Deserialize<'de, [F; N]> for Vec<T>
 where
     F: Formula,
     T: Deserialize<'de, F>,
 {
     #[inline(always)]
     fn deserialize(de: Deserializer<'de>) -> Result<Self, Error> {
-        let mut vec = Vec::new();
-        Deserialize::<[F]>::deserialize_in_place(&mut vec, de)?;
+        let iter = de.into_iter_hint::<F, T>(N)?;
+        let mut vec = Vec::with_capacity(iter.len());
+        for elem in iter {
+            vec.push(elem?);
+        }
         Ok(vec)
     }
 
     #[inline(always)]
     fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), Error> {
-        let iter = de.into_iter::<F, T>()?;
+        let iter = de.into_iter_hint::<F, T>(N)?;
         self.reserve(iter.len());
         for elem in iter {
             self.push(elem?);
@@ -99,12 +164,12 @@ impl Serialize<Bytes> for Vec<u8> {
     where
         S: Serializer,
     {
-        Serialize::<Bytes>::serialize(&self, ser)
+        Serialize::<Bytes>::serialize(&*self, ser)
     }
 
     #[inline(always)]
-    fn fast_sizes(&self) -> Option<(usize, usize)> {
-        Some((0, self.len()))
+    fn fast_sizes(&self) -> Option<usize> {
+        Some(self.len())
     }
 }
 
@@ -115,22 +180,22 @@ impl Serialize<Bytes> for &Vec<u8> {
         S: Serializer,
     {
         let mut ser = ser.into();
-        ser.write_bytes(&self)?;
+        ser.write_bytes(self)?;
         ser.finish()
     }
 
     #[inline(always)]
-    fn fast_sizes(&self) -> Option<(usize, usize)> {
-        Some((0, self.len()))
+    fn fast_sizes(&self) -> Option<usize> {
+        Some(self.len())
     }
 }
 
 impl<'de> Deserialize<'de, Bytes> for Vec<u8> {
     #[inline(always)]
     fn deserialize(de: Deserializer) -> Result<Self, Error> {
-        let mut deque = Vec::new();
-        deque.extend(de.read_all_bytes());
-        Ok(deque)
+        let mut vec = Vec::new();
+        vec.extend(de.read_all_bytes());
+        Ok(vec)
     }
 
     #[inline(always)]

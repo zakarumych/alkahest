@@ -1,8 +1,8 @@
 use core::{mem::size_of, num::TryFromIntError};
 
 use crate::{
+    cold::err,
     deserialize::{Deserialize, Deserializer, Error},
-    err,
     formula::{Formula, NonRefFormula},
     serialize::{Serialize, Serializer},
 };
@@ -92,6 +92,7 @@ impl From<FixedUsize> for FixedUsizeType {
 impl Formula for FixedUsize {
     const MAX_STACK_SIZE: Option<usize> = Some(size_of::<FixedUsizeType>());
     const EXACT_SIZE: bool = true;
+    const HEAPLESS: bool = true;
 }
 
 impl NonRefFormula for FixedUsize {}
@@ -104,9 +105,14 @@ impl Serialize<FixedUsize> for FixedUsize {
     {
         <FixedUsizeType as Serialize<FixedUsizeType>>::serialize(self.0, ser)
     }
+
+    #[inline(always)]
+    fn fast_sizes(&self) -> Option<usize> {
+        <FixedUsizeType as Serialize<FixedUsizeType>>::fast_sizes(&self.0)
+    }
 }
 
-impl Serialize<FixedUsize> for &'_ FixedUsize {
+impl Serialize<FixedUsize> for &FixedUsize {
     #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
@@ -114,12 +120,19 @@ impl Serialize<FixedUsize> for &'_ FixedUsize {
     {
         <FixedUsizeType as Serialize<FixedUsizeType>>::serialize(self.0, ser)
     }
+
+    #[inline(always)]
+    fn fast_sizes(&self) -> Option<usize> {
+        <FixedUsizeType as Serialize<FixedUsizeType>>::fast_sizes(&self.0)
+    }
 }
 
 impl Deserialize<'_, FixedUsize> for FixedUsize {
     #[inline(always)]
     fn deserialize(de: Deserializer) -> Result<Self, Error> {
         let value = <FixedUsizeType as Deserialize<FixedUsizeType>>::deserialize(de)?;
+
+        #[cfg(debug_assertions)]
         if value > usize::MAX as FixedUsizeType {
             return err(Error::InvalidUsize(value));
         }
@@ -188,6 +201,7 @@ impl From<FixedIsize> for FixedIsizeType {
 impl Formula for FixedIsize {
     const MAX_STACK_SIZE: Option<usize> = Some(size_of::<FixedIsizeType>());
     const EXACT_SIZE: bool = true;
+    const HEAPLESS: bool = true;
 }
 
 impl NonRefFormula for FixedIsize {}
@@ -200,9 +214,14 @@ impl Serialize<FixedIsize> for FixedIsize {
     {
         <FixedIsizeType as Serialize<FixedIsizeType>>::serialize(self.0, ser)
     }
+
+    #[inline(always)]
+    fn fast_sizes(&self) -> Option<usize> {
+        <FixedIsizeType as Serialize<FixedIsizeType>>::fast_sizes(&self.0)
+    }
 }
 
-impl Serialize<FixedIsize> for &'_ FixedIsize {
+impl Serialize<FixedIsize> for &FixedIsize {
     #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
@@ -210,12 +229,19 @@ impl Serialize<FixedIsize> for &'_ FixedIsize {
     {
         <FixedIsizeType as Serialize<FixedIsizeType>>::serialize(self.0, ser)
     }
+
+    #[inline(always)]
+    fn fast_sizes(&self) -> Option<usize> {
+        <FixedIsizeType as Serialize<FixedIsizeType>>::fast_sizes(&self.0)
+    }
 }
 
 impl Deserialize<'_, FixedIsize> for FixedIsize {
     #[inline(always)]
     fn deserialize(de: Deserializer) -> Result<Self, Error> {
         let value = <FixedIsizeType as Deserialize<FixedIsizeType>>::deserialize(de)?;
+
+        #[cfg(debug_assertions)]
         if value > usize::MAX as FixedIsizeType {
             return err(Error::InvalidIsize(value));
         }

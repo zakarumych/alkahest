@@ -7,6 +7,7 @@ use crate::{
 impl Formula for () {
     const MAX_STACK_SIZE: Option<usize> = Some(0);
     const EXACT_SIZE: bool = true;
+    const HEAPLESS: bool = true;
 }
 
 impl NonRefFormula for () {}
@@ -19,6 +20,11 @@ impl Serialize<()> for () {
     {
         ser.into().finish()
     }
+
+    #[inline(always)]
+    fn fast_sizes(&self) -> Option<usize> {
+        Some(0)
+    }
 }
 
 impl Serialize<()> for &'_ () {
@@ -28,6 +34,11 @@ impl Serialize<()> for &'_ () {
         S: Serializer,
     {
         ser.into().finish()
+    }
+
+    #[inline(always)]
+    fn fast_sizes(&self) -> Option<usize> {
+        Some(0)
     }
 }
 
@@ -58,6 +69,7 @@ macro_rules! impl_for_tuple {
             };
 
             const EXACT_SIZE: bool = $(<$a as Formula>::EXACT_SIZE &&)* <$at as Formula>::EXACT_SIZE;
+            const HEAPLESS: bool = $(<$a as Formula>::HEAPLESS &&)* <$at as Formula>::HEAPLESS;
         }
 
         impl<$($a,)* $at> NonRefFormula for ($($a,)* $at,)
@@ -66,6 +78,7 @@ macro_rules! impl_for_tuple {
             $at: Formula + ?Sized,
         {
         }
+
 
         impl<$($a,)* $at, $($b,)* $bt> Serialize<($($a,)* $at,)> for ($($b,)* $bt,)
         where
@@ -89,6 +102,17 @@ macro_rules! impl_for_tuple {
                 )*
                 ser.write_value::<$at, $bt>($bt)?;
                 ser.finish()
+            }
+
+            #[inline(always)]
+            fn fast_sizes(&self) -> Option<usize> {
+                #![allow(non_snake_case, unused_mut)]
+                let mut size = 0;
+                let ($($b,)* $bt,) = self;
+                $(
+                    size += <$b as Serialize<$a>>::fast_sizes($b)?;
+                )*
+                Some(size + $bt.fast_sizes()?)
             }
         }
 
@@ -115,6 +139,17 @@ macro_rules! impl_for_tuple {
                 )*
                 ser.write_value::<$at, &$bt>($bt)?;
                 ser.finish()
+            }
+
+            #[inline(always)]
+            fn fast_sizes(&self) -> Option<usize> {
+                #![allow(non_snake_case, unused_mut)]
+                let mut size = 0;
+                let ($($b,)* $bt,) = self;
+                $(
+                    size += <&'ser $b as Serialize<$a>>::fast_sizes(&$b)?;
+                )*
+                Some(size + $bt.fast_sizes()?)
             }
         }
 
