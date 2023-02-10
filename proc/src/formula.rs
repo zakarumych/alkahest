@@ -1,7 +1,9 @@
+use std::collections::HashSet;
+
 use proc_macro2::TokenStream;
 use syn::spanned::Spanned;
 
-use crate::attrs::parse_attributes;
+use crate::{attrs::parse_attributes, filter_type_param, is_generic_ty};
 
 pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
     let input = syn::parse::<syn::DeriveInput>(input)?;
@@ -38,13 +40,17 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
         }
         syn::Data::Struct(data) => {
             let all_field_types: Vec<_> = data.fields.iter().map(|field| &field.ty).collect();
+            let mut all_generic_field_types: HashSet<_> = all_field_types.iter().copied().collect();
+            all_generic_field_types
+                .retain(|ty| is_generic_ty(ty, filter_type_param(input.generics.params.iter())));
 
             let mut formula_generics = input.generics.clone();
-            if !all_field_types.is_empty() && !input.generics.params.is_empty() {
-                let predicates = all_field_types.iter().map(|ty| -> syn::WherePredicate {
-                    syn::parse_quote_spanned! { ty.span() => #ty: ::alkahest::private::Formula }
-                });
-
+            if !all_generic_field_types.is_empty() {
+                let predicates = all_generic_field_types
+                    .iter()
+                    .map(|ty| -> syn::WherePredicate {
+                        syn::parse_quote_spanned! { ty.span() => #ty: ::alkahest::private::Formula }
+                    });
                 let where_clause = formula_generics.make_where_clause();
                 where_clause.predicates.extend(predicates);
             }
@@ -83,23 +89,19 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 quote::quote! {}
             };
 
-            let construct_fields = match &data.fields {
+            let touch_fields = match &data.fields {
                 syn::Fields::Unit => quote::quote! {},
                 syn::Fields::Unnamed(fields) => {
-                    let fields = (0..fields.unnamed.len()).map(|_| quote::quote! { return });
+                    let fields = (0..fields.unnamed.len()).map(|_| quote::quote! { _ });
                     quote::quote! { ( #(#fields),* ) }
                 }
                 syn::Fields::Named(fields) => {
                     let fields = fields.named.iter().map(|field| {
                         let ident = &field.ident;
-                        quote::quote! { #ident: return }
+                        quote::quote! { #ident: _ }
                     });
                     quote::quote! { { #(#fields),* } }
                 }
-            };
-
-            let construct_value = quote::quote! {
-                #ident #construct_fields;
             };
 
             Ok(quote::quote! {
@@ -118,8 +120,8 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                     #[doc(hidden)]
                     #[allow(dead_code)]
                     #[allow(unreachable_code)]
-                    fn __alkahest__construct_value() {
-                        #construct_value
+                    fn __alkahest_touch_fields(&self) {
+                        let Self #touch_fields = self;
                     }
                 }
 
@@ -155,14 +157,19 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 .flat_map(|variant| variant.fields.iter().map(|field| &field.ty))
                 .collect();
 
+            let mut all_generic_field_types: HashSet<_> =
+                all_field_types_flat.iter().copied().collect();
+            all_generic_field_types
+                .retain(|ty| is_generic_ty(ty, filter_type_param(input.generics.params.iter())));
+
             let mut formula_generics = input.generics.clone();
-            if !all_field_types_flat.is_empty() && !input.generics.params.is_empty() {
-                let predicates = all_field_types_flat
+
+            if !all_generic_field_types.is_empty() {
+                let predicates = all_generic_field_types
                     .iter()
                     .map(|ty| -> syn::WherePredicate {
                         syn::parse_quote_spanned! { ty.span() => #ty: ::alkahest::private::Formula }
                     });
-
                 let where_clause = formula_generics.make_where_clause();
                 where_clause.predicates.extend(predicates);
             }

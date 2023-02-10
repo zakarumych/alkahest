@@ -34,7 +34,9 @@ mod string;
 
 pub use crate::{
     bytes::Bytes,
-    deserialize::{deserialize, deserialize_in_place, value_size, DeIter, Deserialize, Error},
+    deserialize::{
+        deserialize, deserialize_in_place, value_size, DeIter, Deserialize, Deserializer, Error,
+    },
     formula::Formula,
     lazy::Lazy,
     reference::Ref,

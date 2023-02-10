@@ -1,6 +1,8 @@
+use std::collections::HashSet;
+
 use proc_macro2::TokenStream;
 
-use crate::attrs::{parse_attributes, path_make_expr_style, Args, Formula};
+use crate::{attrs::{parse_attributes, path_make_expr_style, Args, Formula}, is_generic_ty, filter_type_param};
 
 struct Config {
     reference: Option<Formula>,
@@ -57,47 +59,46 @@ impl Config {
             (None, None) => {
                 // Add predicates that fields implement
                 // `T: Formula + Serialize<T>`
-                let predicates = data.fields.iter().map(|field| -> syn::WherePredicate {
-                        let ty = &field.ty;
-                        syn::parse_quote! { #ty: ::alkahest::private::Formula }
-                    }).chain(data.fields.iter().map(|field| -> syn::WherePredicate {
-                        let ty = &field.ty;
-                        syn::parse_quote! { for<'ser> &'ser #ty: ::alkahest::private::Serialize<#ty> }
-                    }))
-                    .collect();
-
-                let generics = syn::Generics {
+                // for fields where generics are involved.
+                let mut generics = syn::Generics {
                     lt_token: None,
                     params: Default::default(),
                     gt_token: None,
-                    where_clause: Some(syn::WhereClause {
-                        where_token: Default::default(),
-                        predicates,
-                    }),
+                    where_clause: None,
                 };
+
+                let mut all_generic_field_types: HashSet<_> = data.fields.iter().map(|f| &f.ty).collect();
+                all_generic_field_types.retain(|ty| is_generic_ty(ty, filter_type_param(generics.params.iter())));
+                
+                if !all_generic_field_types.is_empty() {
+                    let predicates = all_generic_field_types.iter().map(|ty| -> syn::WherePredicate {
+                        syn::parse_quote! { #ty: ::alkahest::private::Formula }
+                    }).chain(all_generic_field_types.iter().map(|ty| -> syn::WherePredicate {
+                        syn::parse_quote! { for<'ser> &'ser #ty: ::alkahest::private::Serialize<#ty> }
+                    }));
+                    generics.make_where_clause().predicates.extend(predicates);
+                }
 
                 let reference = Formula {
                     path: path_make_expr_style(syn::parse_quote!(#ident #type_generics)),
                     generics,
                 };
 
-                // Add predicates that fields implement
-                // `T: Formula` and `T: Serialize<T>`
-                let predicates = data.fields.iter().map(|field| -> syn::WherePredicate {
-                        let ty = &field.ty;
-                        syn::parse_quote! { #ty: ::alkahest::private::Formula + ::alkahest::private::Serialize<#ty> }
-                    })
-                    .collect();
-
-                let generics = syn::Generics {
+                let mut generics = syn::Generics {
                     lt_token: None,
                     params: Default::default(),
                     gt_token: None,
-                    where_clause: Some(syn::WhereClause {
-                        where_token: Default::default(),
-                        predicates,
-                    }),
+                    where_clause: None,
                 };
+
+                if !all_generic_field_types.is_empty() {
+                    let predicates = all_generic_field_types.iter().map(|ty| -> syn::WherePredicate {
+                        syn::parse_quote! { #ty: ::alkahest::private::Formula }
+                    }).chain(all_generic_field_types.iter().map(|ty| -> syn::WherePredicate {
+                        syn::parse_quote! { #ty: ::alkahest::private::Formula + ::alkahest::private::Serialize<#ty> }
+                    }));
+                    generics.make_where_clause().predicates.extend(predicates);
+                }
 
                 let owned = Formula {
                     path: syn::parse_quote!(Self),
@@ -114,28 +115,25 @@ impl Config {
             (None, Some(None)) => {
                 // Add predicates that fields implement
                 // `T: Formula` and `T: Serialize<T>`
-                let predicates = data
-                    .fields
-                    .iter()
-                    .map(|field| -> syn::WherePredicate {
-                        let ty = &field.ty;
-                        syn::parse_quote! { #ty: ::alkahest::private::Formula }
-                    })
-                    .chain(data.fields.iter().map(|field| -> syn::WherePredicate {
-                        let ty = &field.ty;
-                        syn::parse_quote! { #ty: ::alkahest::private::Serialize<#ty> }
-                    }))
-                    .collect();
-
-                let generics = syn::Generics {
+                // for fields where generics are involved.
+                let mut generics = syn::Generics {
                     lt_token: None,
                     params: Default::default(),
                     gt_token: None,
-                    where_clause: Some(syn::WhereClause {
-                        where_token: Default::default(),
-                        predicates,
-                    }),
+                    where_clause: None,
                 };
+                
+                let mut all_generic_field_types: HashSet<_> = data.fields.iter().map(|f| &f.ty).collect();
+                all_generic_field_types.retain(|ty| is_generic_ty(ty, filter_type_param(generics.params.iter())));
+
+                if !all_generic_field_types.is_empty() {
+                    let predicates = all_generic_field_types.iter().map(|ty| -> syn::WherePredicate {
+                        syn::parse_quote! { #ty: ::alkahest::private::Formula }
+                    }).chain(all_generic_field_types.iter().map(|ty| -> syn::WherePredicate {
+                        syn::parse_quote! { #ty: ::alkahest::private::Formula + ::alkahest::private::Serialize<#ty> }
+                    }));
+                    generics.make_where_clause().predicates.extend(predicates);
+                }
 
                 Config {
                     reference: None,
@@ -213,47 +211,48 @@ impl Config {
             (None, None) => {
                 // Add predicates that fields implement
                 // `T: Formula + Serialize<T>`
-                let predicates = all_fields.clone().map(|field| -> syn::WherePredicate {
-                        let ty = &field.ty;
-                        syn::parse_quote! { #ty: ::alkahest::private::Formula }
-                    }).chain(all_fields.clone().map(|field| -> syn::WherePredicate {
-                        let ty = &field.ty;
-                        syn::parse_quote! { for<'ser> &'ser #ty: ::alkahest::private::Serialize<<#ty as ::alkahest::private::Formula>> }
-                    }))
-                    .collect();
+                // for fields where generics are involved.
 
-                let generics = syn::Generics {
+                let mut generics = syn::Generics {
                     lt_token: None,
                     params: Default::default(),
                     gt_token: None,
-                    where_clause: Some(syn::WhereClause {
-                        where_token: Default::default(),
-                        predicates,
-                    }),
+                    where_clause: None,
                 };
+
+                let mut all_generic_field_types: HashSet<_> = all_fields.map(|f| &f.ty).collect();
+                all_generic_field_types.retain(|ty| is_generic_ty(ty, filter_type_param(generics.params.iter())));
+                
+                if !all_generic_field_types.is_empty() {
+                    let predicates = all_generic_field_types.iter().map(|ty| -> syn::WherePredicate {
+                        syn::parse_quote! { #ty: ::alkahest::private::Formula }
+                    }).chain(all_generic_field_types.iter().map(|ty| -> syn::WherePredicate {
+                        syn::parse_quote! { for<'ser> &'ser #ty: ::alkahest::private::Serialize<#ty> }
+                    }));
+                    generics.make_where_clause().predicates.extend(predicates);
+                }
 
                 let reference = Formula {
                     path: path_make_expr_style(syn::parse_quote!(#ident #type_generics)),
                     generics,
                 };
 
-                // Add predicates that fields implement
-                // `T: Formula` and `T: Serialize<T>`
-                let predicates = all_fields.clone().map(|field| -> syn::WherePredicate {
-                        let ty = &field.ty;
-                        syn::parse_quote! { #ty: ::alkahest::private::Formula + ::alkahest::private::Serialize<<#ty as ::alkahest::private::Formula>> }
-                    })
-                    .collect();
-
-                let generics = syn::Generics {
+                
+                let mut generics = syn::Generics {
                     lt_token: None,
                     params: Default::default(),
                     gt_token: None,
-                    where_clause: Some(syn::WhereClause {
-                        where_token: Default::default(),
-                        predicates,
-                    }),
+                    where_clause: None,
                 };
+
+                if !all_generic_field_types.is_empty() {
+                    let predicates = all_generic_field_types.iter().map(|ty| -> syn::WherePredicate {
+                        syn::parse_quote! { #ty: ::alkahest::private::Formula }
+                    }).chain(all_generic_field_types.iter().map(|ty| -> syn::WherePredicate {
+                        syn::parse_quote! { #ty: ::alkahest::private::Formula + ::alkahest::private::Serialize<#ty> }
+                    }));
+                    generics.make_where_clause().predicates.extend(predicates);
+                }
 
                 let owned = Formula {
                     path: syn::parse_quote!(Self),
