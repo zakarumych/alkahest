@@ -458,7 +458,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                     Some(v) => {
                         let variant_name_idx =
                             quote::format_ident!("__ALKAHEST_FORMULA_VARIANT_{}_IDX", v);
-                        quote::quote! { ser.write_value::<u32, u32>(#formula_path::#variant_name_idx)?; }
+                        quote::quote! { ser.write_value::<u32, u32>(#formula_path::#variant_name_idx, false)?; }
                     }
                 };
 
@@ -497,12 +497,15 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
 
                             let mut ser = ser.into();
                             #write_variant
+
+                            let mut field_idx = 0;
                             #(
+                                field_idx += 1;
                                 let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
                                     #formula_path #with_variant #bind_ref_names => #bound_names,
                                     _ => unreachable!(),
                                 });
-                                with_formula.write_value(&mut ser, #bound_names)?;
+                                with_formula.write_value(&mut ser, #bound_names, #field_count == field_idx)?;
                             )*
                             ser.finish()
                         }
@@ -515,12 +518,14 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
 
                             let #ident #bind_ref_names = *self;
                             let mut __size = #start_stack_size;
+                            let mut field_idx = 0;
                             #(
+                                field_idx += 1;
                                 let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
                                     #formula_path #with_variant #bind_ref_names => #bound_names,
                                     _ => unreachable!(),
                                 });
-                                __size += with_formula.fast_sizes(#bound_names)?;
+                                __size += with_formula.fast_sizes(#bound_names, #field_count == field_idx)?;
                             )*
                             Some(__size)
                         }
@@ -537,7 +542,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                     Some(v) => {
                         let variant_name_idx =
                             quote::format_ident!("__ALKAHEST_FORMULA_VARIANT_{}_IDX", v);
-                        quote::quote! { ser.write_value::<u32, u32>(#formula_path::#variant_name_idx)?; }
+                        quote::quote! { ser.write_value::<u32, u32>(#formula_path::#variant_name_idx, false)?; }
                     }
                 };
 
@@ -567,12 +572,15 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
 
                             let mut ser = ser.into();
                             #write_variant
+
+                            let mut field_idx = 0;
                             #(
+                                field_idx += 1;
                                 let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
                                     #formula_path #with_variant #bind_ref_names => #bound_names,
                                     _ => unreachable!(),
                                 });
-                                with_formula.write_value(&mut ser, #bound_names)?;
+                                with_formula.write_value(&mut ser, #bound_names, #field_count == field_idx)?;
                             )*
                             ser.finish()
                         }
@@ -585,12 +593,14 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                             
                             let #ident #bind_ref_names = **self;
                             let mut __size = #start_stack_size;
+                            let mut field_idx = 0;
                             #(
+                                field_idx += 1;
                                 let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
                                     #formula_path #with_variant #bind_ref_names => #bound_names,
                                     _ => unreachable!(),
                                 });
-                                __size += with_formula.fast_sizes(&#bound_names)?;
+                                __size += with_formula.fast_sizes(&#bound_names, #field_count == field_idx)?;
                             )*
                             Some(__size)
                         }
@@ -780,14 +790,16 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                 #(
                                     #ident::#variant_names #bind_names => {
                                         let mut ser = ser.into();
-                                        ser.write_value::<u32, u32>(#formula_path::#variant_name_ids)?;
+                                        ser.write_value::<u32, u32>(#formula_path::#variant_name_ids, false)?;
+                                        let mut field_idx = 0;
                                         #(
+                                            field_idx += 1;
                                             let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
                                                 #[allow(unused_variables)]
                                                 #formula_path::#variant_names #bind_ref_names => #bound_names,
                                                 _ => unreachable!(),
                                             });
-                                            with_formula.write_value(&mut ser, #bound_names)?;
+                                            with_formula.write_value(&mut ser, #bound_names, #field_counts == field_idx)?;
                                         )*
                                         ser.finish()
                                     }
@@ -806,13 +818,15 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                             match *self {
                                 #(
                                     #ident::#variant_names #bind_ref_names => {
+                                        let mut field_idx = 0;
                                         #(
+                                            field_idx += 1;
                                             let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
                                                 #[allow(unused_variables)]
                                                 #formula_path::#variant_names #bind_ref_names => #bound_names,
                                                 _ => unreachable!(),
                                             });
-                                            __size += with_formula.fast_sizes(#bound_names)?;
+                                            __size += with_formula.fast_sizes(#bound_names, #field_counts == field_idx)?;
                                         )*
                                     }
                                 )*
@@ -853,14 +867,16 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                 #(
                                     #ident::#variant_names #bind_ref_names => {
                                         let mut ser = ser.into();
-                                        ser.write_value::<u32, u32>(#formula_path::#variant_name_ids)?;
+                                        ser.write_value::<u32, u32>(#formula_path::#variant_name_ids, false)?;
+                                        let mut field_idx = 0;
                                         #(
+                                            field_idx += 1;
                                             let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
                                                 #[allow(unused_variables)]
                                                 #formula_path::#variant_names #bind_ref_names => #bound_names,
                                                 _ => unreachable!(),
                                             });
-                                            with_formula.write_value(&mut ser, #bound_names)?;
+                                            with_formula.write_value(&mut ser, #bound_names, #field_counts == field_idx)?;
                                         )*
                                         ser.finish()
                                     }
@@ -879,13 +895,15 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                             match **self {
                                 #(
                                     #ident::#variant_names #bind_ref_names => {
+                                        let mut field_idx = 0;
                                         #(
+                                            field_idx += 1;
                                             let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
                                                 #[allow(unused_variables)]
                                                 #formula_path::#variant_names #bind_ref_names => #bound_names,
                                                 _ => unreachable!(),
                                             });
-                                            __size += with_formula.fast_sizes(&#bound_names)?;
+                                            __size += with_formula.fast_sizes(&#bound_names, #field_counts == field_idx)?;
                                         )*
                                     }
                                 )*

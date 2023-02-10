@@ -3,7 +3,7 @@ use core::{mem::size_of, num::TryFromIntError};
 use crate::{
     cold::err,
     deserialize::{Deserialize, Deserializer, Error},
-    formula::{Formula, NonRefFormula},
+    formula::{BareFormula, Formula},
     serialize::{Serialize, Serializer},
 };
 
@@ -95,7 +95,7 @@ impl Formula for FixedUsize {
     const HEAPLESS: bool = true;
 }
 
-impl NonRefFormula for FixedUsize {}
+impl BareFormula for FixedUsize {}
 
 impl Serialize<FixedUsize> for FixedUsize {
     #[inline(always)]
@@ -204,7 +204,7 @@ impl Formula for FixedIsize {
     const HEAPLESS: bool = true;
 }
 
-impl NonRefFormula for FixedIsize {}
+impl BareFormula for FixedIsize {}
 
 impl Serialize<FixedIsize> for FixedIsize {
     #[inline(always)]

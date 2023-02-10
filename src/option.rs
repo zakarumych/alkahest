@@ -1,6 +1,6 @@
 use crate::{
     deserialize::{Deserialize, Deserializer, Error},
-    formula::{sum_size, Formula, NonRefFormula},
+    formula::{sum_size, BareFormula, Formula},
     serialize::{Serialize, Serializer},
 };
 
@@ -13,7 +13,7 @@ where
     const HEAPLESS: bool = true;
 }
 
-impl<F> NonRefFormula for Option<F> where F: Formula {}
+impl<F> BareFormula for Option<F> where F: Formula {}
 
 impl<F, T> Serialize<Option<F>> for Option<T>
 where
@@ -32,7 +32,7 @@ where
             }
             Some(value) => {
                 ser.write_bytes(&[1u8])?;
-                ser.write_value::<F, T>(value)?;
+                ser.write_value::<F, T>(value, true)?;
             }
         }
         ser.finish()
@@ -64,7 +64,7 @@ where
             }
             Some(value) => {
                 ser.write_bytes(&[1u8])?;
-                ser.write_value::<F, &'ser T>(value)?;
+                ser.write_value::<F, &'ser T>(value, true)?;
             }
         }
         ser.finish()
@@ -88,7 +88,7 @@ where
     fn deserialize(mut de: Deserializer<'de>) -> Result<Self, Error> {
         let is_some: u8 = de.read_bytes(1)?[0];
         if is_some != 0 {
-            Ok(Some(de.read_value::<F, T>()?))
+            Ok(Some(de.read_value::<F, T>(true)?))
         } else {
             Ok(None)
         }
@@ -100,10 +100,10 @@ where
         if is_some != 0 {
             match self {
                 Some(value) => {
-                    de.read_in_place::<F, T>(value)?;
+                    de.read_in_place::<F, T>(value, true)?;
                 }
                 None => {
-                    *self = Some(de.read_value::<F, T>()?);
+                    *self = Some(de.read_value::<F, T>(true)?);
                 }
             }
         } else {

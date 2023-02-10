@@ -74,7 +74,7 @@ where
     {
         let mut ser = ser.into();
         self.into_iter()
-            .try_for_each(|elem| ser.write_value::<F, T>(elem))?;
+            .try_for_each(|elem| ser.write_value::<F, T>(elem, false))?;
         ser.finish()
     }
 
@@ -96,7 +96,7 @@ where
     {
         let mut ser = ser.into();
         self.into_iter()
-            .try_for_each(|elem| ser.write_value::<F, &'ser T>(elem))?;
+            .try_for_each(|elem| ser.write_value::<F, &'ser T>(elem, false))?;
         ser.finish()
     }
 

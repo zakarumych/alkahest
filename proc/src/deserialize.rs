@@ -10,8 +10,7 @@ struct Config {
     check_fields: bool,
 
     /// Signals that it can deserialize
-    /// formulas with appended fields.
-    /// This requires that last field is `SizedFormula`
+    /// formulas with new fields appended.
     non_exhaustive: bool,
 
     /// Deserializer lifetime
@@ -26,7 +25,7 @@ impl Config {
                 let de: syn::LifetimeDef = syn::parse_quote!('de);
 
                 // Add predicates that fields implement
-                // `SizedFormula + Deserialize<'de, #field_type>`
+                // `Formula + Deserialize<'de, #field_type>`
                 // Except that last one if `non_exhaustive` is not set.
                 let predicates = data.fields.iter().map(|field| -> syn::WherePredicate {
                         let ty = &field.ty;
@@ -92,7 +91,7 @@ impl Config {
                 let de: syn::LifetimeDef = syn::parse_quote!('de);
 
                 // Add predicates that fields implement
-                // `SizedFormula + Deserialize<'de, #field_type>`
+                // `Formula + Deserialize<'de, #field_type>`
                 // Except that last one if `non_exhaustive` is not set.
                 let predicates = data.variants.iter().flat_map(|v| v.fields.iter().map(|field| -> syn::WherePredicate {
                         let ty = &field.ty;
@@ -329,12 +328,14 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                             #field_count_check
                         }
 
+                        let mut field_idx = 0;
                         #(
+                            field_idx += 1;
                             let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
                                 #formula_path #bind_ref_names => #bound_names,
                                 _ => unreachable!(),
                             });
-                            let #bound_names = with_formula.read_value(&mut de)?;
+                            let #bound_names = with_formula.read_value(&mut de, #field_count == field_idx)?;
                         )*
                         #consume_tail
                         de.finish()?;
@@ -347,12 +348,14 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                     fn deserialize_in_place(&mut self, mut de: ::alkahest::private::Deserializer<#de>) -> Result<(), ::alkahest::private::Error> {
                         let #ident #bind_ref_mut_names = *self;
 
+                        let mut field_idx = 0;
                         #(
+                            field_idx += 1;
                             let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
                                 #formula_path #bind_ref_names => #bound_names,
                                 _ => unreachable!(),
                             });
-                            with_formula.read_in_place(#bound_names, &mut de)?;
+                            with_formula.read_in_place(#bound_names, &mut de, #field_count == field_idx)?;
                         )*
                         #consume_tail
                         de.finish()
@@ -588,13 +591,15 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         match variant_idx {
                             #(
                                 #formula_path::#variant_name_ids => {
+                                    let mut field_idx = 0;
                                     #(
+                                        field_idx += 1;
                                         let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
                                             #[allow(unused_variables)]
                                             #formula_path::#variant_names #bind_ref_names => #bound_names,
                                             _ => unreachable!(),
                                         });
-                                        let #bound_names = with_formula.read_value(&mut de)?;
+                                        let #bound_names = with_formula.read_value(&mut de, #field_counts == field_idx)?;
                                     )*
                                     #consume_tail
                                     de.finish()?;
@@ -618,13 +623,15 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         match (variant_idx, self) {
                             #(
                                 (#formula_path::#variant_name_ids, #ident::#variant_names #bind_ref_mut_names) => {
+                                    let mut field_idx = 0;
                                     #(
+                                        field_idx += 1;
                                         let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
                                             #[allow(unused_variables)]
                                             #formula_path::#variant_names #bind_ref_names => #bound_names,
                                             _ => unreachable!(),
                                         });
-                                        with_formula.read_in_place(#bound_names, &mut de)?;
+                                        with_formula.read_in_place(#bound_names, &mut de, #field_counts == field_idx)?;
                                     )*
                                     #consume_tail
                                     de.finish()?;
@@ -633,13 +640,15 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                             )*
                             #(
                                 (#formula_path::#variant_name_ids, me) => {
+                                    let mut field_idx = 0;
                                     #(
+                                        field_idx += 1;
                                         let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
                                             #[allow(unused_variables)]
                                             #formula_path::#variant_names #bind_ref_names => #bound_names,
                                             _ => unreachable!(),
                                         });
-                                        let #bound_names = with_formula.read_value(&mut de)?;
+                                        let #bound_names = with_formula.read_value(&mut de, #field_counts == field_idx)?;
                                     )*
                                     #consume_tail
                                     de.finish()?;

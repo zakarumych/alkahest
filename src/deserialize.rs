@@ -2,7 +2,7 @@ use core::{iter::FusedIterator, marker::PhantomData, mem::size_of, str::Utf8Erro
 
 use crate::{
     cold::err,
-    formula::{Formula, NonRefFormula},
+    formula::{BareFormula, Formula},
     size::{FixedIsizeType, FixedUsize, FixedUsizeType},
 };
 
@@ -33,7 +33,7 @@ pub enum Error {
 }
 
 /// Trait for types that can be deserialized
-/// from raw bytes with specified `F: `[`NonRefFormula`].
+/// from raw bytes with specified `F: `[`BareFormula`].
 pub trait Deserialize<'de, F: Formula + ?Sized> {
     /// Deserializes value provided deserializer.
     /// Returns deserialized value and the number of bytes consumed from
@@ -80,14 +80,8 @@ impl<'de> Deserializer<'de> {
 
     #[must_use]
     #[inline(always)]
-    pub(crate) fn sub<F>(&mut self) -> Self
-    where
-        F: Formula + ?Sized,
-    {
-        let sub_stack = match F::MAX_STACK_SIZE {
-            None => self.stack,
-            Some(max_size) => self.stack.min(max_size),
-        };
+    pub(crate) fn sub(&mut self, stack: usize) -> Self {
+        let sub_stack = self.stack.min(stack);
 
         let sub = Deserializer::new_unchecked(sub_stack, self.input);
 
@@ -116,37 +110,49 @@ impl<'de> Deserializer<'de> {
     }
 
     #[inline(always)]
-    pub fn read_value<F, T>(&mut self) -> Result<T, Error>
+    pub fn read_value<F, T>(&mut self, last: bool) -> Result<T, Error>
     where
         F: Formula + ?Sized,
         T: Deserialize<'de, F>,
     {
-        <T as Deserialize<'de, F>>::deserialize(self.sub::<F>())
+        let stack = match (last, F::MAX_STACK_SIZE) {
+            (true, _) => self.stack,
+            (false, Some(max_stack)) => max_stack,
+            (false, None) => self.read_auto::<FixedUsize>()?.into(),
+        };
+
+        <T as Deserialize<'de, F>>::deserialize(self.sub(stack))
     }
 
     #[inline(always)]
     pub fn read_auto<T>(&mut self) -> Result<T, Error>
     where
-        T: NonRefFormula + Deserialize<'de, T>,
+        T: BareFormula + Deserialize<'de, T>,
     {
-        self.read_value::<T, T>()
+        self.read_value::<T, T>(false)
     }
 
     #[inline(always)]
-    pub fn read_in_place<F, T>(&mut self, place: &mut T) -> Result<(), Error>
+    pub fn read_in_place<F, T>(&mut self, place: &mut T, last: bool) -> Result<(), Error>
     where
         F: Formula + ?Sized,
         T: Deserialize<'de, F> + ?Sized,
     {
-        <T as Deserialize<'de, F>>::deserialize_in_place(place, self.sub::<F>())
+        let stack = match (last, F::MAX_STACK_SIZE) {
+            (true, _) => self.stack,
+            (false, Some(max_stack)) => max_stack,
+            (false, None) => self.read_auto::<FixedUsize>()?.into(),
+        };
+
+        <T as Deserialize<'de, F>>::deserialize_in_place(place, self.sub(stack))
     }
 
     #[inline(always)]
     pub fn read_auto_in_place<T>(&mut self, place: &mut T) -> Result<(), Error>
     where
-        T: NonRefFormula + Deserialize<'de, T> + ?Sized,
+        T: BareFormula + Deserialize<'de, T> + ?Sized,
     {
-        self.read_in_place::<T, T>(place)
+        self.read_in_place::<T, T>(place, false)
     }
 
     #[inline(always)]
@@ -403,7 +409,7 @@ where
     }
 
     let mut de = Deserializer::new_unchecked(size.into(), &input[..end]);
-    let value = de.read_value::<F, T>()?;
+    let value = de.read_value::<F, T>(true)?;
 
     Ok((value, end))
 }
@@ -411,7 +417,7 @@ where
 #[inline(always)]
 pub fn deserialize_in_place<'de, F, T>(place: &mut T, input: &'de [u8]) -> Result<usize, Error>
 where
-    F: NonRefFormula + ?Sized,
+    F: BareFormula + ?Sized,
     T: Deserialize<'de, F> + ?Sized,
 {
     if input.len() < HEADER_SIZE {
@@ -432,7 +438,7 @@ where
     }
 
     let mut de = Deserializer::new_unchecked(size.into(), &input[..end]);
-    de.read_in_place::<F, T>(place)?;
+    de.read_in_place::<F, T>(place, true)?;
 
     Ok(end)
 }

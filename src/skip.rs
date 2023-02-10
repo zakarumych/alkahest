@@ -1,6 +1,6 @@
 use crate::{
     deserialize::{Deserialize, Deserializer, Error},
-    formula::NonRefFormula,
+    formula::BareFormula,
 };
 
 /// No-op deserializer for any formula.
@@ -8,7 +8,7 @@ pub struct Skip;
 
 impl<'de, F> Deserialize<'de, F> for Skip
 where
-    F: NonRefFormula + ?Sized,
+    F: BareFormula + ?Sized,
 {
     #[inline(always)]
     fn deserialize(_de: Deserializer) -> Result<Self, Error> {

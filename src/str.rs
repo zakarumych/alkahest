@@ -1,17 +1,17 @@
 use crate::{
     cold::err,
     deserialize::{Deserialize, Deserializer, Error},
-    formula::{Formula, NonRefFormula},
+    formula::{BareFormula, Formula},
     serialize::{Serialize, Serializer},
 };
 
 impl Formula for str {
-    const MAX_STACK_SIZE: Option<usize> = <[u8] as Formula>::MAX_STACK_SIZE;
+    const MAX_STACK_SIZE: Option<usize> = None;
     const EXACT_SIZE: bool = true;
     const HEAPLESS: bool = true;
 }
 
-impl NonRefFormula for str {}
+impl BareFormula for str {}
 
 impl Serialize<str> for &str {
     #[inline(always)]

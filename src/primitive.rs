@@ -3,7 +3,7 @@ use core::{borrow::Borrow, mem::size_of};
 use crate::{
     cold::cold,
     deserialize::{Deserialize, Deserializer, Error},
-    formula::{Formula, NonRefFormula},
+    formula::{BareFormula, Formula},
     serialize::{Serialize, Serializer},
 };
 
@@ -22,19 +22,33 @@ macro_rules! impl_primitive {
             const HEAPLESS: bool = true;
         }
 
-        impl NonRefFormula for $ty {}
+        impl BareFormula for $ty {}
 
-        impl<T> Serialize<$ty> for T
-        where
-            T: Borrow<$ty>,
-        {
+        impl Serialize<$ty> for $ty {
             #[inline(always)]
             fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
             where
                 S: Serializer,
             {
                 let mut ser = ser.into();
-                ser.write_bytes(&self.borrow().to_le_bytes())?;
+                ser.write_bytes(&self.to_le_bytes())?;
+                ser.finish()
+            }
+
+            #[inline(always)]
+            fn fast_sizes(&self) -> Option<usize> {
+                Some(size_of::<$ty>())
+            }
+        }
+
+        impl Serialize<$ty> for &$ty {
+            #[inline(always)]
+            fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
+                let mut ser = ser.into();
+                ser.write_bytes(&self.to_le_bytes())?;
                 ser.finish()
             }
 
@@ -97,12 +111,24 @@ impl Formula for bool {
     const HEAPLESS: bool = true;
 }
 
-impl NonRefFormula for bool {}
+impl BareFormula for bool {}
 
-impl<T> Serialize<bool> for T
-where
-    T: Borrow<bool>,
-{
+impl Serialize<bool> for bool {
+    #[inline(always)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        <u8 as Serialize<u8>>::serialize(*self.borrow() as u8, ser)
+    }
+
+    #[inline(always)]
+    fn fast_sizes(&self) -> Option<usize> {
+        Some(size_of::<u8>())
+    }
+}
+
+impl Serialize<bool> for &bool {
     #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where

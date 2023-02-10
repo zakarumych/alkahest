@@ -1,6 +1,6 @@
 use crate::{
     deserialize::{Deserialize, Deserializer, Error},
-    formula::{Formula, NonRefFormula},
+    formula::{BareFormula, Formula},
     serialize::{Serialize, Serializer},
 };
 
@@ -14,7 +14,7 @@ impl Formula for Bytes {
     const HEAPLESS: bool = true;
 }
 
-impl NonRefFormula for Bytes {}
+impl BareFormula for Bytes {}
 
 impl Serialize<Bytes> for &[u8] {
     #[inline(always)]

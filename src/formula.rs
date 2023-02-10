@@ -1,7 +1,7 @@
 /// Trait for data formulas.
 /// Types that implement this trait are used as markers
 /// to guide serialization and deserialization process.
-/// Many types that implement `NonRefFormula`
+/// Many types that implement `BareFormula`
 /// implement `Serialize` and/or `Deserialize` traits
 /// with `Self` as formula type.
 ///
@@ -13,7 +13,7 @@
 /// Similarly structures that contain `[T]` may be serialized
 /// from structures with identical layout but iterator for that field.
 ///
-/// Users may `derive(NonRefFormula)` for their types, structures and enums.
+/// Users may `derive(BareFormula)` for their types, structures and enums.
 /// Then `derive(Serialize)` and `derive(Deserialize)`
 /// will use formula structure to implement serialization and deserialization.
 /// Fields of formula structure must be visible in scope of type where
@@ -28,8 +28,8 @@
 /// In this case specific variant is used and layout of that variant must
 /// match layout of serialization structure.
 ///
-/// Users are also free to implement `NonRefFormula` and other traits manually.
-/// In this case they are encouraged to pay attention to `NonRefFormula` documentation.
+/// Users are also free to implement `BareFormula` and other traits manually.
+/// In this case they are encouraged to pay attention to `BareFormula` documentation.
 /// And provide implementations for `Serialize` and `Deserialize` traits
 /// with this formula.
 ///
@@ -51,12 +51,25 @@ pub trait Formula {
 }
 
 /// Ad-hoc negative trait.
-/// It *should* be implemented for all formulas except [`Ref`]
-/// and its aliases, like [`Vec`]
+/// It should be implemented for most formulas.
+/// Except those that define serialization and deserialization
+/// for types via other formulas.
+///
+/// [`Ref`], [`Vec`], [`String`], [`As`] are examples of such formulas.
 ///
 /// [`Ref`]: crate::Ref
 /// [`Vec`]: alloc::vec::Vec
-pub trait NonRefFormula: Formula {}
+/// [`String`]: alloc::string::String
+/// [`As`]: crate::As
+pub trait BareFormula: Formula {}
+
+pub const fn unwrap_size(a: Option<usize>) -> usize {
+    let (arr, idx) = match a {
+        None => ([0], 1), // Error in both runtime and compile time.
+        Some(a) => ([a], 0),
+    };
+    arr[idx]
+}
 
 /// Function to combine sizes of formulas.
 /// Order of arguments is important.
@@ -70,6 +83,15 @@ pub const fn sum_size(a: Option<usize>, b: Option<usize>) -> Option<usize> {
         (Some(a), Some(b)) => ([Some(a + b)], 0),
     };
     arr[idx]
+}
+
+/// Function to combine sizes of formulas.
+/// If any of two is `None` then result is `None`.
+pub const fn sum_size_relaxed(a: Option<usize>, b: Option<usize>) -> Option<usize> {
+    match (a, b) {
+        (None, _) | (_, None) => None,
+        (Some(a), Some(b)) => Some(a + b),
+    }
 }
 
 /// Function to combine sizes of formulas.
@@ -94,4 +116,15 @@ pub const fn repeat_size(a: Option<usize>, n: usize) -> Option<usize> {
         Some(a) => ([Some(a * n)], 0),
     };
     arr[idx]
+}
+
+#[inline(always)]
+pub fn formula_fast_sizes<F>() -> Option<usize>
+where
+    F: Formula + ?Sized,
+{
+    match (F::EXACT_SIZE, F::HEAPLESS, F::MAX_STACK_SIZE) {
+        (true, true, Some(max_stack_size)) => Some(max_stack_size),
+        _ => None,
+    }
 }

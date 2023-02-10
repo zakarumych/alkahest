@@ -5,6 +5,34 @@ use crate::{
     slice::{default_iter_fast_sizes, default_iter_fast_sizes_unchecked},
 };
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct SerIter<T>(pub T);
+
+impl<F, T, I> Serialize<[F]> for SerIter<I>
+where
+    F: Formula,
+    I: Iterator<Item = T>,
+    T: Serialize<F>,
+{
+    #[inline(always)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut ser = ser.into();
+        for elem in self.0 {
+            ser.write_value::<F, T>(elem, false)?;
+        }
+        ser.finish()
+    }
+
+    #[inline(always)]
+    fn fast_sizes(&self) -> Option<usize> {
+        default_iter_fast_sizes::<F, I>(&self.0)
+    }
+}
+
 impl<F, T> Serialize<[F]> for core::ops::Range<T>
 where
     F: Formula,
@@ -18,7 +46,7 @@ where
     {
         let mut ser = ser.into();
         for elem in self {
-            ser.write_value::<F, T>(elem)?;
+            ser.write_value::<F, T>(elem, false)?;
         }
         ser.finish()
     }
@@ -42,7 +70,7 @@ where
     {
         let mut ser = ser.into();
         for elem in self {
-            ser.write_value::<F, T>(elem)?;
+            ser.write_value::<F, T>(elem, false)?;
         }
         ser.finish()
     }
@@ -66,7 +94,7 @@ where
         S: Serializer,
     {
         let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
+        self.try_for_each(|elem| ser.write_value::<F, _>(elem, false))?;
         ser.finish()
     }
 
@@ -88,7 +116,7 @@ where
         S: Serializer,
     {
         let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
+        self.try_for_each(|elem| ser.write_value::<F, _>(elem, false))?;
         ser.finish()
     }
 
@@ -110,7 +138,7 @@ where
         S: Serializer,
     {
         let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
+        self.try_for_each(|elem| ser.write_value::<F, _>(elem, false))?;
         ser.finish()
     }
 
@@ -154,8 +182,8 @@ where
     {
         let mut ser = ser.into();
         self.try_for_each(|(idx, elem)| {
-            ser.write_value::<FixedUsize, _>(FixedUsize::truncate_unchecked(idx))?;
-            ser.write_value::<F, _>(elem)
+            ser.write_value::<FixedUsize, _>(FixedUsize::truncate_unchecked(idx), false)?;
+            ser.write_value::<F, _>(elem, false)
         })?;
         ser.finish()
     }
@@ -179,7 +207,7 @@ where
         S: Serializer,
     {
         let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
+        self.try_for_each(|elem| ser.write_value::<F, _>(elem, false))?;
         ser.finish()
     }
 
@@ -202,7 +230,7 @@ where
         S: Serializer,
     {
         let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
+        self.try_for_each(|elem| ser.write_value::<F, _>(elem, false))?;
         ser.finish()
     }
 
@@ -226,7 +254,7 @@ where
         S: Serializer,
     {
         let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
+        self.try_for_each(|elem| ser.write_value::<F, _>(elem, false))?;
         ser.finish()
     }
 
@@ -249,7 +277,7 @@ where
         S: Serializer,
     {
         let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
+        self.try_for_each(|elem| ser.write_value::<F, _>(elem, false))?;
         ser.finish()
     }
 
@@ -271,7 +299,7 @@ where
         S: Serializer,
     {
         let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
+        self.try_for_each(|elem| ser.write_value::<F, _>(elem, false))?;
         ser.finish()
     }
 
@@ -293,7 +321,7 @@ where
         S: Serializer,
     {
         let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
+        self.try_for_each(|elem| ser.write_value::<F, _>(elem, false))?;
         ser.finish()
     }
 
@@ -316,7 +344,7 @@ where
         S: Serializer,
     {
         let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
+        self.try_for_each(|elem| ser.write_value::<F, _>(elem, false))?;
         ser.finish()
     }
 
@@ -339,7 +367,7 @@ where
         S: Serializer,
     {
         let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
+        self.try_for_each(|elem| ser.write_value::<F, _>(elem, false))?;
         ser.finish()
     }
 
@@ -362,7 +390,7 @@ where
         S: Serializer,
     {
         let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
+        self.try_for_each(|elem| ser.write_value::<F, _>(elem, false))?;
         ser.finish()
     }
 
@@ -383,7 +411,7 @@ where
         S: Serializer,
     {
         let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
+        self.try_for_each(|elem| ser.write_value::<F, _>(elem, false))?;
         ser.finish()
     }
 
@@ -405,7 +433,7 @@ where
         S: Serializer,
     {
         let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
+        self.try_for_each(|elem| ser.write_value::<F, _>(elem, false))?;
         ser.finish()
     }
 
@@ -427,7 +455,7 @@ where
         S: Serializer,
     {
         let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
+        self.try_for_each(|elem| ser.write_value::<F, _>(elem, false))?;
         ser.finish()
     }
 
@@ -449,7 +477,7 @@ where
         S: Serializer,
     {
         let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
+        self.try_for_each(|elem| ser.write_value::<F, _>(elem, false))?;
         ser.finish()
     }
 
@@ -472,7 +500,7 @@ where
         S: Serializer,
     {
         let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
+        self.try_for_each(|elem| ser.write_value::<F, _>(elem, false))?;
         ser.finish()
     }
 
@@ -494,7 +522,7 @@ where
         S: Serializer,
     {
         let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
+        self.try_for_each(|elem| ser.write_value::<F, _>(elem, false))?;
         ser.finish()
     }
 
@@ -517,7 +545,7 @@ where
         S: Serializer,
     {
         let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
+        self.try_for_each(|elem| ser.write_value::<F, _>(elem, false))?;
         ser.finish()
     }
 
@@ -539,7 +567,7 @@ where
         S: Serializer,
     {
         let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
+        self.try_for_each(|elem| ser.write_value::<F, _>(elem, false))?;
         ser.finish()
     }
 
@@ -561,7 +589,7 @@ where
         S: Serializer,
     {
         let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
+        self.try_for_each(|elem| ser.write_value::<F, _>(elem, false))?;
         ser.finish()
     }
 
@@ -583,7 +611,7 @@ where
         S: Serializer,
     {
         let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
+        self.try_for_each(|elem| ser.write_value::<F, _>(elem, false))?;
         ser.finish()
     }
 
@@ -606,7 +634,7 @@ where
         S: Serializer,
     {
         let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
+        self.try_for_each(|elem| ser.write_value::<F, _>(elem, false))?;
         ser.finish()
     }
 
@@ -632,8 +660,8 @@ where
     {
         let mut ser = ser.into();
         self.try_for_each(|(a, b)| {
-            ser.write_value::<FA, _>(a)?;
-            ser.write_value::<FB, _>(b)
+            ser.write_value::<FA, _>(a, false)?;
+            ser.write_value::<FB, _>(b, false)
         })?;
         ser.finish()
     }

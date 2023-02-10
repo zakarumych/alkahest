@@ -104,7 +104,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 }
             };
 
-            Ok(quote::quote! {
+            let tokens = quote::quote! {
                 impl #impl_generics #ident #type_generics #where_clause {
                     #(
                         #[doc(hidden)]
@@ -130,7 +130,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         #[allow(unused_mut)]
                         let mut max_size = Some(0);
                         #(
-                            max_size = ::alkahest::private::sum_size(max_size, <#all_field_types as ::alkahest::private::Formula>::MAX_STACK_SIZE);
+                            max_size = ::alkahest::private::sum_size_relaxed(max_size, <#all_field_types as ::alkahest::private::Formula>::MAX_STACK_SIZE);
                         )*;
                         #expand_size
                         max_size
@@ -141,8 +141,10 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                     const HEAPLESS: ::alkahest::private::bool = !#non_exhaustive #(&& <#all_field_types as ::alkahest::private::Formula>::HEAPLESS)*;
                 }
 
-                impl #formula_impl_generics ::alkahest::private::NonRefFormula for #ident #formula_type_generics #formula_where_clause {}
-            })
+                impl #formula_impl_generics ::alkahest::private::BareFormula for #ident #formula_type_generics #formula_where_clause {}
+            };
+
+            Ok(tokens)
         }
         syn::Data::Enum(data) => {
             let all_field_types: Vec<Vec<&syn::Type>> = data
@@ -316,7 +318,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                 #[allow(unused_mut)]
                                 let mut max_size = Some(0);
                                 #(
-                                    max_size = ::alkahest::private::sum_size(max_size, <#all_field_types as ::alkahest::private::Formula>::MAX_STACK_SIZE);
+                                    max_size = ::alkahest::private::sum_size_relaxed(max_size, <#all_field_types as ::alkahest::private::Formula>::MAX_STACK_SIZE);
                                 )*;
                                 max_size
                             };
@@ -324,7 +326,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         )*
 
                         #expand_size
-                        ::alkahest::private::sum_size(::alkahest::private::VARIANT_SIZE_OPT, max_size)
+                        ::alkahest::private::sum_size_relaxed(::alkahest::private::VARIANT_SIZE_OPT, max_size)
                     };
 
                     const EXACT_SIZE: ::alkahest::private::bool = !#non_exhaustive && {
@@ -335,7 +337,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                 #[allow(unused_mut)]
                                 let mut max_size = Some(0);
                                 #(
-                                    max_size = ::alkahest::private::sum_size(max_size, <#all_field_types as ::alkahest::private::Formula>::MAX_STACK_SIZE);
+                                    max_size = ::alkahest::private::sum_size_relaxed(max_size, <#all_field_types as ::alkahest::private::Formula>::MAX_STACK_SIZE);
                                 )*;
                                 max_size
                             };
@@ -352,7 +354,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                     const HEAPLESS: ::alkahest::private::bool = !#non_exhaustive #(#(&& <#all_field_types as ::alkahest::private::Formula>::HEAPLESS)*)*;
                 }
 
-                impl #formula_impl_generics ::alkahest::private::NonRefFormula for #ident #formula_type_generics #formula_where_clause {}
+                impl #formula_impl_generics ::alkahest::private::BareFormula for #ident #formula_type_generics #formula_where_clause {}
             })
         }
     }

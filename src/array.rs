@@ -1,7 +1,6 @@
 use crate::{
     deserialize::{Deserialize, Deserializer, Error},
-    formula::{repeat_size, Formula, NonRefFormula},
-    private::formula_fast_sizes,
+    formula::{formula_fast_sizes, repeat_size, BareFormula, Formula},
     serialize::{Serialize, Serializer},
 };
 
@@ -14,7 +13,7 @@ where
     const HEAPLESS: bool = F::HEAPLESS;
 }
 
-impl<F, const N: usize> NonRefFormula for [F; N] where F: Formula {}
+impl<F, const N: usize> BareFormula for [F; N] where F: Formula {}
 
 impl<F, T, const N: usize> Serialize<[F; N]> for [T; N]
 where
@@ -28,7 +27,7 @@ where
     {
         let mut ser = ser.into();
         self.into_iter()
-            .try_for_each(|elem: T| ser.write_value::<F, T>(elem))?;
+            .try_for_each(|elem: T| ser.write_value::<F, T>(elem, false))?;
         ser.finish()
     }
 
@@ -61,7 +60,7 @@ where
     {
         let mut ser = ser.into();
         self.iter()
-            .try_for_each(|elem: &T| ser.write_value::<F, &T>(elem))?;
+            .try_for_each(|elem: &T| ser.write_value::<F, &T>(elem, false))?;
         ser.finish()
     }
 
@@ -91,7 +90,7 @@ where
     fn deserialize(mut de: Deserializer<'de>) -> Result<Self, Error> {
         let mut opts = [(); N].map(|_| None);
         opts.iter_mut().try_for_each(|slot| {
-            *slot = Some(de.read_value::<F, T>()?);
+            *slot = Some(de.read_value::<F, T>(false)?);
             Ok(())
         })?;
         let value = opts.map(|slot| slot.unwrap());
@@ -101,7 +100,7 @@ where
     #[inline(always)]
     fn deserialize_in_place(&mut self, mut de: Deserializer<'de>) -> Result<(), Error> {
         self.iter_mut()
-            .try_for_each(|elem| de.read_in_place::<F, T>(elem))?;
+            .try_for_each(|elem| de.read_in_place::<F, T>(elem, false))?;
         Ok(())
     }
 }

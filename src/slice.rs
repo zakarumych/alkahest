@@ -1,47 +1,22 @@
 use crate::{
     deserialize::{DeIter, Deserialize, Deserializer, Error},
-    formula::{Formula, NonRefFormula},
-    serialize::{Serialize, Serializer},
+    formula::{unwrap_size, BareFormula, Formula},
+    serialize::Serialize,
 };
 
 impl<F> Formula for [F]
 where
     F: Formula,
 {
-    const MAX_STACK_SIZE: Option<usize> = None;
+    const MAX_STACK_SIZE: Option<usize> = {
+        unwrap_size(F::MAX_STACK_SIZE);
+        None
+    };
     const EXACT_SIZE: bool = false;
     const HEAPLESS: bool = F::HEAPLESS;
 }
 
-impl<F> NonRefFormula for [F] where F: Formula {}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(transparent)]
-pub struct SerIter<T>(pub T);
-
-impl<F, T, I> Serialize<[F]> for SerIter<I>
-where
-    F: Formula,
-    I: Iterator<Item = T>,
-    T: Serialize<F>,
-{
-    #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut ser = ser.into();
-        for elem in self.0 {
-            ser.write_value::<F, T>(elem)?;
-        }
-        ser.finish()
-    }
-
-    #[inline(always)]
-    fn fast_sizes(&self) -> Option<usize> {
-        default_iter_fast_sizes::<F, I>(&self.0)
-    }
-}
+impl<F> BareFormula for [F] where F: Formula {}
 
 pub struct LazySlice<'de, F: ?Sized, T = F> {
     inner: DeIter<'de, F, T>,

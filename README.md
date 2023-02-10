@@ -73,7 +73,7 @@ TODO: List all rules
 
 The crate works using three fundamental traits.
 `Formula`, `Serialize` and `Deserialize`.
-There's also supporting trait - `NonRefFormula`.
+There's also supporting trait - `BareFormula`.
 
 *Alkahest* provides derive macros for `Formula`, `Serialize` and `Deserialize`.
 

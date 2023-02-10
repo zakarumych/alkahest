@@ -2,7 +2,7 @@ use core::marker::PhantomData;
 
 use crate::{
     deserialize::{Deserialize, Deserializer, Error},
-    formula::NonRefFormula,
+    formula::BareFormula,
 };
 
 /// Wrapper for lazy deserialization.
@@ -16,7 +16,7 @@ pub struct Lazy<'de, F: ?Sized> {
 
 impl<'de, F> Lazy<'de, F>
 where
-    F: NonRefFormula + ?Sized,
+    F: BareFormula + ?Sized,
 {
     /// Deserialize the lazy value.
     #[inline(always)]
@@ -39,7 +39,7 @@ where
 
 impl<'de, 'fe: 'de, F> Deserialize<'fe, F> for Lazy<'de, F>
 where
-    F: NonRefFormula + ?Sized,
+    F: BareFormula + ?Sized,
 {
     #[inline(always)]
     fn deserialize(de: Deserializer<'fe>) -> Result<Self, Error> {

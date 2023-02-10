@@ -6,7 +6,7 @@ use core::{marker::PhantomData, mem::size_of};
 
 use crate::{
     deserialize::{Deserialize, Deserializer, Error},
-    formula::{Formula, NonRefFormula},
+    formula::{BareFormula, Formula},
     serialize::{Serialize, Serializer},
     size::FixedUsize,
 };
@@ -24,7 +24,7 @@ pub struct Ref<F: ?Sized> {
 
 impl<F> Formula for Ref<F>
 where
-    F: NonRefFormula + ?Sized,
+    F: BareFormula + ?Sized,
 {
     const MAX_STACK_SIZE: Option<usize> = Some(size_of::<[FixedUsize; 2]>());
     const EXACT_SIZE: bool = true;
@@ -33,7 +33,7 @@ where
 
 impl<F, T> Serialize<Ref<F>> for T
 where
-    F: NonRefFormula + ?Sized,
+    F: BareFormula + ?Sized,
     T: Serialize<F>,
 {
     #[inline(always)]
@@ -55,7 +55,7 @@ where
 
 impl<'de, F, T> Deserialize<'de, Ref<F>> for T
 where
-    F: NonRefFormula + ?Sized,
+    F: BareFormula + ?Sized,
     T: Deserialize<'de, F> + ?Sized,
 {
     #[inline(always)]
