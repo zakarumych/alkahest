@@ -1,15 +1,15 @@
 use alkahest::*;
 
-// #[derive(Clone, Copy, Debug, PartialEq, Eq, Formula, Serialize, Deserialize)]
-// // #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Formula, Serialize, Deserialize)]
-// struct X;
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Formula, Serialize, Deserialize)]
+// #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Formula, Serialize, Deserialize)]
+struct X;
 
-// #[derive(Debug, Formula)]
-// struct Test<T: ?Sized> {
-//     a: u32,
-//     b: X,
-//     c: T,
-// }
+#[derive(Debug, Formula, Serialize, Deserialize)]
+struct Test<T> {
+    a: u32,
+    b: X,
+    c: Vec<T>,
+}
 
 // #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 // // TODO: Infer trivial cases
@@ -52,33 +52,33 @@ use alkahest::*;
 //     Struct { a: u32, b: u64 },
 // }
 
-#[derive(Formula)]
-struct Foo {
-    a: As<str>,
-    b: As<str>,
-}
+// #[derive(Formula)]
+// struct Foo {
+//     a: As<str>,
+//     b: As<str>,
+// }
 
-#[derive(Clone, Copy, Serialize, Deserialize)]
-#[alkahest(serialize(Foo))]
-#[alkahest(deserialize(for<'de: 'a> Foo))]
-struct FooS<'a> {
-    a: &'a str,
-    b: &'a str,
-}
+// #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+// #[alkahest(serialize(Foo))]
+// #[alkahest(deserialize(for<'de: 'a> Foo))]
+// struct FooS<'a> {
+//     a: &'a str,
+//     b: &'a str,
+// }
 
-// type Foo = (As<str>, As<str>);
+type Foo = (As<str>, As<str>);
 
 fn main() {
-    let value = FooS { a: "qwe", b: "rty" };
-    let size = serialized_size::<Foo, _>(value);
+    let value = ("qwe", "rty");
+    let size = serialized_size::<[Foo], _>([value]);
 
     let mut buffer = vec![0u8; size];
 
-    let size = serialize::<Foo, _>(value, &mut buffer).unwrap();
+    let size = serialize::<[Foo], _>([value], &mut buffer).unwrap();
     assert_eq!(size, buffer.len());
 
-    let foo = deserialize::<Foo, FooS>(&buffer).unwrap().0;
-    dbg!(foo.a, foo.b);
+    let foo = deserialize::<[Foo], Vec<(&str, &str)>>(&buffer).unwrap().0;
+    dbg!(foo);
 
     // type MyFormula = Test<Vec<Vec<u32>>>;
 

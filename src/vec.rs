@@ -32,9 +32,7 @@ where
         T: Serialize<[F]>,
         S: Serializer,
     {
-        let mut ser = ser.into();
-        ser.write_ref::<[F], T>(self)?;
-        ser.finish()
+        ser.into().write_ref::<[F], T>(self)
     }
 
     #[inline(always)]
@@ -74,7 +72,7 @@ where
     {
         let mut ser = ser.into();
         self.into_iter()
-            .try_for_each(|elem| ser.write_value::<F, T>(elem, false))?;
+            .try_for_each(|elem| ser.write_value::<F, T>(elem))?;
         ser.finish()
     }
 
@@ -96,7 +94,7 @@ where
     {
         let mut ser = ser.into();
         self.into_iter()
-            .try_for_each(|elem| ser.write_value::<F, &'ser T>(elem, false))?;
+            .try_for_each(|elem| ser.write_value::<F, &'ser T>(elem))?;
         ser.finish()
     }
 
@@ -114,7 +112,13 @@ where
     #[inline(always)]
     fn deserialize(de: Deserializer<'de>) -> Result<Self, Error> {
         let iter = de.into_iter::<F, T>()?;
-        let mut vec = Vec::with_capacity(iter.len());
+
+        let cap = match iter.size_hint() {
+            (lower, None) => lower,
+            (lower, Some(upper)) => (lower * 2).max(8).min(upper),
+        };
+
+        let mut vec = Vec::with_capacity(cap);
         for elem in iter {
             vec.push(elem?);
         }
@@ -124,7 +128,13 @@ where
     #[inline(always)]
     fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), Error> {
         let iter = de.into_iter::<F, T>()?;
-        self.reserve(iter.len());
+
+        let cap = match iter.size_hint() {
+            (lower, None) => lower,
+            (lower, Some(upper)) => (lower * 2).max(8).min(upper),
+        };
+
+        self.reserve(cap);
         for elem in iter {
             self.push(elem?);
         }
@@ -139,7 +149,7 @@ where
 {
     #[inline(always)]
     fn deserialize(de: Deserializer<'de>) -> Result<Self, Error> {
-        let iter = de.into_iter_hint::<F, T>(N)?;
+        let iter = de.into_iter::<F, T>()?;
         let mut vec = Vec::with_capacity(iter.len());
         for elem in iter {
             vec.push(elem?);
@@ -149,7 +159,7 @@ where
 
     #[inline(always)]
     fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), Error> {
-        let iter = de.into_iter_hint::<F, T>(N)?;
+        let iter = de.into_iter::<F, T>()?;
         self.reserve(iter.len());
         for elem in iter {
             self.push(elem?);

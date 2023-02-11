@@ -48,7 +48,12 @@ fn is_generic_path<'a>(
     params: impl Clone + Iterator<Item = &'a syn::TypeParam>,
 ) -> bool {
     path.segments.iter().any(|seg| {
-        if params.clone().find(|p| p.ident == seg.ident).is_some() {
+        if params.clone().any(|p| {
+            // if p.ident == "T" {
+            //     panic!();
+            // }
+            p.ident == seg.ident
+        }) {
             return true;
         }
         match &seg.arguments {
@@ -58,7 +63,9 @@ fn is_generic_path<'a>(
             }),
             syn::PathArguments::Parenthesized(args) => {
                 if let syn::ReturnType::Type(_, ty) = &args.output {
-                    return is_generic_ty(ty, params.clone());
+                    if is_generic_ty(ty, params.clone()) {
+                        return true;
+                    }
                 }
                 args.inputs
                     .iter()
@@ -90,7 +97,9 @@ fn is_generic_ty<'a>(
         syn::Type::Array(syn::TypeArray { elem, .. }) => is_generic_ty(elem, params),
         syn::Type::BareFn(syn::TypeBareFn { inputs, output, .. }) => {
             if let syn::ReturnType::Type(_, ty) = output {
-                return is_generic_ty(ty, params);
+                if is_generic_ty(ty, params.clone()) {
+                    return true;
+                }
             }
             inputs
                 .iter()

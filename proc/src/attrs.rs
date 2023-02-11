@@ -8,7 +8,7 @@ use syn::{
 proc_easy::easy_token!(owned);
 proc_easy::easy_token!(serialize);
 proc_easy::easy_token!(deserialize);
-proc_easy::easy_token!(non_exhaustive);
+// proc_easy::easy_token!(non_exhaustive);
 
 proc_easy::easy_parse! {
     struct FormulaParams {
@@ -125,14 +125,14 @@ proc_easy::easy_argument_tuple! {
     struct DeserializeArg {
         token: deserialize,
         formula: Option<FormulaRef>,
-        non_exhaustive: Option<non_exhaustive>,
+        // non_exhaustive: Option<non_exhaustive>,
     }
 }
 
 proc_easy::easy_attributes! {
     @(alkahest)
     struct Attrs {
-        non_exhaustive: Option<non_exhaustive>,
+        // non_exhaustive: Option<non_exhaustive>,
         owned: Option<NoReferenceRef>,
         serialize: Vec<SerializeArg>,
         deserialize: Vec<DeserializeArg>,
@@ -148,7 +148,7 @@ pub struct Formula {
 }
 
 pub struct Args {
-    pub non_exhaustive: Option<non_exhaustive>,
+    // pub non_exhaustive: Option<non_exhaustive>,
     pub owned: Option<Option<Formula>>,
     pub common: Option<Formula>,
     pub serialize: Option<Formula>,
@@ -162,7 +162,7 @@ pub fn parse_attributes(attrs: &[syn::Attribute]) -> syn::Result<Args> {
     let mut serialize_opt = None;
     let mut deserialize_opt = None;
     let common_opt = attrs.formula.map(Formula::from);
-    let mut non_exhaustive_opt = attrs.non_exhaustive;
+    // let mut non_exhaustive_opt = attrs.non_exhaustive;
     let mut owned_opt = attrs.owned;
 
     for serialize in attrs.serialize {
@@ -199,23 +199,23 @@ pub fn parse_attributes(attrs: &[syn::Attribute]) -> syn::Result<Args> {
             deserialize_opt = Some(Formula::from(formula));
         }
 
-        if let Some(non_exhaustive) = deserialize.non_exhaustive {
-            if non_exhaustive_opt.is_some() {
-                return Err(syn::Error::new(
-                    non_exhaustive.span(),
-                    "Non-exhaustive already specified",
-                ));
-            }
+        // if let Some(non_exhaustive) = deserialize.non_exhaustive {
+        //     if non_exhaustive_opt.is_some() {
+        //         return Err(syn::Error::new(
+        //             non_exhaustive.span(),
+        //             "Non-exhaustive already specified",
+        //         ));
+        //     }
 
-            non_exhaustive_opt = Some(non_exhaustive);
-        }
+        //     non_exhaustive_opt = Some(non_exhaustive);
+        // }
     }
 
     Ok(Args {
         common: common_opt,
         serialize: serialize_opt,
         deserialize: deserialize_opt,
-        non_exhaustive: non_exhaustive_opt,
+        // non_exhaustive: non_exhaustive_opt,
         owned: owned_opt.map(|owned| owned.formula.map(Formula::from)),
         variant: attrs.variant.map(|v| v.variant),
     })

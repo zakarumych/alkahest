@@ -26,9 +26,7 @@ where
         T: Serialize<str>,
         S: Serializer,
     {
-        let mut ser = ser.into();
-        ser.write_ref::<str, T>(self)?;
-        ser.finish()
+        ser.into().write_ref::<str, T>(self)
     }
 
     #[inline(always)]

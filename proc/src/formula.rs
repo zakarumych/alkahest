@@ -10,7 +10,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
     let ident = &input.ident;
 
     let args = parse_attributes(&input.attrs)?;
-    let non_exhaustive = args.non_exhaustive.is_some();
+    // let non_exhaustive = args.non_exhaustive.is_some();
 
     if let Some(formula) = args
         .serialize
@@ -81,13 +81,13 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
             let (formula_impl_generics, formula_type_generics, formula_where_clause) =
                 formula_generics.split_for_impl();
 
-            let expand_size = if non_exhaustive {
-                quote::quote! {
-                    max_size = ::alkahest::private::Option::None;
-                }
-            } else {
-                quote::quote! {}
-            };
+            // let expand_size = if non_exhaustive {
+            //     quote::quote! {
+            //         max_size = ::alkahest::private::Option::None;
+            //     }
+            // } else {
+            //     quote::quote! {}
+            // };
 
             let touch_fields = match &data.fields {
                 syn::Fields::Unit => quote::quote! {},
@@ -132,13 +132,13 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         #(
                             max_size = ::alkahest::private::sum_size_relaxed(max_size, <#all_field_types as ::alkahest::private::Formula>::MAX_STACK_SIZE);
                         )*;
-                        #expand_size
+                        // #expand_size
                         max_size
                     };
 
-                    const EXACT_SIZE: ::alkahest::private::bool = !#non_exhaustive #(&& <#all_field_types as ::alkahest::private::Formula>::EXACT_SIZE)*;
+                    const EXACT_SIZE: ::alkahest::private::bool = true #(&& <#all_field_types as ::alkahest::private::Formula>::EXACT_SIZE)*;
 
-                    const HEAPLESS: ::alkahest::private::bool = !#non_exhaustive #(&& <#all_field_types as ::alkahest::private::Formula>::HEAPLESS)*;
+                    const HEAPLESS: ::alkahest::private::bool = true #(&& <#all_field_types as ::alkahest::private::Formula>::HEAPLESS)*;
                 }
 
                 impl #formula_impl_generics ::alkahest::private::BareFormula for #ident #formula_type_generics #formula_where_clause {}
@@ -236,13 +236,13 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
             let (formula_impl_generics, formula_type_generics, formula_where_clause) =
                 formula_generics.split_for_impl();
 
-            let expand_size = if non_exhaustive {
-                quote::quote! {
-                    max_size = ::alkahest::private::Option::None;
-                }
-            } else {
-                quote::quote! {}
-            };
+            // let expand_size = if non_exhaustive {
+            //     quote::quote! {
+            //         max_size = ::alkahest::private::Option::None;
+            //     }
+            // } else {
+            //     quote::quote! {}
+            // };
 
             let variant_count = data.variants.len();
 
@@ -325,11 +325,11 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                             max_size = ::alkahest::private::max_size(max_size, var_size);
                         )*
 
-                        #expand_size
+                        // #expand_size
                         ::alkahest::private::sum_size_relaxed(::alkahest::private::VARIANT_SIZE_OPT, max_size)
                     };
 
-                    const EXACT_SIZE: ::alkahest::private::bool = !#non_exhaustive && {
+                    const EXACT_SIZE: ::alkahest::private::bool = true && {
                         let mut exact = true;
                         let mut common_size = None;
                         #(
@@ -351,7 +351,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         exact
                     };
 
-                    const HEAPLESS: ::alkahest::private::bool = !#non_exhaustive #(#(&& <#all_field_types as ::alkahest::private::Formula>::HEAPLESS)*)*;
+                    const HEAPLESS: ::alkahest::private::bool = true #(#(&& <#all_field_types as ::alkahest::private::Formula>::HEAPLESS)*)*;
                 }
 
                 impl #formula_impl_generics ::alkahest::private::BareFormula for #ident #formula_type_generics #formula_where_clause {}

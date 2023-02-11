@@ -1,7 +1,10 @@
+use core::mem::size_of;
+
 use crate::{
     deserialize::{Deserialize, Deserializer, Error},
     formula::{formula_fast_sizes, repeat_size, BareFormula, Formula},
     serialize::{Serialize, Serializer},
+    FixedUsize,
 };
 
 impl<F, const N: usize> Formula for [F; N]
@@ -27,7 +30,7 @@ where
     {
         let mut ser = ser.into();
         self.into_iter()
-            .try_for_each(|elem: T| ser.write_value::<F, T>(elem, false))?;
+            .try_for_each(|elem: T| ser.write_value::<F, T>(elem))?;
         ser.finish()
     }
 
@@ -60,7 +63,7 @@ where
     {
         let mut ser = ser.into();
         self.iter()
-            .try_for_each(|elem: &T| ser.write_value::<F, &T>(elem, false))?;
+            .try_for_each(|elem: &T| ser.write_value::<F, &T>(elem))?;
         ser.finish()
     }
 
@@ -72,6 +75,78 @@ where
         if N <= 4 {
             let mut size = 0;
             for elem in self.iter() {
+                size += (&elem).fast_sizes()?;
+            }
+            Some(size)
+        } else {
+            None
+        }
+    }
+}
+
+impl<F, T, const N: usize> Serialize<[F]> for [T; N]
+where
+    F: Formula,
+    T: Serialize<F>,
+{
+    #[inline(always)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut ser = ser.into();
+        self.into_iter()
+            .try_for_each(|elem: T| ser.write_value::<F, T>(elem))?;
+        ser.finish()
+    }
+
+    #[inline(always)]
+    fn fast_sizes(&self) -> Option<usize> {
+        if let Some(size) = formula_fast_sizes::<[F]>() {
+            return Some(size);
+        }
+        if N <= 4 {
+            let mut size = 0;
+            for elem in self.iter() {
+                if F::MAX_STACK_SIZE.is_none() {
+                    size += size_of::<FixedUsize>();
+                }
+                size += elem.fast_sizes()?;
+            }
+            Some(size)
+        } else {
+            None
+        }
+    }
+}
+
+impl<'ser, F, T, const N: usize> Serialize<[F]> for &'ser [T; N]
+where
+    F: Formula,
+    &'ser T: Serialize<F>,
+{
+    #[inline(always)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut ser = ser.into();
+        self.iter()
+            .try_for_each(|elem: &T| ser.write_value::<F, &T>(elem))?;
+        ser.finish()
+    }
+
+    #[inline(always)]
+    fn fast_sizes(&self) -> Option<usize> {
+        if let Some(size) = formula_fast_sizes::<[F]>() {
+            return Some(size);
+        }
+        if N <= 4 {
+            let mut size = 0;
+            for elem in self.iter() {
+                if F::MAX_STACK_SIZE.is_none() {
+                    size += size_of::<FixedUsize>();
+                }
                 size += (&elem).fast_sizes()?;
             }
             Some(size)

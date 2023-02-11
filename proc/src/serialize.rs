@@ -23,9 +23,10 @@ impl Config {
         generics: &syn::Generics,
     ) -> Self {
         let (_, type_generics, _) = generics.split_for_impl();
+        let params = &generics.params;
 
         match (args.serialize.or(args.common), args.owned) {
-            (None, Some(None)) if generics.params.is_empty() => Config {
+            (None, Some(None)) if params.is_empty() => Config {
                 reference: None,
                 owned: Formula {
                     path: syn::parse_quote!(#ident),
@@ -34,7 +35,7 @@ impl Config {
                 variant: None,
                 check_fields: false,
             },
-            (None, None) if generics.params.is_empty() => Config {
+            (None, None) if params.is_empty() => Config {
                 reference: Some(Formula {
                     path: syn::parse_quote!(#ident),
                     generics: syn::Generics {
@@ -68,7 +69,7 @@ impl Config {
                 };
 
                 let mut all_generic_field_types: HashSet<_> = data.fields.iter().map(|f| &f.ty).collect();
-                all_generic_field_types.retain(|ty| is_generic_ty(ty, filter_type_param(generics.params.iter())));
+                all_generic_field_types.retain(|ty| is_generic_ty(ty, filter_type_param(params.iter())));
                 
                 if !all_generic_field_types.is_empty() {
                     let predicates = all_generic_field_types.iter().map(|ty| -> syn::WherePredicate {
@@ -458,7 +459,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                     Some(v) => {
                         let variant_name_idx =
                             quote::format_ident!("__ALKAHEST_FORMULA_VARIANT_{}_IDX", v);
-                        quote::quote! { ser.write_value::<u32, u32>(#formula_path::#variant_name_idx, false)?; }
+                        quote::quote! { ser.write_value::<u32, u32>(#formula_path::#variant_name_idx)?; }
                     }
                 };
 
@@ -505,7 +506,10 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                     #formula_path #with_variant #bind_ref_names => #bound_names,
                                     _ => unreachable!(),
                                 });
-                                with_formula.write_value(&mut ser, #bound_names, #field_count == field_idx)?;
+                                if #field_count == field_idx {
+                                    return with_formula.write_last_value(ser, #bound_names);
+                                }
+                                with_formula.write_value(&mut ser, #bound_names)?;
                             )*
                             ser.finish()
                         }
@@ -542,7 +546,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                     Some(v) => {
                         let variant_name_idx =
                             quote::format_ident!("__ALKAHEST_FORMULA_VARIANT_{}_IDX", v);
-                        quote::quote! { ser.write_value::<u32, u32>(#formula_path::#variant_name_idx, false)?; }
+                        quote::quote! { ser.write_value::<u32, u32>(#formula_path::#variant_name_idx)?; }
                     }
                 };
 
@@ -580,7 +584,11 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                     #formula_path #with_variant #bind_ref_names => #bound_names,
                                     _ => unreachable!(),
                                 });
-                                with_formula.write_value(&mut ser, #bound_names, #field_count == field_idx)?;
+
+                                if #field_count == field_idx {
+                                    return with_formula.write_last_value(ser, #bound_names);
+                                }
+                                with_formula.write_value(&mut ser, #bound_names)?;
                             )*
                             ser.finish()
                         }
@@ -790,7 +798,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                 #(
                                     #ident::#variant_names #bind_names => {
                                         let mut ser = ser.into();
-                                        ser.write_value::<u32, u32>(#formula_path::#variant_name_ids, false)?;
+                                        ser.write_value::<u32, u32>(#formula_path::#variant_name_ids)?;
                                         let mut field_idx = 0;
                                         #(
                                             field_idx += 1;
@@ -799,6 +807,10 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                                 #formula_path::#variant_names #bind_ref_names => #bound_names,
                                                 _ => unreachable!(),
                                             });
+                                            
+                                            if #field_counts == field_idx {
+                                                return with_formula.write_last_value(ser, #bound_names);
+                                            }
                                             with_formula.write_value(&mut ser, #bound_names, #field_counts == field_idx)?;
                                         )*
                                         ser.finish()
@@ -867,7 +879,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                 #(
                                     #ident::#variant_names #bind_ref_names => {
                                         let mut ser = ser.into();
-                                        ser.write_value::<u32, u32>(#formula_path::#variant_name_ids, false)?;
+                                        ser.write_value::<u32, u32>(#formula_path::#variant_name_ids)?;
                                         let mut field_idx = 0;
                                         #(
                                             field_idx += 1;
@@ -876,7 +888,11 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                                 #formula_path::#variant_names #bind_ref_names => #bound_names,
                                                 _ => unreachable!(),
                                             });
-                                            with_formula.write_value(&mut ser, #bound_names, #field_counts == field_idx)?;
+
+                                            if #field_counts == field_idx {
+                                                return with_formula.write_last_value(&mut ser, #bound_names);
+                                            }
+                                            with_formula.write_value(&mut ser, #bound_names)?;
                                         )*
                                         ser.finish()
                                     }

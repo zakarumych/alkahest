@@ -29,13 +29,13 @@ where
         match self {
             None => {
                 ser.write_bytes(&[0u8])?;
+                ser.finish()
             }
             Some(value) => {
                 ser.write_bytes(&[1u8])?;
-                ser.write_value::<F, T>(value, true)?;
+                ser.write_last_value::<F, T>(value)
             }
         }
-        ser.finish()
     }
 
     #[inline(always)]
@@ -61,13 +61,13 @@ where
         match self {
             None => {
                 ser.write_bytes(&[0u8])?;
+                ser.finish()
             }
             Some(value) => {
                 ser.write_bytes(&[1u8])?;
-                ser.write_value::<F, &'ser T>(value, true)?;
+                ser.write_last_value::<F, &'ser T>(value)
             }
         }
-        ser.finish()
     }
 
     #[inline(always)]

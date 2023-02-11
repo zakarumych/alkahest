@@ -1,13 +1,13 @@
 use core::{iter::FusedIterator, marker::PhantomData, mem::size_of, str::Utf8Error};
 
 use crate::{
-    cold::err,
-    formula::{BareFormula, Formula},
+    cold::{cold, err},
+    formula::{unwrap_size, BareFormula, Formula},
     size::{FixedIsizeType, FixedUsize, FixedUsizeType},
 };
 
 /// Error that can occur during deserialization.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum Error {
     /// Indicates that input buffer is smaller than
     /// expected value length.
@@ -64,7 +64,7 @@ pub struct Deserializer<'de> {
 impl<'de> Deserializer<'de> {
     #[must_use]
     #[inline(always)]
-    pub const fn new(stack: usize, input: &'de [u8]) -> Result<Self, Error> {
+    pub fn new(stack: usize, input: &'de [u8]) -> Result<Self, Error> {
         if stack > input.len() {
             return err(Error::OutOfBounds);
         }
@@ -80,21 +80,24 @@ impl<'de> Deserializer<'de> {
 
     #[must_use]
     #[inline(always)]
-    pub(crate) fn sub(&mut self, stack: usize) -> Self {
-        let sub_stack = self.stack.min(stack);
+    #[track_caller]
+    pub(crate) fn sub(&mut self, stack: usize) -> Result<Self, Error> {
+        if self.stack < stack {
+            return err(Error::WrongLength);
+        }
 
-        let sub = Deserializer::new_unchecked(sub_stack, self.input);
+        let sub = Deserializer::new_unchecked(stack, self.input);
 
-        self.stack -= sub_stack;
-        let at = self.input.len() - sub_stack;
-        self.input = &self.input[..at];
-        sub
+        self.stack -= stack;
+        let end = self.input.len() - stack;
+        self.input = &self.input[..end];
+        Ok(sub)
     }
 
     #[inline(always)]
     pub fn read_bytes(&mut self, len: usize) -> Result<&'de [u8], Error> {
         if len > self.stack {
-            return err(Error::OutOfBounds);
+            return err(Error::WrongLength);
         }
         let at = self.input.len() - len;
         let (head, tail) = self.input.split_at(at);
@@ -110,6 +113,7 @@ impl<'de> Deserializer<'de> {
     }
 
     #[inline(always)]
+    #[track_caller]
     pub fn read_value<F, T>(&mut self, last: bool) -> Result<T, Error>
     where
         F: Formula + ?Sized,
@@ -118,18 +122,43 @@ impl<'de> Deserializer<'de> {
         let stack = match (last, F::MAX_STACK_SIZE) {
             (true, _) => self.stack,
             (false, Some(max_stack)) => max_stack,
-            (false, None) => self.read_auto::<FixedUsize>()?.into(),
+            (false, None) => self.read_auto::<FixedUsize>(false)?.into(),
         };
 
-        <T as Deserialize<'de, F>>::deserialize(self.sub(stack))
+        <T as Deserialize<'de, F>>::deserialize(self.sub(stack)?)
     }
 
     #[inline(always)]
-    pub fn read_auto<T>(&mut self) -> Result<T, Error>
+    pub fn skip_values<F>(&mut self, n: usize) -> Result<(), Error>
+    where
+        F: Formula + ?Sized,
+    {
+        if n == 0 {
+            return Ok(());
+        }
+
+        match F::MAX_STACK_SIZE {
+            None => {
+                for _ in 0..n {
+                    let skip_bytes = self.read_auto::<FixedUsize>(false)?;
+                    self.read_bytes(skip_bytes.into())?;
+                }
+            }
+            Some(max_stack) => {
+                let skip_bytes = max_stack * (n - 1);
+                self.read_bytes(skip_bytes)?;
+            }
+        }
+        Ok(())
+    }
+
+    #[inline(always)]
+    #[track_caller]
+    pub fn read_auto<T>(&mut self, last: bool) -> Result<T, Error>
     where
         T: BareFormula + Deserialize<'de, T>,
     {
-        self.read_value::<T, T>(false)
+        self.read_value::<T, T>(last)
     }
 
     #[inline(always)]
@@ -141,23 +170,23 @@ impl<'de> Deserializer<'de> {
         let stack = match (last, F::MAX_STACK_SIZE) {
             (true, _) => self.stack,
             (false, Some(max_stack)) => max_stack,
-            (false, None) => self.read_auto::<FixedUsize>()?.into(),
+            (false, None) => self.read_auto::<FixedUsize>(false)?.into(),
         };
 
-        <T as Deserialize<'de, F>>::deserialize_in_place(place, self.sub(stack))
+        <T as Deserialize<'de, F>>::deserialize_in_place(place, self.sub(stack)?)
     }
 
     #[inline(always)]
-    pub fn read_auto_in_place<T>(&mut self, place: &mut T) -> Result<(), Error>
+    pub fn read_auto_in_place<T>(&mut self, place: &mut T, last: bool) -> Result<(), Error>
     where
         T: BareFormula + Deserialize<'de, T> + ?Sized,
     {
-        self.read_in_place::<T, T>(place, false)
+        self.read_in_place::<T, T>(place, last)
     }
 
     #[inline(always)]
     pub fn deref(mut self) -> Result<Deserializer<'de>, Error> {
-        let [address, size] = self.read_auto::<[FixedUsize; 2]>()?;
+        let [address, size] = self.read_auto::<[FixedUsize; 2]>(false)?;
 
         if usize::from(address) > self.input.len() {
             return err(Error::WrongAddress);
@@ -175,32 +204,8 @@ impl<'de> Deserializer<'de> {
         F: Formula,
         T: Deserialize<'de, F>,
     {
-        let size = F::MAX_STACK_SIZE.expect("Sized formula should have some MAX_STACK_SIZE");
-        #[cfg(debug_assertions)]
-        if self.stack % size != 0 {
-            return err(Error::WrongLength);
-        }
-        let count = self.stack / size;
         Ok(DeIter {
-            input: self.input,
-            count,
-            marker: PhantomData,
-        })
-    }
-
-    #[inline(always)]
-    pub fn into_iter_hint<F, T>(self, len: usize) -> Result<DeIter<'de, F, T>, Error>
-    where
-        F: Formula,
-        T: Deserialize<'de, F>,
-    {
-        let size = F::MAX_STACK_SIZE.expect("Sized formula should have some MAX_STACK_SIZE");
-        if self.stack != len * size {
-            return err(Error::WrongLength);
-        }
-        Ok(DeIter {
-            input: self.input,
-            count: len,
+            de: self,
             marker: PhantomData,
         })
     }
@@ -216,8 +221,7 @@ impl<'de> Deserializer<'de> {
 }
 
 pub struct DeIter<'de, F: ?Sized, T> {
-    input: &'de [u8],
-    count: usize,
+    de: Deserializer<'de>,
     marker: PhantomData<fn(&F) -> T>,
 }
 
@@ -228,16 +232,14 @@ where
     #[inline(always)]
     fn clone(&self) -> Self {
         DeIter {
-            input: self.input,
-            count: self.count,
+            de: self.de.clone(),
             marker: PhantomData,
         }
     }
 
     #[inline(always)]
     fn clone_from(&mut self, source: &Self) {
-        self.input = source.input;
-        self.count = source.count;
+        self.de = source.de.clone();
     }
 }
 
@@ -250,59 +252,73 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (self.count, Some(self.count))
+        match F::MAX_STACK_SIZE {
+            None => (0, Some(self.de.stack / size_of::<FixedUsize>())),
+            Some(0) => {
+                let count = self.de.stack;
+                (count, Some(count))
+            }
+            Some(max_stack) => {
+                let count = (self.de.stack + max_stack - 1) / max_stack;
+                (count, Some(count))
+            }
+        }
     }
 
     #[inline(always)]
     fn next(&mut self) -> Option<Result<T, Error>> {
-        if self.count == 0 {
+        if self.de.stack == 0 {
             return None;
         }
 
-        let size = F::MAX_STACK_SIZE.unwrap_or(0);
-        let input = self.input;
-        self.count -= 1;
-        let end = self.input.len() - size;
-        self.input = &self.input[..end];
-
-        let result =
-            <T as Deserialize<'de, F>>::deserialize(Deserializer::new_unchecked(size, input));
-        Some(result)
+        match self.de.read_value::<F, T>(false) {
+            Err(error) => {
+                self.de.input = &[];
+                self.de.stack = 0;
+                Some(err(error))
+            }
+            Ok(value) => Some(Ok(value)),
+        }
     }
 
     #[inline(always)]
     fn count(self) -> usize {
-        self.count
+        match F::MAX_STACK_SIZE {
+            None => self.fold(0, |acc, _| acc + 1),
+            Some(0) => self.de.stack,
+            Some(max_stack) => (self.de.stack + max_stack - 1) / max_stack,
+        }
     }
 
     #[inline(always)]
     fn nth(&mut self, n: usize) -> Option<Result<T, Error>> {
-        if n >= self.count {
-            self.count = 0;
-            return None;
+        if n > 0 {
+            if let Err(_) = self.de.skip_values::<F>(n) {
+                return None;
+            }
         }
-        self.count -= n;
-        let size = F::MAX_STACK_SIZE.unwrap_or(0);
-        let end = self.input.len() - size * n;
-        self.input = &self.input[..end];
         self.next()
     }
 
     #[inline(always)]
-    fn fold<B, Fun>(self, init: B, mut f: Fun) -> B
+    fn fold<B, Fun>(mut self, init: B, mut f: Fun) -> B
     where
         Fun: FnMut(B, Result<T, Error>) -> B,
     {
-        let end = self.input.len();
-        let size = F::MAX_STACK_SIZE.unwrap_or(0);
         let mut accum = init;
-        for elem in 0..self.count {
-            let at = end - size * elem;
-            let de = Deserializer::new_unchecked(size, &self.input[..at]);
-            let result = <T as Deserialize<'de, F>>::deserialize(de);
+        loop {
+            let result = self.de.read_value::<F, T>(false);
+            if let Err(Error::WrongLength) = result {
+                self.de.input = &[];
+                self.de.stack = 0;
+                if self.de.stack == 0 {
+                    return accum;
+                }
+                cold();
+                return f(accum, result);
+            }
             accum = f(accum, result);
         }
-        accum
     }
 }
 
@@ -313,27 +329,12 @@ where
 {
     #[inline(always)]
     fn next_back(&mut self) -> Option<Result<T, Error>> {
-        if self.count == 0 {
-            return None;
-        }
-        self.count -= 1;
-        let size = F::MAX_STACK_SIZE.unwrap_or(0);
-        let at = self.input.len() - size * self.count;
-        let input = &self.input[at..];
-
-        Some(<T as Deserialize<'de, F>>::deserialize(
-            Deserializer::new_unchecked(size, input),
-        ))
+        todo!()
     }
 
     #[inline(always)]
     fn nth_back(&mut self, n: usize) -> Option<Result<T, Error>> {
-        if n >= self.count {
-            self.count = 0;
-            return None;
-        }
-        self.count -= n;
-        self.next_back()
+        todo!()
     }
 
     #[inline(always)]
@@ -341,19 +342,7 @@ where
     where
         Fun: FnMut(B, Result<T, Error>) -> B,
     {
-        if self.count == 0 {
-            return init;
-        }
-        let size = F::MAX_STACK_SIZE.unwrap_or(0);
-        let start = self.input.len() - size * (self.count - 1);
-        let mut accum = init;
-        for elem in 0..self.count {
-            let at = start + size * elem;
-            let de = Deserializer::new_unchecked(size, &self.input[..at]);
-            let result = <T as Deserialize<'de, F>>::deserialize(de);
-            accum = f(accum, result);
-        }
-        accum
+        todo!()
     }
 }
 
@@ -364,7 +353,7 @@ where
 {
     #[inline(always)]
     fn len(&self) -> usize {
-        self.count
+        todo!()
     }
 }
 
@@ -382,7 +371,7 @@ pub fn value_size(input: &[u8]) -> Option<usize> {
     }
 
     let mut de = Deserializer::new_unchecked(FIELD_SIZE, &input[..FIELD_SIZE]);
-    Some(de.read_auto::<FixedUsize>().map(usize::from).unwrap())
+    Some(de.read_auto::<FixedUsize>(false).map(usize::from).unwrap())
 }
 
 #[inline(always)]
@@ -396,7 +385,7 @@ where
     }
 
     let mut de = Deserializer::new_unchecked(HEADER_SIZE, &input[..HEADER_SIZE]);
-    let [address, size] = de.read_auto::<[FixedUsize; 2]>().unwrap();
+    let [address, size] = de.read_auto::<[FixedUsize; 2]>(false).unwrap();
 
     if size > address {
         return err(Error::WrongAddress);
@@ -425,7 +414,7 @@ where
     }
 
     let mut de = Deserializer::new_unchecked(HEADER_SIZE, &input[..HEADER_SIZE]);
-    let [address, size] = de.read_auto::<[FixedUsize; 2]>()?;
+    let [address, size] = de.read_auto::<[FixedUsize; 2]>(false)?;
 
     if size > address {
         return err(Error::WrongAddress);

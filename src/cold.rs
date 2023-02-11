@@ -4,6 +4,7 @@ pub const fn cold() {}
 
 #[cold]
 #[inline(always)]
-pub const fn err<T, E>(err: E) -> Result<T, E> {
+#[track_caller]
+pub fn err<T, E: core::fmt::Debug>(err: E) -> Result<T, E> {
     Err(err)
 }

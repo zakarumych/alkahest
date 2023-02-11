@@ -9,17 +9,16 @@ struct Config {
     /// `false` if `formula` is inferred to `Self`.
     check_fields: bool,
 
-    /// Signals that it can deserialize
-    /// formulas with new fields appended.
-    non_exhaustive: bool,
-
+    // /// Signals that it can deserialize
+    // /// formulas with new fields appended.
+    // non_exhaustive: bool,
     /// Deserializer lifetime
     de: syn::Lifetime,
 }
 
 impl Config {
     fn for_struct(args: Args, data: &syn::DataStruct) -> syn::Result<Self> {
-        let non_exhaustive = args.non_exhaustive.is_some();
+        // let non_exhaustive = args.non_exhaustive.is_some();
         match args.deserialize.or(args.common) {
             None => {
                 let de: syn::LifetimeDef = syn::parse_quote!('de);
@@ -49,7 +48,7 @@ impl Config {
                         generics,
                     },
                     check_fields: false,
-                    non_exhaustive,
+                    // non_exhaustive,
                     de: de.lifetime,
                 })
             }
@@ -77,7 +76,7 @@ impl Config {
                 Ok(Config {
                     formula,
                     check_fields: true,
-                    non_exhaustive,
+                    // non_exhaustive,
                     de: de.lifetime,
                 })
             }
@@ -85,7 +84,7 @@ impl Config {
     }
 
     fn for_enum(args: Args, data: &syn::DataEnum) -> syn::Result<Self> {
-        let non_exhaustive = args.non_exhaustive.is_some();
+        // let non_exhaustive = args.non_exhaustive.is_some();
         match args.deserialize.or(args.common) {
             None => {
                 let de: syn::LifetimeDef = syn::parse_quote!('de);
@@ -115,7 +114,7 @@ impl Config {
                         generics,
                     },
                     check_fields: false,
-                    non_exhaustive,
+                    // non_exhaustive,
                     de: de.lifetime,
                 })
             }
@@ -143,7 +142,7 @@ impl Config {
                 Ok(Config {
                     formula,
                     check_fields: true,
-                    non_exhaustive,
+                    // non_exhaustive,
                     de: de.lifetime,
                 })
             }
@@ -168,7 +167,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
             let Config {
                 formula,
                 check_fields,
-                non_exhaustive,
+                // non_exhaustive,
                 de,
             } = Config::for_struct(args, &data)?;
 
@@ -295,18 +294,8 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 syn::Fields::Unit => quote::quote! {},
             };
 
-            let consume_tail;
-
-            if non_exhaustive {
-                consume_tail = quote::quote! {
-                    des.read_all_bytes();
-                };
-            } else {
-                consume_tail = quote::quote! {};
-            }
-
             let field_count = data.fields.len();
-            let field_count_check = if check_fields && !non_exhaustive {
+            let field_count_check = if check_fields {
                 quote::quote! {
                     let _: [(); #field_count] = #formula_path::__ALKAHEST_FORMULA_FIELD_COUNT;
                 }
@@ -337,7 +326,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                             });
                             let #bound_names = with_formula.read_value(&mut de, #field_count == field_idx)?;
                         )*
-                        #consume_tail
+                        // #consume_tail
                         de.finish()?;
 
                         let value = #ident #bind_names;
@@ -357,7 +346,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                             });
                             with_formula.read_in_place(#bound_names, &mut de, #field_count == field_idx)?;
                         )*
-                        #consume_tail
+                        // #consume_tail
                         de.finish()
                     }
                 }
@@ -367,7 +356,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
             let Config {
                 formula,
                 check_fields,
-                non_exhaustive,
+                // non_exhaustive,
                 de,
             } = Config::for_enum(args, &data)?;
             let formula_path = &formula.path;
@@ -545,15 +534,15 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 })
                 .collect();
 
-            let consume_tail;
+            // let consume_tail;
 
-            if non_exhaustive {
-                consume_tail = quote::quote! {
-                    des.read_all_bytes();
-                };
-            } else {
-                consume_tail = quote::quote! {};
-            }
+            // if non_exhaustive {
+            //     consume_tail = quote::quote! {
+            //         des.read_all_bytes();
+            //     };
+            // } else {
+            //     consume_tail = quote::quote! {};
+            // }
 
             let variant_count = data.variants.len();
             let variant_count_check = match check_fields {
@@ -564,7 +553,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
             };
 
             let field_counts: Vec<_> = data.variants.iter().map(|v| v.fields.len()).collect();
-            let field_count_check = if check_fields && !non_exhaustive {
+            let field_count_check = if check_fields {
                 quote::quote! {
                     #(let _: [(); #field_counts] = #formula_path::#field_count_checks;)*
                 }
@@ -587,7 +576,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                             #variant_count_check
                         }
 
-                        let variant_idx = de.read_auto::<::alkahest::private::u32>()?;
+                        let variant_idx = de.read_auto::<::alkahest::private::u32>(false)?;
                         match variant_idx {
                             #(
                                 #formula_path::#variant_name_ids => {
@@ -601,7 +590,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                         });
                                         let #bound_names = with_formula.read_value(&mut de, #field_counts == field_idx)?;
                                     )*
-                                    #consume_tail
+                                    // #consume_tail
                                     de.finish()?;
                                     ::alkahest::private::Result::Ok(#ident::#variant_names #bind_names)
                                 }
@@ -619,7 +608,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         };
                         #field_count_check
 
-                        let variant_idx = de.read_auto::<::alkahest::private::u32>()?;
+                        let variant_idx = de.read_auto::<::alkahest::private::u32>(false)?;
                         match (variant_idx, self) {
                             #(
                                 (#formula_path::#variant_name_ids, #ident::#variant_names #bind_ref_mut_names) => {
@@ -633,7 +622,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                         });
                                         with_formula.read_in_place(#bound_names, &mut de, #field_counts == field_idx)?;
                                     )*
-                                    #consume_tail
+                                    // #consume_tail
                                     de.finish()?;
                                     ::alkahest::private::Result::Ok(())
                                 }
@@ -650,7 +639,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                         });
                                         let #bound_names = with_formula.read_value(&mut de, #field_counts == field_idx)?;
                                     )*
-                                    #consume_tail
+                                    // #consume_tail
                                     de.finish()?;
                                     *me = #ident::#variant_names #bind_names;
                                     ::alkahest::private::Result::Ok(())

@@ -40,13 +40,12 @@ pub use crate::{
     },
     formula::Formula,
     iter::SerIter,
-    lazy::Lazy,
+    lazy::{Lazy, LazySeq, LazySlice},
     r#as::As,
     reference::Ref,
     serialize::{serialize, serialize_or_size, serialized_size, Serialize, Serializer},
     size::{FixedIsize, FixedUsize},
     skip::Skip,
-    slice::LazySlice,
 };
 
 #[cfg(feature = "derive")]
@@ -80,12 +79,21 @@ pub mod private {
         F: Formula + ?Sized,
     {
         #[inline(always)]
-        pub fn write_value<T, S>(self, ser: &mut S, value: T, last: bool) -> Result<(), S::Error>
+        pub fn write_value<T, S>(self, ser: &mut S, value: T) -> Result<(), S::Error>
         where
             S: Serializer,
             T: Serialize<F>,
         {
-            ser.write_value::<F, T>(value, last)
+            ser.write_value::<F, T>(value)
+        }
+
+        #[inline(always)]
+        pub fn write_last_value<T, S>(self, ser: S, value: T) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+            T: Serialize<F>,
+        {
+            ser.write_last_value::<F, T>(value)
         }
 
         #[inline(always)]

@@ -97,14 +97,13 @@ macro_rules! impl_for_tuple {
             where
                 S: Serializer,
             {
-                #![allow(non_snake_case)]
+                #![allow(non_snake_case, unused_mut)]
                 let mut ser = ser.into();
                 let ($($b,)* $bt,) = self;
                 $(
-                    ser.write_value::<$a, $b>($b, false)?;
+                    ser.write_value::<$a, $b>($b)?;
                 )*
-                ser.write_value::<$at, $bt>($bt, true)?;
-                ser.finish()
+                ser.write_last_value::<$at, $bt>($bt)
             }
 
             #[inline(always)]
@@ -113,10 +112,10 @@ macro_rules! impl_for_tuple {
                 let mut size = 0;
                 let ($($b,)* $bt,) = self;
                 $(
-                    size += <$b as Serialize<$a>>::fast_sizes($b)?;
                     if $a::MAX_STACK_SIZE.is_none() {
                         size += size_of::<FixedUsize>();
                     }
+                    size += <$b as Serialize<$a>>::fast_sizes($b)?;
                 )*
                 Some(size + $bt.fast_sizes()?)
             }
@@ -137,14 +136,13 @@ macro_rules! impl_for_tuple {
             where
                 S: Serializer,
             {
-                #![allow(non_snake_case)]
+                #![allow(non_snake_case, unused_mut)]
                 let mut ser = ser.into();
                 let ($($b,)* $bt,) = self;
                 $(
-                    ser.write_value::<$a, &$b>($b, false)?;
+                    ser.write_value::<$a, &$b>($b)?;
                 )*
-                ser.write_value::<$at, &$bt>($bt, true)?;
-                ser.finish()
+                ser.write_last_value::<$at, &$bt>($bt)
             }
 
             #[inline(always)]
@@ -153,10 +151,10 @@ macro_rules! impl_for_tuple {
                 let mut size = 0;
                 let ($($b,)* $bt,) = self;
                 $(
-                    size += <&'ser $b as Serialize<$a>>::fast_sizes(&$b)?;
                     if $a::MAX_STACK_SIZE.is_none() {
                         size += size_of::<FixedUsize>();
                     }
+                    size += <&'ser $b as Serialize<$a>>::fast_sizes(&$b)?;
                 )*
                 Some(size + $bt.fast_sizes()?)
             }

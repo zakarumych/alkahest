@@ -2,7 +2,8 @@ use core::marker::PhantomData;
 
 use crate::{
     deserialize::{Deserialize, Deserializer, Error},
-    formula::BareFormula,
+    formula::{unwrap_size, BareFormula},
+    DeIter, Formula,
 };
 
 /// Wrapper for lazy deserialization.
@@ -52,6 +53,154 @@ where
     #[inline(always)]
     fn deserialize_in_place(&mut self, de: Deserializer<'fe>) -> Result<(), Error> {
         self.de = de;
+        Ok(())
+    }
+}
+
+pub struct LazySeq<'de, F: ?Sized, T = F> {
+    inner: DeIter<'de, F, T>,
+}
+
+impl<'de, F, T> LazySeq<'de, F, T>
+where
+    F: ?Sized,
+{
+    #[inline(always)]
+    pub fn iter(&self) -> DeIter<'de, F, T>
+    where
+        F: Formula,
+        T: Deserialize<'de, F>,
+    {
+        self.inner.clone()
+    }
+}
+
+impl<'de, F, T> IntoIterator for LazySeq<'de, F, T>
+where
+    F: Formula + ?Sized,
+    T: Deserialize<'de, F>,
+{
+    type Item = Result<T, Error>;
+    type IntoIter = DeIter<'de, F, T>;
+
+    #[inline(always)]
+    fn into_iter(self) -> DeIter<'de, F, T> {
+        self.inner
+    }
+}
+
+impl<'de, 'fe: 'de, F, T> Deserialize<'fe, [F]> for LazySeq<'de, F, T>
+where
+    F: Formula,
+    T: Deserialize<'de, F>,
+{
+    #[inline(always)]
+    fn deserialize(de: Deserializer<'fe>) -> Result<Self, Error> {
+        Ok(LazySeq {
+            inner: de.into_iter()?,
+        })
+    }
+
+    #[inline(always)]
+    fn deserialize_in_place(&mut self, de: Deserializer<'fe>) -> Result<(), Error> {
+        self.inner = de.into_iter()?;
+        Ok(())
+    }
+}
+
+impl<'de, 'fe: 'de, F, T, const N: usize> Deserialize<'fe, [F; N]> for LazySeq<'de, F, T>
+where
+    F: Formula,
+    T: Deserialize<'de, F>,
+{
+    #[inline(always)]
+    fn deserialize(de: Deserializer<'fe>) -> Result<Self, Error> {
+        Ok(LazySeq {
+            inner: de.into_iter()?,
+        })
+    }
+
+    #[inline(always)]
+    fn deserialize_in_place(&mut self, de: Deserializer<'fe>) -> Result<(), Error> {
+        self.inner = de.into_iter()?;
+        Ok(())
+    }
+}
+
+pub struct LazySlice<'de, F: ?Sized, T = F> {
+    inner: DeIter<'de, F, T>,
+}
+
+impl<'de, F, T> LazySlice<'de, F, T>
+where
+    F: Formula + ?Sized,
+    T: Deserialize<'de, F>,
+{
+    pub const ELEMENT_SIZE: usize = unwrap_size(F::MAX_STACK_SIZE);
+}
+
+impl<'de, F, T> LazySlice<'de, F, T>
+where
+    F: ?Sized,
+{
+    #[inline(always)]
+    pub fn iter(&self) -> DeIter<'de, F, T>
+    where
+        F: Formula,
+        T: Deserialize<'de, F>,
+    {
+        self.inner.clone()
+    }
+}
+
+impl<'de, F, T> IntoIterator for LazySlice<'de, F, T>
+where
+    F: Formula + ?Sized,
+    T: Deserialize<'de, F>,
+{
+    type Item = Result<T, Error>;
+    type IntoIter = DeIter<'de, F, T>;
+
+    #[inline(always)]
+    fn into_iter(self) -> DeIter<'de, F, T> {
+        self.inner
+    }
+}
+
+impl<'de, 'fe: 'de, F, T> Deserialize<'fe, [F]> for LazySlice<'de, F, T>
+where
+    F: Formula,
+    T: Deserialize<'de, F>,
+{
+    #[inline(always)]
+    fn deserialize(de: Deserializer<'fe>) -> Result<Self, Error> {
+        Ok(LazySlice {
+            inner: de.into_iter()?,
+        })
+    }
+
+    #[inline(always)]
+    fn deserialize_in_place(&mut self, de: Deserializer<'fe>) -> Result<(), Error> {
+        self.inner = de.into_iter()?;
+        Ok(())
+    }
+}
+
+impl<'de, 'fe: 'de, F, T, const N: usize> Deserialize<'fe, [F; N]> for LazySlice<'de, F, T>
+where
+    F: Formula,
+    T: Deserialize<'de, F>,
+{
+    #[inline(always)]
+    fn deserialize(de: Deserializer<'fe>) -> Result<Self, Error> {
+        Ok(LazySlice {
+            inner: de.into_iter()?,
+        })
+    }
+
+    #[inline(always)]
+    fn deserialize_in_place(&mut self, de: Deserializer<'fe>) -> Result<(), Error> {
+        self.inner = de.into_iter()?;
         Ok(())
     }
 }

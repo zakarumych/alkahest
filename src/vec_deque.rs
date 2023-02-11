@@ -1,3 +1,5 @@
+use core::mem::size_of;
+
 use alloc::collections::VecDeque;
 
 use crate::{
@@ -7,6 +9,7 @@ use crate::{
     reference::Ref,
     serialize::{Serialize, Serializer},
     slice::{default_iter_fast_sizes_by_ref, default_iter_fast_sizes_owned},
+    FixedUsize,
 };
 
 impl<F> Formula for VecDeque<F>
@@ -29,12 +32,13 @@ where
         T: Serialize<[F]>,
         S: Serializer,
     {
-        <T as Serialize<Ref<[F]>>>::serialize(self, ser)
+        ser.into().write_ref::<[F], T>(self)
     }
 
     #[inline(always)]
     fn fast_sizes(&self) -> Option<usize> {
-        <T as Serialize<Ref<[F]>>>::fast_sizes(self)
+        let size = self.fast_sizes()?;
+        Some(size + size_of::<[FixedUsize; 2]>())
     }
 }
 
@@ -66,7 +70,7 @@ where
     {
         let mut ser = ser.into();
         self.into_iter()
-            .try_for_each(|elem| ser.write_value(elem, false))?;
+            .try_for_each(|elem| ser.write_value(elem))?;
         ser.finish()
     }
 
@@ -88,7 +92,7 @@ where
     {
         let mut ser = ser.into();
         self.into_iter()
-            .try_for_each(|elem| ser.write_value(elem, false))?;
+            .try_for_each(|elem| ser.write_value(elem))?;
         ser.finish()
     }
 
