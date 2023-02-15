@@ -811,7 +811,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                             if #field_counts == field_idx {
                                                 return with_formula.write_last_value(ser, #bound_names);
                                             }
-                                            with_formula.write_value(&mut ser, #bound_names, #field_counts == field_idx)?;
+                                            with_formula.write_value(&mut ser, #bound_names)?;
                                         )*
                                         ser.finish()
                                     }
