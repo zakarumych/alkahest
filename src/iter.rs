@@ -5,6 +5,9 @@ use crate::{
     slice::{default_iter_fast_sizes, default_iter_fast_sizes_unchecked},
 };
 
+/// Iterator wrapper serializable with slice formula.
+/// Many standard library iterators implement serialization.
+/// For others this wrapper can be used without performance penalty.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct SerIter<T>(pub T);

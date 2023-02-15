@@ -2,7 +2,7 @@ use core::{iter::FusedIterator, marker::PhantomData, mem::size_of, str::Utf8Erro
 
 use crate::{
     cold::{cold, err},
-    formula::{unwrap_size, BareFormula, Formula},
+    formula::{BareFormula, Formula},
     size::{FixedIsizeType, FixedUsize, FixedUsizeType},
 };
 
