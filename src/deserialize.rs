@@ -33,7 +33,7 @@ pub enum Error {
 }
 
 /// Trait for types that can be deserialized
-/// from raw bytes with specified `F: `[`BareFormula`].
+/// from raw bytes with specified `F: `[`Formula`].
 pub trait Deserialize<'de, F: Formula + ?Sized> {
     /// Deserializes value provided deserializer.
     /// Returns deserialized value and the number of bytes consumed from
@@ -322,29 +322,29 @@ where
     }
 }
 
-impl<'de, F, T> DoubleEndedIterator for DeIter<'de, F, T>
-where
-    F: Formula + ?Sized,
-    T: Deserialize<'de, F>,
-{
-    #[inline(always)]
-    fn next_back(&mut self) -> Option<Result<T, Error>> {
-        todo!()
-    }
+// impl<'de, F, T> DoubleEndedIterator for DeIter<'de, F, T>
+// where
+//     F: Formula + ?Sized,
+//     T: Deserialize<'de, F>,
+// {
+//     #[inline(always)]
+//     fn next_back(&mut self) -> Option<Result<T, Error>> {
+//         todo!()
+//     }
 
-    #[inline(always)]
-    fn nth_back(&mut self, n: usize) -> Option<Result<T, Error>> {
-        todo!()
-    }
+//     #[inline(always)]
+//     fn nth_back(&mut self, n: usize) -> Option<Result<T, Error>> {
+//         todo!()
+//     }
 
-    #[inline(always)]
-    fn rfold<B, Fun>(self, init: B, mut f: Fun) -> B
-    where
-        Fun: FnMut(B, Result<T, Error>) -> B,
-    {
-        todo!()
-    }
-}
+//     #[inline(always)]
+//     fn rfold<B, Fun>(self, init: B, mut f: Fun) -> B
+//     where
+//         Fun: FnMut(B, Result<T, Error>) -> B,
+//     {
+//         todo!()
+//     }
+// }
 
 impl<'de, F, T> ExactSizeIterator for DeIter<'de, F, T>
 where
@@ -353,7 +353,8 @@ where
 {
     #[inline(always)]
     fn len(&self) -> usize {
-        todo!()
+        let max_stack = F::MAX_STACK_SIZE.expect("Only sized formulas supported by this method");
+        self.de.stack / max_stack
     }
 }
 
@@ -364,6 +365,8 @@ where
 {
 }
 
+/// Reads size of the value from the input.
+/// Returns `None` if the input is too short to determine the size.
 #[inline(always)]
 pub fn value_size(input: &[u8]) -> Option<usize> {
     if input.len() < FIELD_SIZE {
