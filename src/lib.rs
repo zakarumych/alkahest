@@ -1,5 +1,6 @@
 #![no_std]
-#![deny(unsafe_code)]
+#![forbid(unsafe_code)]
+// #![doc(test(attr(deny(warnings))))]
 
 extern crate self as alkahest;
 

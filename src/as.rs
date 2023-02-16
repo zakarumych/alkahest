@@ -2,8 +2,7 @@ use core::marker::PhantomData;
 
 use crate::{
     deserialize::{Deserialize, Deserializer, Error},
-    formula::Formula,
-    private::BareFormula,
+    formula::{BareFormula, Formula},
     serialize::{Serialize, Serializer},
 };
 

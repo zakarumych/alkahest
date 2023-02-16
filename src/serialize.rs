@@ -1,14 +1,8 @@
-use core::{
-    any::type_name,
-    convert::Infallible,
-    fmt,
-    mem::{replace, size_of},
-};
+use core::{any::type_name, convert::Infallible, fmt, mem::size_of};
 
 use crate::{
     cold::{cold, err},
-    formula::Formula,
-    private::BareFormula,
+    formula::{BareFormula, Formula},
     size::FixedUsize,
 };
 
@@ -19,6 +13,119 @@ use crate::{
 /// Doing otherwise may result in errors during deserialization.
 /// Where errors may be both failures to deserialize and
 /// incorrect deserialized values.
+///
+/// # Examples
+///
+/// ```
+/// # use alkahest::*;
+///
+/// struct ThreeBytes;
+///
+/// impl Formula for ThreeBytes {
+///     const MAX_STACK_SIZE: Option<usize> = Some(3);
+///     const EXACT_SIZE: bool = true;
+///     const HEAPLESS: bool = true;
+/// }
+///
+/// struct Qwe;
+///
+/// impl Serialize<ThreeBytes> for Qwe {
+///     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+///     where
+///         Self: Sized,
+///         S: Serializer,
+///     {
+///         let mut ser = ser.into();
+///         ser.write_bytes(b"qwe");
+///         ser.finish()
+///     }
+///
+///     fn fast_sizes(&self) -> Option<usize> {
+///         Some(3)
+///     }
+/// }
+/// ```
+#[cfg_attr(
+    feature = "derive",
+    doc = r#"
+
+When "derive" feature is enabled, `derive(Serialize)` is also available.
+
+```
+# use alkahest::*;
+
+
+/// Self-serializable empty formula.
+#[derive(Formula, Serialize)]
+struct EmptyFormula {}
+
+/// Another type serializable with `EmptyFormula`.
+#[derive(Serialize)]
+#[alkahest(EmptyFormula)]
+struct EmptySerialize;
+
+
+/// Formula for serializing tuple structures with fields
+/// that are serializable with `u8` and `[u16]` formulas.
+/// Slice formulas are serialized from some `IntoIterator`s and `SerIter` wrapper over any `Iterator`
+/// with serializable item type.
+#[derive(Formula)]
+struct TupleFormula(u8, [u16]);
+
+
+#[derive(Serialize)]
+#[alkahest(owned(TupleFormula))] // `owned()` because iterators cannot be serialzied by reference.
+struct TupleSerialize(u8, std::iter::Once<u16>);
+
+
+/// Formula for serializing structures with fields
+/// that are serializable with `u8` and `str` formulas.
+#[derive(Formula)]
+struct StructFormula {
+    a: u8,
+    b: str,
+}
+
+
+/// `String` can be serialized with `str` formula.
+#[derive(Serialize)]
+#[alkahest(StructFormula)]
+struct StructSerialize {
+    a: u8,
+    b: String,
+}
+
+
+/// Formula for serializing enums.
+#[derive(Formula, Serialize)]
+enum EnumFormula {
+    A,
+    B(u8),
+    C { y: String },
+}
+
+
+/// `&str` can be serialized with `String` formula.
+#[derive(Serialize)]
+#[alkahest(EnumFormula)]
+enum EnumSerialize<'a> {
+    A,
+    B(u8),
+    C { y: &'a str },
+}
+
+
+/// `&str` can be serialized with `String` formula.
+#[derive(Serialize)]
+#[alkahest(EnumFormula, @C)]
+struct CVariantSerialize {
+    y: String,
+}
+```
+
+Names of the formula variants and fields are important for `Serialize` and `Deserialize` derive macros.
+"#
+)]
 pub trait Serialize<F: Formula + ?Sized> {
     /// Serializes `self` into given serializer.
     fn serialize<S>(self, serializer: impl Into<S>) -> Result<S::Ok, S::Error>

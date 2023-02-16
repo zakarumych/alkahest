@@ -39,6 +39,61 @@
 /// Implementing traits incorrectly may result in wrong content
 /// of serialized data and deserialized values.
 /// It can't result in undefined behavior.
+///
+/// # Examples
+///
+/// ```
+/// # use alkahest::*;
+///
+/// struct MyFormula;
+///
+/// impl Formula for MyFormula {
+///     const MAX_STACK_SIZE: Option<usize> = Some(0);
+///     const EXACT_SIZE: bool = true;
+///     const HEAPLESS: bool = true;
+/// }
+/// ```
+#[cfg_attr(
+    feature = "derive",
+    doc = r#"
+
+When "derive" feature is enabled, `derive(Formula)` is also available.
+
+```
+# use alkahest::*;
+
+/// Formula for serializing unit structures.
+#[derive(Formula)]
+struct UnitFormula;
+
+
+/// Formula for serializing tuple structures with fields
+/// that are serializable with `u8` and `String` formulas.
+#[derive(Formula)]
+struct TupleFormula(u8, String);
+
+
+/// Formula for serializing structures with fields
+/// that are serializable with `TupleFormula` and `Vec<usize>` formulas.
+#[derive(Formula)]
+struct StructFormula {
+    a: TupleFormula,
+    b: Vec<u32>,
+}
+
+
+/// Formula for serializing enums.
+#[derive(Formula)]
+enum EnumFormula {
+    A,
+    B(StructFormula),
+    C { y: String },
+}
+```
+
+Names of the formula variants and fields are important for `Serialize` and `Deserialize` derive macros.
+"#
+)]
 pub trait Formula {
     /// Maximum size of stack this formula occupies.
     const MAX_STACK_SIZE: Option<usize>;
@@ -52,8 +107,8 @@ pub trait Formula {
 
 /// Ad-hoc negative trait.
 /// It should be implemented for most formulas.
-/// Except those that define serialization and deserialization
-/// for types via other formulas.
+/// Except for formulas with generic implementation of `Serialize` and `Deserialize` traits
+/// via another `Formula`.
 ///
 /// [`Ref`], [`Vec`], [`String`], [`As`] are examples of such formulas.
 ///
