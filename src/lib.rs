@@ -38,6 +38,9 @@ mod vec_deque;
 #[cfg(feature = "alloc")]
 mod string;
 
+#[cfg(feature = "serde-bincode")]
+mod bincode;
+
 pub use crate::{
     bytes::Bytes,
     deserialize::{
