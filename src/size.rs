@@ -39,18 +39,18 @@ pub type FixedIsizeType = i64;
 pub struct FixedUsize(FixedUsizeType);
 
 impl FixedUsize {
-    #[inline(always)]
+    #[inline(never)]
     pub fn truncate_unchecked(value: usize) -> Self {
         debug_assert!(FixedUsize::try_from(value).is_ok());
         FixedUsize(value as FixedUsizeType)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     pub fn to_le_bytes(self) -> [u8; size_of::<Self>()] {
         self.0.to_le_bytes()
     }
 
-    #[inline(always)]
+    #[inline(never)]
     pub fn from_le_bytes(bytes: [u8; size_of::<Self>()]) -> Result<Self, TryFromIntError> {
         FixedUsizeType::from_le_bytes(bytes).try_into()
     }
@@ -59,7 +59,7 @@ impl FixedUsize {
 impl TryFrom<usize> for FixedUsize {
     type Error = TryFromIntError;
 
-    #[inline(always)]
+    #[inline(never)]
     fn try_from(value: usize) -> Result<Self, TryFromIntError> {
         FixedUsizeType::try_from(value).map(FixedUsize)
     }
@@ -68,7 +68,7 @@ impl TryFrom<usize> for FixedUsize {
 impl TryFrom<FixedUsizeType> for FixedUsize {
     type Error = TryFromIntError;
 
-    #[inline(always)]
+    #[inline(never)]
     fn try_from(value: FixedUsizeType) -> Result<Self, TryFromIntError> {
         usize::try_from(value)?;
         Ok(FixedUsize(value))
@@ -76,14 +76,14 @@ impl TryFrom<FixedUsizeType> for FixedUsize {
 }
 
 impl From<FixedUsize> for usize {
-    #[inline(always)]
+    #[inline(never)]
     fn from(value: FixedUsize) -> Self {
         value.0 as usize
     }
 }
 
 impl From<FixedUsize> for FixedUsizeType {
-    #[inline(always)]
+    #[inline(never)]
     fn from(value: FixedUsize) -> Self {
         value.0
     }
@@ -98,7 +98,7 @@ impl Formula for FixedUsize {
 impl BareFormula for FixedUsize {}
 
 impl Serialize<FixedUsize> for FixedUsize {
-    #[inline(always)]
+    #[inline(never)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -106,14 +106,14 @@ impl Serialize<FixedUsize> for FixedUsize {
         <FixedUsizeType as Serialize<FixedUsizeType>>::serialize(self.0, ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
-        <FixedUsizeType as Serialize<FixedUsizeType>>::fast_sizes(&self.0)
+        Some(size_of::<FixedUsizeType>())
     }
 }
 
 impl Serialize<FixedUsize> for &FixedUsize {
-    #[inline(always)]
+    #[inline(never)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -121,28 +121,78 @@ impl Serialize<FixedUsize> for &FixedUsize {
         <FixedUsizeType as Serialize<FixedUsizeType>>::serialize(self.0, ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
-        <FixedUsizeType as Serialize<FixedUsizeType>>::fast_sizes(&self.0)
+        Some(size_of::<FixedUsizeType>())
+    }
+}
+
+impl Serialize<FixedUsize> for usize {
+    #[inline(never)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        Serialize::<FixedUsizeType>::serialize(FixedUsize::truncate_unchecked(self).0, ser)
+    }
+
+    #[inline(never)]
+    fn fast_sizes(&self) -> Option<usize> {
+        Some(size_of::<FixedUsizeType>())
+    }
+}
+
+impl Serialize<FixedUsize> for &usize {
+    #[inline(never)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        Serialize::<FixedUsizeType>::serialize(FixedUsize::truncate_unchecked(*self).0, ser)
+    }
+
+    #[inline(never)]
+    fn fast_sizes(&self) -> Option<usize> {
+        Some(size_of::<FixedUsizeType>())
     }
 }
 
 impl Deserialize<'_, FixedUsize> for FixedUsize {
-    #[inline(always)]
+    #[inline(never)]
     fn deserialize(de: Deserializer) -> Result<Self, Error> {
         let value = <FixedUsizeType as Deserialize<FixedUsizeType>>::deserialize(de)?;
 
         #[cfg(debug_assertions)]
-        if value > usize::MAX as FixedUsizeType {
+        if usize::try_from(value).is_err() {
             return err(Error::InvalidUsize(value));
         }
 
         Ok(FixedUsize(value))
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn deserialize_in_place(&mut self, de: Deserializer) -> Result<(), Error> {
         <FixedUsizeType as Deserialize<FixedUsizeType>>::deserialize_in_place(&mut self.0, de)
+    }
+}
+
+impl Deserialize<'_, FixedUsize> for usize {
+    #[inline(never)]
+    fn deserialize(de: Deserializer) -> Result<Self, Error> {
+        let value = <FixedUsizeType as Deserialize<FixedUsizeType>>::deserialize(de)?;
+
+        #[cfg(debug_assertions)]
+        if usize::try_from(value).is_err() {
+            return err(Error::InvalidUsize(value));
+        }
+
+        Ok(value as usize)
+    }
+
+    #[inline(never)]
+    fn deserialize_in_place(&mut self, de: Deserializer) -> Result<(), Error> {
+        *self = <Self as Deserialize<FixedUsize>>::deserialize(de)?;
+        Ok(())
     }
 }
 
@@ -154,12 +204,18 @@ impl Deserialize<'_, FixedUsize> for FixedUsize {
 pub struct FixedIsize(FixedIsizeType);
 
 impl FixedIsize {
-    #[inline(always)]
+    #[inline(never)]
+    pub fn truncate_unchecked(value: isize) -> Self {
+        debug_assert!(FixedIsize::try_from(value).is_ok());
+        FixedIsize(value as FixedIsizeType)
+    }
+
+    #[inline(never)]
     pub fn to_le_bytes(self) -> [u8; size_of::<Self>()] {
         self.0.to_le_bytes()
     }
 
-    #[inline(always)]
+    #[inline(never)]
     pub fn from_le_bytes(bytes: [u8; size_of::<Self>()]) -> Result<Self, TryFromIntError> {
         FixedIsizeType::from_le_bytes(bytes).try_into()
     }
@@ -168,7 +224,7 @@ impl FixedIsize {
 impl TryFrom<isize> for FixedIsize {
     type Error = TryFromIntError;
 
-    #[inline(always)]
+    #[inline(never)]
     fn try_from(value: isize) -> Result<Self, TryFromIntError> {
         FixedIsizeType::try_from(value).map(FixedIsize)
     }
@@ -177,7 +233,7 @@ impl TryFrom<isize> for FixedIsize {
 impl TryFrom<FixedIsizeType> for FixedIsize {
     type Error = TryFromIntError;
 
-    #[inline(always)]
+    #[inline(never)]
     fn try_from(value: FixedIsizeType) -> Result<Self, TryFromIntError> {
         isize::try_from(value)?;
         Ok(FixedIsize(value))
@@ -185,14 +241,14 @@ impl TryFrom<FixedIsizeType> for FixedIsize {
 }
 
 impl From<FixedIsize> for isize {
-    #[inline(always)]
+    #[inline(never)]
     fn from(value: FixedIsize) -> Self {
         value.0 as isize
     }
 }
 
 impl From<FixedIsize> for FixedIsizeType {
-    #[inline(always)]
+    #[inline(never)]
     fn from(value: FixedIsize) -> Self {
         value.0
     }
@@ -207,7 +263,7 @@ impl Formula for FixedIsize {
 impl BareFormula for FixedIsize {}
 
 impl Serialize<FixedIsize> for FixedIsize {
-    #[inline(always)]
+    #[inline(never)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -215,14 +271,14 @@ impl Serialize<FixedIsize> for FixedIsize {
         <FixedIsizeType as Serialize<FixedIsizeType>>::serialize(self.0, ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         <FixedIsizeType as Serialize<FixedIsizeType>>::fast_sizes(&self.0)
     }
 }
 
 impl Serialize<FixedIsize> for &FixedIsize {
-    #[inline(always)]
+    #[inline(never)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -230,27 +286,77 @@ impl Serialize<FixedIsize> for &FixedIsize {
         <FixedIsizeType as Serialize<FixedIsizeType>>::serialize(self.0, ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         <FixedIsizeType as Serialize<FixedIsizeType>>::fast_sizes(&self.0)
     }
 }
 
+impl Serialize<FixedIsize> for isize {
+    #[inline(never)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        Serialize::<FixedIsizeType>::serialize(FixedIsize::truncate_unchecked(self).0, ser)
+    }
+
+    #[inline(never)]
+    fn fast_sizes(&self) -> Option<usize> {
+        Some(size_of::<FixedIsizeType>())
+    }
+}
+
+impl Serialize<FixedIsize> for &isize {
+    #[inline(never)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        Serialize::<FixedIsizeType>::serialize(FixedIsize::truncate_unchecked(*self).0, ser)
+    }
+
+    #[inline(never)]
+    fn fast_sizes(&self) -> Option<usize> {
+        Some(size_of::<FixedIsizeType>())
+    }
+}
+
 impl Deserialize<'_, FixedIsize> for FixedIsize {
-    #[inline(always)]
+    #[inline(never)]
     fn deserialize(de: Deserializer) -> Result<Self, Error> {
         let value = <FixedIsizeType as Deserialize<FixedIsizeType>>::deserialize(de)?;
 
         #[cfg(debug_assertions)]
-        if value > usize::MAX as FixedIsizeType {
+        if isize::try_from(value).is_err() {
             return err(Error::InvalidIsize(value));
         }
 
         Ok(FixedIsize(value))
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn deserialize_in_place(&mut self, de: Deserializer) -> Result<(), Error> {
         <FixedIsizeType as Deserialize<FixedIsizeType>>::deserialize_in_place(&mut self.0, de)
+    }
+}
+
+impl Deserialize<'_, FixedIsize> for isize {
+    #[inline(never)]
+    fn deserialize(de: Deserializer) -> Result<Self, Error> {
+        let value = <FixedIsizeType as Deserialize<FixedIsizeType>>::deserialize(de)?;
+
+        #[cfg(debug_assertions)]
+        if isize::try_from(value).is_err() {
+            return err(Error::InvalidIsize(value));
+        }
+
+        Ok(value as isize)
+    }
+
+    #[inline(never)]
+    fn deserialize_in_place(&mut self, de: Deserializer) -> Result<(), Error> {
+        *self = <Self as Deserialize<FixedIsize>>::deserialize(de)?;
+        Ok(())
     }
 }

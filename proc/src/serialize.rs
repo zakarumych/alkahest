@@ -482,7 +482,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
 
                 tokens.extend(quote::quote! {
                     impl #impl_generics ::alkahest::private::Serialize<#formula_path> for #ident #type_generics #where_clause {
-                        #[inline(always)]
+                        #[inline(never)]
                         fn serialize<S>(self, ser: impl ::alkahest::private::Into<S>) -> ::alkahest::private::Result<S::Ok, S::Error>
                         where
                             S: ::alkahest::private::Serializer
@@ -514,7 +514,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                             ser.finish()
                         }
 
-                        #[inline(always)]
+                        #[inline(never)]
                         fn fast_sizes(&self) -> ::alkahest::private::Option<::alkahest::private::usize> {
                             if let ::alkahest::private::Option::Some(size) = ::alkahest::private::formula_fast_sizes::<#formula_path>() {
                                 return Some(size);
@@ -567,7 +567,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
 
                 tokens.extend(quote::quote! {
                     impl #impl_generics ::alkahest::private::Serialize<#formula_path> for &#ident #type_generics #where_clause {
-                        #[inline(always)]
+                        #[inline(never)]
                         fn serialize<S>(self, ser: impl ::alkahest::private::Into<S>) -> ::alkahest::private::Result<S::Ok, S::Error>
                         where
                             S: ::alkahest::private::Serializer
@@ -593,7 +593,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                             ser.finish()
                         }
 
-                        #[inline(always)]
+                        #[inline(never)]
                         fn fast_sizes(&self) -> ::alkahest::private::Option<::alkahest::private::usize> {
                             if let ::alkahest::private::Option::Some(size) = ::alkahest::private::formula_fast_sizes::<#formula_path>() {
                                 return Some(size);
@@ -782,7 +782,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
 
                 tokens.extend(quote::quote! {
                     impl #impl_generics ::alkahest::private::Serialize<#formula_path> for #ident #type_generics #where_clause {
-                        #[inline(always)]
+                        #[inline(never)]
                         fn serialize<S>(self, ser: impl ::alkahest::private::Into<S>) -> ::alkahest::private::Result<S::Ok, S::Error>
                         where
                             S: ::alkahest::private::Serializer
@@ -819,7 +819,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                             }
                         }
 
-                        #[inline(always)]
+                        #[inline(never)]
                         fn fast_sizes(&self) -> ::alkahest::private::Option<::alkahest::private::usize> {
                             if let ::alkahest::private::Option::Some(size) = ::alkahest::private::formula_fast_sizes::<#formula_path>() {
                                 return Some(size);
@@ -870,7 +870,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
 
                 tokens.extend(quote::quote! {
                     impl #impl_generics ::alkahest::private::Serialize<#formula_path> for &#ident #type_generics #where_clause {
-                        #[inline(always)]
+                        #[inline(never)]
                         fn serialize<S>(self, ser: impl ::alkahest::private::Into<S>) -> ::alkahest::private::Result<S::Ok, S::Error>
                         where
                             S: ::alkahest::private::Serializer
@@ -900,7 +900,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                             }
                         }
 
-                        #[inline(always)]
+                        #[inline(never)]
                         fn fast_sizes(&self) -> ::alkahest::private::Option<::alkahest::private::usize> {
                             if let ::alkahest::private::Option::Some(size) = ::alkahest::private::formula_fast_sizes::<#formula_path>() {
                                 return Some(size);

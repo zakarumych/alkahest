@@ -212,7 +212,7 @@ formula, naturally it will be serialized using `bincode` crate.
 # Usage example
 
 ```rust
-use alkahest::{Formula, Serialize, Deserialize, serialize, serialize_size, deserialize};
+use alkahest::{Formula, Serialize, Deserialize, serialize, serialized_size, deserialize};
 
 // Define simple formula. Make it self-serializable.
 #[derive(Clone, Debug, PartialEq, Eq, Formula, Serialize, Deserialize)]
@@ -223,7 +223,7 @@ struct MyDataType {
 
 // Prepare data to serialize.
 let value = MyDataType {
-  a: ,
+  a: 1,
   b: vec![2, 3],
 };
 
@@ -233,18 +233,19 @@ let value = MyDataType {
 // notably types with iterators can't.
 // Currently size is calculated using serialization process with
 // writes to buffer omitted.
-let size = serialized_size(&value);
+let size = serialized_size::<MyDataType, _>(&value);
 
 // Prepare bytes buffer.
 let mut buffer = vec![0u8; size];
 
-let actual_size = serialize(&mut buffer, &value).expect("Buffer is large enough");
+let actual_size = serialize::<MyDataType, _>(&value, &mut buffer).expect("Buffer is large enough");
 
 // Calculated size must be exactly what is serialized.
 // If not, then some `Serialize` impl is incorrect.
 assert_eq!(actual_size, size, "thought so");
 
-let deserialized = deserialize::<MyDataType, MyDataType>(&buffer);
+let (deserialized, deserialized_size) = deserialize::<MyDataType, MyDataType>(&buffer).unwrap();
+assert_eq!(deserialized_size, size);
 assert_eq!(deserialized, value);
 ```
 

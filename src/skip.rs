@@ -10,12 +10,12 @@ impl<'de, F> Deserialize<'de, F> for Skip
 where
     F: BareFormula + ?Sized,
 {
-    #[inline(always)]
+    #[inline(never)]
     fn deserialize(_de: Deserializer) -> Result<Self, Error> {
         Ok(Skip)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn deserialize_in_place(&mut self, _de: Deserializer) -> Result<(), Error> {
         Ok(())
     }

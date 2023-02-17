@@ -2,13 +2,12 @@
 //! This module provides formula for serializing unsized types through a reference.
 //!
 
-use core::{marker::PhantomData, mem::size_of};
+use core::marker::PhantomData;
 
 use crate::{
     deserialize::{Deserialize, Deserializer, Error},
-    formula::{BareFormula, Formula},
+    formula::{reference_size, BareFormula, Formula},
     serialize::{Serialize, Serializer},
-    size::FixedUsize,
 };
 
 /// `Ref` is a formula wrapper.
@@ -26,7 +25,7 @@ impl<F> Formula for Ref<F>
 where
     F: BareFormula + ?Sized,
 {
-    const MAX_STACK_SIZE: Option<usize> = Some(size_of::<[FixedUsize; 2]>());
+    const MAX_STACK_SIZE: Option<usize> = Some(reference_size::<F>());
     const EXACT_SIZE: bool = true;
     const HEAPLESS: bool = false;
 }
@@ -36,7 +35,7 @@ where
     F: BareFormula + ?Sized,
     T: Serialize<F>,
 {
-    #[inline(always)]
+    #[inline(never)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -44,10 +43,10 @@ where
         ser.into().write_ref::<F, T>(self)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
-        let size = self.fast_sizes()?;
-        Some(size + size_of::<[FixedUsize; 2]>())
+        let size = <T as Serialize<F>>::fast_sizes(self)?;
+        Some(size + reference_size::<F>())
     }
 }
 
@@ -56,18 +55,18 @@ where
     F: BareFormula + ?Sized,
     T: Deserialize<'de, F> + ?Sized,
 {
-    #[inline(always)]
+    #[inline(never)]
     fn deserialize(de: Deserializer<'de>) -> Result<T, Error>
     where
         T: Sized,
     {
-        let de = de.deref()?;
+        let de = de.deref::<F>()?;
         <T as Deserialize<F>>::deserialize(de)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), Error> {
-        let de = de.deref()?;
+        let de = de.deref::<F>()?;
         <T as Deserialize<F>>::deserialize_in_place(self, de)
     }
 }

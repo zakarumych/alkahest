@@ -25,7 +25,7 @@ macro_rules! impl_primitive {
         impl BareFormula for $ty {}
 
         impl Serialize<$ty> for $ty {
-            #[inline(always)]
+            #[inline(never)]
             fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
             where
                 S: Serializer,
@@ -35,14 +35,14 @@ macro_rules! impl_primitive {
                 ser.finish()
             }
 
-            #[inline(always)]
+            #[inline(never)]
             fn fast_sizes(&self) -> Option<usize> {
                 Some(size_of::<$ty>())
             }
         }
 
         impl Serialize<$ty> for &$ty {
-            #[inline(always)]
+            #[inline(never)]
             fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
             where
                 S: Serializer,
@@ -52,7 +52,7 @@ macro_rules! impl_primitive {
                 ser.finish()
             }
 
-            #[inline(always)]
+            #[inline(never)]
             fn fast_sizes(&self) -> Option<usize> {
                 Some(size_of::<$ty>())
             }
@@ -62,7 +62,7 @@ macro_rules! impl_primitive {
         where
             T: From<$ty>,
         {
-            #[inline(always)]
+            #[inline(never)]
             fn deserialize(de: Deserializer) -> Result<Self, Error> {
                 let input = de.read_all_bytes();
                 if input.len() == size_of::<$ty>() {
@@ -80,7 +80,7 @@ macro_rules! impl_primitive {
                 }
             }
 
-            #[inline(always)]
+            #[inline(never)]
             fn deserialize_in_place(&mut self, de: Deserializer) -> Result<(), Error> {
                 let value = <T as Deserialize<'_, $ty>>::deserialize(de)?;
                 *self = value;
@@ -114,7 +114,7 @@ impl Formula for bool {
 impl BareFormula for bool {}
 
 impl Serialize<bool> for bool {
-    #[inline(always)]
+    #[inline(never)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -122,14 +122,14 @@ impl Serialize<bool> for bool {
         <u8 as Serialize<u8>>::serialize(*self.borrow() as u8, ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         Some(size_of::<u8>())
     }
 }
 
 impl Serialize<bool> for &bool {
-    #[inline(always)]
+    #[inline(never)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -137,7 +137,7 @@ impl Serialize<bool> for &bool {
         <u8 as Serialize<u8>>::serialize(*self.borrow() as u8, ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         Some(size_of::<u8>())
     }
@@ -147,13 +147,13 @@ impl<T> Deserialize<'_, bool> for T
 where
     T: From<bool>,
 {
-    #[inline(always)]
+    #[inline(never)]
     fn deserialize(de: Deserializer) -> Result<Self, Error> {
         let value = <u8 as Deserialize<u8>>::deserialize(de)?;
         Ok(From::from(value != 0))
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn deserialize_in_place(&mut self, de: Deserializer) -> Result<(), Error> {
         let value = <u8 as Deserialize<u8>>::deserialize(de)?;
         *self = From::from(value != 0);

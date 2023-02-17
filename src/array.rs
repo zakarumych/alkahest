@@ -4,7 +4,7 @@ use crate::{
     deserialize::{Deserialize, Deserializer, Error},
     formula::{formula_fast_sizes, repeat_size, BareFormula, Formula},
     serialize::{Serialize, Serializer},
-    FixedUsize,
+    size::FixedUsize,
 };
 
 impl<F, const N: usize> Formula for [F; N]
@@ -23,7 +23,7 @@ where
     F: Formula,
     T: Serialize<F>,
 {
-    #[inline(always)]
+    #[inline(never)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -34,7 +34,7 @@ where
         ser.finish()
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         if let Some(size) = formula_fast_sizes::<[F; N]>() {
             return Some(size);
@@ -56,7 +56,7 @@ where
     F: Formula,
     &'ser T: Serialize<F>,
 {
-    #[inline(always)]
+    #[inline(never)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -67,7 +67,7 @@ where
         ser.finish()
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         if let Some(size) = formula_fast_sizes::<[F; N]>() {
             return Some(size);
@@ -89,7 +89,7 @@ where
     F: Formula,
     T: Serialize<F>,
 {
-    #[inline(always)]
+    #[inline(never)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -100,7 +100,7 @@ where
         ser.finish()
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         if let Some(size) = formula_fast_sizes::<[F]>() {
             return Some(size);
@@ -125,7 +125,7 @@ where
     F: Formula,
     &'ser T: Serialize<F>,
 {
-    #[inline(always)]
+    #[inline(never)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -136,7 +136,7 @@ where
         ser.finish()
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         if let Some(size) = formula_fast_sizes::<[F]>() {
             return Some(size);
@@ -161,7 +161,7 @@ where
     F: Formula,
     T: Deserialize<'de, F>,
 {
-    #[inline(always)]
+    #[inline(never)]
     fn deserialize(mut de: Deserializer<'de>) -> Result<Self, Error> {
         let mut opts = [(); N].map(|_| None);
         opts.iter_mut().try_for_each(|slot| {
@@ -172,7 +172,7 @@ where
         Ok(value)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn deserialize_in_place(&mut self, mut de: Deserializer<'de>) -> Result<(), Error> {
         self.iter_mut()
             .try_for_each(|elem| de.read_in_place::<F, T>(elem, false))?;

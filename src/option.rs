@@ -20,7 +20,7 @@ where
     F: Formula,
     T: Serialize<F>,
 {
-    #[inline(always)]
+    #[inline(never)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -38,7 +38,7 @@ where
         }
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         match self {
             None => Some(1),
@@ -52,7 +52,7 @@ where
     F: Formula,
     &'ser T: Serialize<F>,
 {
-    #[inline(always)]
+    #[inline(never)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -70,7 +70,7 @@ where
         }
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         match self {
             None => Some(1),
@@ -84,7 +84,7 @@ where
     F: Formula,
     T: Deserialize<'de, F>,
 {
-    #[inline(always)]
+    #[inline(never)]
     fn deserialize(mut de: Deserializer<'de>) -> Result<Self, Error> {
         let is_some: u8 = de.read_bytes(1)?[0];
         if is_some != 0 {
@@ -94,7 +94,7 @@ where
         }
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn deserialize_in_place(&mut self, mut de: Deserializer<'de>) -> Result<(), Error> {
         let is_some: u8 = de.read_bytes(1)?[0];
         if is_some != 0 {

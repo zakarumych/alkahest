@@ -308,7 +308,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 deserialize_generics.split_for_impl();
             Ok(quote::quote! {
                 impl #impl_deserialize_generics ::alkahest::private::Deserialize<#de, #formula_path> for #ident #type_generics #where_serialize_clause {
-                    #[inline(always)]
+                    #[inline(never)]
                     fn deserialize(mut de: ::alkahest::private::Deserializer<#de>) -> ::alkahest::private::Result<Self, ::alkahest::private::Error> {
                         // Checks compilation of code in the block.
                         #[allow(unused)]
@@ -333,7 +333,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         ::alkahest::private::Result::Ok(value)
                     }
 
-                    #[inline(always)]
+                    #[inline(never)]
                     fn deserialize_in_place(&mut self, mut de: ::alkahest::private::Deserializer<#de>) -> Result<(), ::alkahest::private::Error> {
                         let #ident #bind_ref_mut_names = *self;
 
@@ -566,7 +566,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 deserialize_generics.split_for_impl();
             Ok(quote::quote! {
                 impl #impl_deserialize_generics ::alkahest::private::Deserialize<#de, #formula_path> for #ident #type_generics #where_serialize_clause {
-                    #[inline(always)]
+                    #[inline(never)]
                     fn deserialize(mut de: ::alkahest::private::Deserializer<#de>) -> ::alkahest::private::Result<Self, ::alkahest::private::Error> {
                         // Checks compilation of code in the block.
                         #[allow(unused)]
@@ -576,7 +576,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                             #variant_count_check
                         }
 
-                        let variant_idx = de.read_auto::<::alkahest::private::u32>(false)?;
+                        let variant_idx = de.read_value::<::alkahest::private::u32, _>(false)?;
                         match variant_idx {
                             #(
                                 #formula_path::#variant_name_ids => {
@@ -599,7 +599,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         }
                     }
 
-                    #[inline(always)]
+                    #[inline(never)]
                     fn deserialize_in_place(&mut self, mut de: ::alkahest::private::Deserializer<#de>) -> Result<(), ::alkahest::private::Error> {
                         // Checks compilation of code in the block.
                         #[allow(unused)]
@@ -608,7 +608,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         };
                         #field_count_check
 
-                        let variant_idx = de.read_auto::<::alkahest::private::u32>(false)?;
+                        let variant_idx = de.read_value::<::alkahest::private::u32, _>(false)?;
                         match (variant_idx, self) {
                             #(
                                 (#formula_path::#variant_name_ids, #ident::#variant_names #bind_ref_mut_names) => {

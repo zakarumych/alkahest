@@ -14,7 +14,7 @@ impl Formula for str {
 impl BareFormula for str {}
 
 impl Serialize<str> for &str {
-    #[inline(always)]
+    #[inline(never)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -24,14 +24,14 @@ impl Serialize<str> for &str {
         ser.finish()
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         Some(self.len())
     }
 }
 
 impl<'de, 'fe: 'de> Deserialize<'fe, str> for &'de str {
-    #[inline(always)]
+    #[inline(never)]
     fn deserialize(deserializer: Deserializer<'fe>) -> Result<Self, Error>
     where
         Self: Sized,
@@ -43,7 +43,7 @@ impl<'de, 'fe: 'de> Deserialize<'fe, str> for &'de str {
         }
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn deserialize_in_place(&mut self, deserializer: Deserializer<'fe>) -> Result<(), Error> {
         let bytes = deserializer.read_all_bytes();
         match core::str::from_utf8(bytes) {

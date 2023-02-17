@@ -25,7 +25,7 @@ where
     F: BareFormula + ?Sized,
     T: Serialize<F>,
 {
-    #[inline(always)]
+    #[inline(never)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         Self: Sized,
@@ -34,7 +34,7 @@ where
         <T as Serialize<F>>::serialize(self, ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         <T as Serialize<F>>::fast_sizes(self)
     }
@@ -45,7 +45,7 @@ where
     F: BareFormula + ?Sized,
     T: Deserialize<'de, F>,
 {
-    #[inline(always)]
+    #[inline(never)]
     fn deserialize(deserializer: Deserializer<'de>) -> Result<Self, Error>
     where
         Self: Sized,
@@ -53,7 +53,7 @@ where
         <T as Deserialize<'de, F>>::deserialize(deserializer)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn deserialize_in_place(&mut self, deserializer: Deserializer<'de>) -> Result<(), Error> {
         <T as Deserialize<'de, F>>::deserialize_in_place(self, deserializer)
     }

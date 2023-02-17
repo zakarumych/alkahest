@@ -7,7 +7,7 @@ use crate::{
     formula::Formula,
     reference::Ref,
     serialize::{Serialize, Serializer},
-    FixedUsize,
+    size::FixedUsize,
 };
 
 impl Formula for String {
@@ -20,7 +20,7 @@ impl<T> Serialize<String> for T
 where
     T: Serialize<str>,
 {
-    #[inline(always)]
+    #[inline(never)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         T: Serialize<str>,
@@ -29,7 +29,7 @@ where
         ser.into().write_ref::<str, T>(self)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         let size = self.fast_sizes()?;
         Some(size + size_of::<[FixedUsize; 2]>())
@@ -40,21 +40,21 @@ impl<'de, T> Deserialize<'de, String> for T
 where
     T: Deserialize<'de, str>,
 {
-    #[inline(always)]
+    #[inline(never)]
     fn deserialize(de: Deserializer<'de>) -> Result<T, Error> {
-        let de = de.deref()?;
+        let de = de.deref::<str>()?;
         <T as Deserialize<str>>::deserialize(de)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), Error> {
-        let de = de.deref()?;
+        let de = de.deref::<str>()?;
         <T as Deserialize<str>>::deserialize_in_place(self, de)
     }
 }
 
 impl Serialize<str> for String {
-    #[inline(always)]
+    #[inline(never)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -64,14 +64,14 @@ impl Serialize<str> for String {
         ser.finish()
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         Some(self.len())
     }
 }
 
 impl Serialize<str> for &String {
-    #[inline(always)]
+    #[inline(never)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -81,21 +81,22 @@ impl Serialize<str> for &String {
         ser.finish()
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         Some(self.len())
     }
 }
 
 impl<'de> Deserialize<'de, str> for String {
-    #[inline(always)]
+    #[inline(never)]
     fn deserialize(deserializer: Deserializer<'de>) -> Result<Self, Error> {
         let string = <&str as Deserialize<'de, str>>::deserialize(deserializer)?;
         Ok(string.to_owned())
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn deserialize_in_place(&mut self, deserializer: Deserializer<'de>) -> Result<(), Error> {
+        self.clear();
         let string = <&str as Deserialize<'de, str>>::deserialize(deserializer)?;
         self.push_str(string);
         Ok(())

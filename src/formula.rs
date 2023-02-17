@@ -1,3 +1,7 @@
+use core::mem::size_of;
+
+use crate::size::FixedUsize;
+
 /// Trait for data formulas.
 /// Types that implement this trait are used as markers
 /// to guide serialization and deserialization process.
@@ -105,6 +109,18 @@ pub trait Formula {
     const HEAPLESS: bool;
 }
 
+#[inline(always)]
+pub const fn reference_size<F>() -> usize
+where
+    F: Formula + ?Sized,
+{
+    match F::MAX_STACK_SIZE {
+        Some(0) => 0,
+        Some(_) => size_of::<FixedUsize>(),
+        None => size_of::<[FixedUsize; 2]>(),
+    }
+}
+
 /// Ad-hoc negative trait.
 /// It should be implemented for most formulas.
 /// Except for formulas with generic implementation of `Serialize` and `Deserialize` traits
@@ -118,6 +134,7 @@ pub trait Formula {
 /// [`As`]: crate::As
 pub trait BareFormula: Formula {}
 
+#[inline(always)]
 pub const fn unwrap_size(a: Option<usize>) -> usize {
     let (arr, idx) = match a {
         None => ([0], 1), // Error in both runtime and compile time.
@@ -127,22 +144,9 @@ pub const fn unwrap_size(a: Option<usize>) -> usize {
 }
 
 /// Function to combine sizes of formulas.
-/// Order of arguments is important.
-/// First argument is not allowed to be `None` and will cause an error.
-/// Second argument may be `None` and will produce `None` as a result.
-/// If both arguments are `Some` then result is their sum.
-pub const fn sum_size(a: Option<usize>, b: Option<usize>) -> Option<usize> {
-    let (arr, idx) = match (a, b) {
-        (None, _) => ([None], 1), // Error in both runtime and compile time.
-        (Some(_), None) => ([None], 0),
-        (Some(a), Some(b)) => ([Some(a + b)], 0),
-    };
-    arr[idx]
-}
-
-/// Function to combine sizes of formulas.
 /// If any of two is `None` then result is `None`.
-pub const fn sum_size_relaxed(a: Option<usize>, b: Option<usize>) -> Option<usize> {
+#[inline(always)]
+pub const fn sum_size(a: Option<usize>, b: Option<usize>) -> Option<usize> {
     match (a, b) {
         (None, _) | (_, None) => None,
         (Some(a), Some(b)) => Some(a + b),
@@ -153,6 +157,7 @@ pub const fn sum_size_relaxed(a: Option<usize>, b: Option<usize>) -> Option<usiz
 /// Order of arguments is not important.
 /// If any argument is `None` then result is `None`.
 /// If both arguments are `Some` then result is maximum of the two.
+#[inline(always)]
 pub const fn max_size(a: Option<usize>, b: Option<usize>) -> Option<usize> {
     match (a, b) {
         (None, _) => None,
@@ -165,12 +170,12 @@ pub const fn max_size(a: Option<usize>, b: Option<usize>) -> Option<usize> {
 /// Function for multiplying size of formula by a constant.
 /// First argument cannot be `None` and will cause an error.
 /// If first argument is `Some` then product of arguments is returned.
+#[inline(always)]
 pub const fn repeat_size(a: Option<usize>, n: usize) -> Option<usize> {
-    let (arr, idx) = match a {
-        None => ([None], 1), // Error in both runtime and compile time.
-        Some(a) => ([Some(a * n)], 0),
-    };
-    arr[idx]
+    match a {
+        None => None,
+        Some(a) => Some(a * n),
+    }
 }
 
 #[inline(always)]

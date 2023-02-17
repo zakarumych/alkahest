@@ -1,14 +1,13 @@
 use core::marker::PhantomData;
 
 use crate::{
-    deserialize::{Deserialize, Deserializer, Error},
-    formula::{unwrap_size, BareFormula},
-    DeIter, Formula,
+    deserialize::{DeIter, Deserialize, Deserializer, Error, UnsizedDeIter},
+    formula::{unwrap_size, BareFormula, Formula},
 };
 
 /// Wrapper for lazy deserialization.
 /// `Lazy<F>` may deserialize data from formula `F`.
-/// Then any it may produce any type `T` that can be deserialized from formula `F`.
+/// Then any it may produce any type `T` that can be deserialized from formula `F`. ```
 #[derive(Clone)]
 pub struct Lazy<'de, F: ?Sized> {
     de: Deserializer<'de>,
@@ -20,7 +19,7 @@ where
     F: BareFormula + ?Sized,
 {
     /// Deserialize the lazy value.
-    #[inline(always)]
+    #[inline(never)]
     pub fn get<T>(&self) -> Result<T, Error>
     where
         T: Deserialize<'de, F>,
@@ -29,7 +28,7 @@ where
     }
 
     /// Deserialize the lazy value in place.
-    #[inline(always)]
+    #[inline(never)]
     pub fn get_in_place<T>(&self, place: &mut T) -> Result<(), Error>
     where
         T: Deserialize<'de, F> + ?Sized,
@@ -42,7 +41,7 @@ impl<'de, 'fe: 'de, F> Deserialize<'fe, F> for Lazy<'de, F>
 where
     F: BareFormula + ?Sized,
 {
-    #[inline(always)]
+    #[inline(never)]
     fn deserialize(de: Deserializer<'fe>) -> Result<Self, Error> {
         Ok(Lazy {
             de,
@@ -50,27 +49,56 @@ where
         })
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn deserialize_in_place(&mut self, de: Deserializer<'fe>) -> Result<(), Error> {
         self.de = de;
         Ok(())
     }
 }
 
+/// Wrapper for lazy deserialization of a sequence.
+/// `LazySeq<F, T>` may deserialize data from formula `[F]`
+/// where `T` can be deserialized from formula `F`.
+///
+/// # Example
+///
+/// ```
+/// # use alkahest::*;
+/// let mut buffer = [0u8; 1024];
+///
+/// serialize::<[u32], _>([1, 2, 3], &mut buffer).unwrap();
+/// let (seq, _) = deserialize::<[u32], LazySeq<u32, u32>>(&buffer).unwrap();
+/// let mut iter = seq.iter();
+/// assert_eq!(iter.next().unwrap().unwrap(), 1);
+/// assert_eq!(iter.next().unwrap().unwrap(), 2);
+/// assert_eq!(iter.next().unwrap().unwrap(), 3);
+/// assert!(iter.next().is_none());
+/// ```
+///
+/// `LazySeq` may be used to deserialize slice of unsized formulas.
+///
+/// ```
+/// # use alkahest::*;
+/// let mut buffer = [0u8; 1024];
+///
+/// serialize::<[As<str>], _>(["qwe", "rty"], &mut buffer).unwrap();
+/// let (seq, _) = deserialize::<[As<str>], LazySeq<As<str>, &str>>(&buffer).unwrap();
+/// let mut iter = seq.iter();
+/// assert_eq!(iter.next().unwrap().unwrap(), "qwe");
+/// assert_eq!(iter.next().unwrap().unwrap(), "rty");
+/// assert!(iter.next().is_none());
+/// ```
 pub struct LazySeq<'de, F: ?Sized, T = F> {
-    inner: DeIter<'de, F, T>,
+    inner: UnsizedDeIter<'de, F, T>,
 }
 
 impl<'de, F, T> LazySeq<'de, F, T>
 where
-    F: ?Sized,
+    F: Formula + ?Sized,
+    T: Deserialize<'de, F>,
 {
-    #[inline(always)]
-    pub fn iter(&self) -> DeIter<'de, F, T>
-    where
-        F: Formula,
-        T: Deserialize<'de, F>,
-    {
+    #[inline(never)]
+    pub fn iter(&self) -> UnsizedDeIter<'de, F, T> {
         self.inner.clone()
     }
 }
@@ -81,10 +109,10 @@ where
     T: Deserialize<'de, F>,
 {
     type Item = Result<T, Error>;
-    type IntoIter = DeIter<'de, F, T>;
+    type IntoIter = UnsizedDeIter<'de, F, T>;
 
-    #[inline(always)]
-    fn into_iter(self) -> DeIter<'de, F, T> {
+    #[inline(never)]
+    fn into_iter(self) -> UnsizedDeIter<'de, F, T> {
         self.inner
     }
 }
@@ -94,16 +122,16 @@ where
     F: Formula,
     T: Deserialize<'de, F>,
 {
-    #[inline(always)]
+    #[inline(never)]
     fn deserialize(de: Deserializer<'fe>) -> Result<Self, Error> {
         Ok(LazySeq {
-            inner: de.into_iter()?,
+            inner: de.into_unsized_iter()?,
         })
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn deserialize_in_place(&mut self, de: Deserializer<'fe>) -> Result<(), Error> {
-        self.inner = de.into_iter()?;
+        self.inner = de.into_unsized_iter()?;
         Ok(())
     }
 }
@@ -113,20 +141,53 @@ where
     F: Formula,
     T: Deserialize<'de, F>,
 {
-    #[inline(always)]
+    #[inline(never)]
     fn deserialize(de: Deserializer<'fe>) -> Result<Self, Error> {
         Ok(LazySeq {
-            inner: de.into_iter()?,
+            inner: de.into_unsized_iter()?,
         })
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn deserialize_in_place(&mut self, de: Deserializer<'fe>) -> Result<(), Error> {
-        self.inner = de.into_iter()?;
+        self.inner = de.into_unsized_iter()?;
         Ok(())
     }
 }
 
+/// Wrapper for lazy deserialization of a sequence.
+/// `LazySlice<F, T>` may deserialize data from formula `[F]`
+/// where `T` can be deserialized from formula `F`.
+///
+/// # Example
+///
+/// ```
+/// # use alkahest::*;
+/// let mut buffer = [0u8; 1024];
+///
+/// serialize::<[u32], _>([1, 2, 3], &mut buffer).unwrap();
+/// let (seq, _) = deserialize::<[u32], LazySlice<u32, u32>>(&buffer).unwrap();
+/// let mut iter = seq.iter();
+/// assert_eq!(iter.next().unwrap().unwrap(), 1);
+/// assert_eq!(iter.next().unwrap().unwrap(), 2);
+/// assert_eq!(iter.next().unwrap().unwrap(), 3);
+/// assert!(iter.next().is_none());
+/// ```
+///
+/// `LazySlice` cannot be used to deserialize slice of unsized formulas.
+/// Attempt to use unsized formula will result in compile error.
+///
+/// ```compile_fail
+/// # use alkahest::*;
+/// let mut buffer = [0u8; 1024];
+///
+/// serialize::<[As<str>], _>(["qwe", "rty"], &mut buffer).unwrap();
+/// let (seq, _) = deserialize::<[As<str>], LazySlice<As<str>, &str>>(&buffer).unwrap();
+/// let mut iter = seq.iter();
+/// assert_eq!(iter.next().unwrap().unwrap(), "qwe");
+/// assert_eq!(iter.next().unwrap().unwrap(), "rty");
+/// assert!(iter.next().is_none());
+/// ```
 pub struct LazySlice<'de, F: ?Sized, T = F> {
     inner: DeIter<'de, F, T>,
 }
@@ -141,14 +202,11 @@ where
 
 impl<'de, F, T> LazySlice<'de, F, T>
 where
-    F: ?Sized,
+    F: Formula + ?Sized,
+    T: Deserialize<'de, F>,
 {
-    #[inline(always)]
-    pub fn iter(&self) -> DeIter<'de, F, T>
-    where
-        F: Formula,
-        T: Deserialize<'de, F>,
-    {
+    #[inline(never)]
+    pub fn iter(&self) -> DeIter<'de, F, T> {
         self.inner.clone()
     }
 }
@@ -161,7 +219,7 @@ where
     type Item = Result<T, Error>;
     type IntoIter = DeIter<'de, F, T>;
 
-    #[inline(always)]
+    #[inline(never)]
     fn into_iter(self) -> DeIter<'de, F, T> {
         self.inner
     }
@@ -172,14 +230,15 @@ where
     F: Formula,
     T: Deserialize<'de, F>,
 {
-    #[inline(always)]
+    #[inline(never)]
     fn deserialize(de: Deserializer<'fe>) -> Result<Self, Error> {
+        let _ = Self::ELEMENT_SIZE;
         Ok(LazySlice {
             inner: de.into_iter()?,
         })
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn deserialize_in_place(&mut self, de: Deserializer<'fe>) -> Result<(), Error> {
         self.inner = de.into_iter()?;
         Ok(())
@@ -191,14 +250,14 @@ where
     F: Formula,
     T: Deserialize<'de, F>,
 {
-    #[inline(always)]
+    #[inline(never)]
     fn deserialize(de: Deserializer<'fe>) -> Result<Self, Error> {
         Ok(LazySlice {
             inner: de.into_iter()?,
         })
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn deserialize_in_place(&mut self, de: Deserializer<'fe>) -> Result<(), Error> {
         self.inner = de.into_iter()?;
         Ok(())

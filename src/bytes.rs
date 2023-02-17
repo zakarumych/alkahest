@@ -17,7 +17,7 @@ impl Formula for Bytes {
 impl BareFormula for Bytes {}
 
 impl Serialize<Bytes> for &[u8] {
-    #[inline(always)]
+    #[inline(never)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -27,19 +27,19 @@ impl Serialize<Bytes> for &[u8] {
         ser.finish()
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         Some(self.len())
     }
 }
 
 impl<'de, 'fe: 'de> Deserialize<'fe, Bytes> for &'de [u8] {
-    #[inline(always)]
+    #[inline(never)]
     fn deserialize(de: Deserializer<'fe>) -> Result<Self, Error> {
         Ok(de.read_all_bytes())
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn deserialize_in_place(&mut self, de: Deserializer<'fe>) -> Result<(), Error> {
         *self = de.read_all_bytes();
         Ok(())

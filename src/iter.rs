@@ -1,9 +1,18 @@
 use crate::{
+    deserialize::{Deserialize, Deserializer, Error},
     formula::Formula,
     serialize::{Serialize, Serializer},
     size::FixedUsize,
     slice::{default_iter_fast_sizes, default_iter_fast_sizes_unchecked},
 };
+
+macro_rules! serialize_iter_to_slice {
+    ($F:ty : $self:expr => $ser:expr) => {{
+        let mut ser = $ser.into();
+        ser.write_slice::<$F, _>($self)?;
+        ser.finish()
+    }};
+}
 
 /// Iterator wrapper serializable with slice formula.
 /// Many standard library iterators implement serialization.
@@ -18,19 +27,15 @@ where
     I: Iterator<Item = T>,
     T: Serialize<F>,
 {
-    #[inline(always)]
+    #[inline(never)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut ser = ser.into();
-        for elem in self.0 {
-            ser.write_value::<F, T>(elem)?;
-        }
-        ser.finish()
+        serialize_iter_to_slice!(F : self.0 => ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, I>(&self.0)
     }
@@ -42,19 +47,15 @@ where
     T: Serialize<F>,
     core::ops::Range<T>: Iterator<Item = T>,
 {
-    #[inline(always)]
+    #[inline(never)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut ser = ser.into();
-        for elem in self {
-            ser.write_value::<F, T>(elem)?;
-        }
-        ser.finish()
+        serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         default_iter_fast_sizes_unchecked::<F, _>(self)
     }
@@ -66,19 +67,15 @@ where
     T: Serialize<F>,
     core::ops::RangeInclusive<T>: Iterator<Item = T>,
 {
-    #[inline(always)]
+    #[inline(never)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut ser = ser.into();
-        for elem in self {
-            ser.write_value::<F, T>(elem)?;
-        }
-        ser.finish()
+        serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         default_iter_fast_sizes_unchecked::<F, _>(self)
     }
@@ -91,17 +88,15 @@ where
     B: Iterator<Item = T>,
     T: Serialize<F>,
 {
-    #[inline(always)]
-    fn serialize<S>(mut self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    #[inline(never)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
-        ser.finish()
+        serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -113,17 +108,15 @@ where
     I: Iterator<Item = &'a T>,
     T: Clone + Serialize<F> + 'a,
 {
-    #[inline(always)]
-    fn serialize<S>(mut self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    #[inline(never)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
-        ser.finish()
+        serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -135,17 +128,15 @@ where
     I: Iterator<Item = &'a T>,
     T: Copy + Serialize<F> + 'a,
 {
-    #[inline(always)]
-    fn serialize<S>(mut self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    #[inline(never)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
-        ser.finish()
+        serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -154,17 +145,17 @@ where
 impl<F, T> Serialize<[F]> for core::iter::Empty<T>
 where
     F: Formula,
-    T: Copy + Serialize<[F]>,
+    T: Copy + Serialize<F>,
 {
-    #[inline(always)]
+    #[inline(never)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        ser.into().finish()
+        serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         Some(0)
     }
@@ -178,20 +169,15 @@ where
     I: Iterator<Item = T>,
     T: Serialize<F>,
 {
-    #[inline(always)]
-    fn serialize<S>(mut self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    #[inline(never)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut ser = ser.into();
-        self.try_for_each(|(idx, elem)| {
-            ser.write_value::<FixedUsize, _>(FixedUsize::truncate_unchecked(idx))?;
-            ser.write_value::<F, _>(elem)
-        })?;
-        ser.finish()
+        serialize_iter_to_slice!((FixedUsize, F) : self => ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         default_iter_fast_sizes_unchecked::<(FixedUsize, F), _>(self)
     }
@@ -204,17 +190,15 @@ where
     P: FnMut(&T) -> bool,
     T: Serialize<F>,
 {
-    #[inline(always)]
-    fn serialize<S>(mut self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    #[inline(never)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
-        ser.finish()
+        serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -227,17 +211,15 @@ where
     P: FnMut(I::Item) -> Option<T>,
     T: Serialize<F>,
 {
-    #[inline(always)]
-    fn serialize<S>(mut self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    #[inline(never)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
-        ser.finish()
+        serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -251,17 +233,15 @@ where
     U: IntoIterator<Item = T>,
     T: Serialize<F>,
 {
-    #[inline(always)]
-    fn serialize<S>(mut self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    #[inline(never)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
-        ser.finish()
+        serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -274,17 +254,15 @@ where
     I::Item: IntoIterator<Item = T>,
     T: Serialize<F>,
 {
-    #[inline(always)]
-    fn serialize<S>(mut self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    #[inline(never)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
-        ser.finish()
+        serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -296,17 +274,15 @@ where
     P: FnMut() -> Option<T>,
     T: Serialize<F>,
 {
-    #[inline(always)]
-    fn serialize<S>(mut self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    #[inline(never)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
-        ser.finish()
+        serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -318,17 +294,15 @@ where
     I: Iterator<Item = T>,
     T: Serialize<F>,
 {
-    #[inline(always)]
-    fn serialize<S>(mut self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    #[inline(never)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
-        ser.finish()
+        serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -341,17 +315,15 @@ where
     T: Serialize<F>,
     X: FnMut(&T),
 {
-    #[inline(always)]
-    fn serialize<S>(mut self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    #[inline(never)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
-        ser.finish()
+        serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -364,17 +336,15 @@ where
     P: FnMut(I::Item) -> T,
     T: Serialize<F>,
 {
-    #[inline(always)]
-    fn serialize<S>(mut self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    #[inline(never)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
-        ser.finish()
+        serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -387,17 +357,15 @@ where
     P: FnMut(I::Item) -> Option<T>,
     T: Serialize<F>,
 {
-    #[inline(always)]
-    fn serialize<S>(mut self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    #[inline(never)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
-        ser.finish()
+        serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -408,17 +376,15 @@ where
     F: Formula,
     T: Serialize<F>,
 {
-    #[inline(always)]
-    fn serialize<S>(mut self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    #[inline(never)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
-        ser.finish()
+        serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -430,17 +396,15 @@ where
     P: FnOnce() -> T,
     T: Serialize<F>,
 {
-    #[inline(always)]
-    fn serialize<S>(mut self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    #[inline(never)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
-        ser.finish()
+        serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -452,17 +416,15 @@ where
     I: Iterator<Item = T>,
     T: Serialize<F>,
 {
-    #[inline(always)]
-    fn serialize<S>(mut self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    #[inline(never)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
-        ser.finish()
+        serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -474,17 +436,15 @@ where
     I: DoubleEndedIterator<Item = T>,
     T: Serialize<F>,
 {
-    #[inline(always)]
-    fn serialize<S>(mut self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    #[inline(never)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
-        ser.finish()
+        serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -497,17 +457,15 @@ where
     P: FnMut(&mut St, I::Item) -> Option<T>,
     T: Serialize<F>,
 {
-    #[inline(always)]
-    fn serialize<S>(mut self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    #[inline(never)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
-        ser.finish()
+        serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -519,17 +477,15 @@ where
     I: Iterator<Item = T>,
     T: Serialize<F>,
 {
-    #[inline(always)]
-    fn serialize<S>(mut self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    #[inline(never)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
-        ser.finish()
+        serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -542,17 +498,15 @@ where
     P: FnMut(&T) -> bool,
     T: Serialize<F>,
 {
-    #[inline(always)]
-    fn serialize<S>(mut self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    #[inline(never)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
-        ser.finish()
+        serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -564,17 +518,15 @@ where
     I: Iterator<Item = T>,
     T: Serialize<F>,
 {
-    #[inline(always)]
-    fn serialize<S>(mut self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    #[inline(never)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
-        ser.finish()
+        serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -586,17 +538,15 @@ where
     P: FnMut(&T) -> Option<T>,
     T: Serialize<F>,
 {
-    #[inline(always)]
-    fn serialize<S>(mut self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    #[inline(never)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
-        ser.finish()
+        serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -608,17 +558,15 @@ where
     I: Iterator<Item = T>,
     T: Serialize<F>,
 {
-    #[inline(always)]
-    fn serialize<S>(mut self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    #[inline(never)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
-        ser.finish()
+        serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -631,17 +579,15 @@ where
     P: FnMut(&T) -> bool,
     T: Serialize<F>,
 {
-    #[inline(always)]
-    fn serialize<S>(mut self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    #[inline(never)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut ser = ser.into();
-        self.try_for_each(|elem| ser.write_value::<F, _>(elem))?;
-        ser.finish()
+        serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -656,21 +602,65 @@ where
     A::Item: Serialize<FA>,
     B::Item: Serialize<FB>,
 {
-    #[inline(always)]
-    fn serialize<S>(mut self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    #[inline(never)]
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let mut ser = ser.into();
-        self.try_for_each(|(a, b)| {
-            ser.write_value::<FA, _>(a)?;
-            ser.write_value::<FB, _>(b)
-        })?;
-        ser.finish()
+        serialize_iter_to_slice!((FA, FB) : self => ser)
     }
 
-    #[inline(always)]
+    #[inline(never)]
     fn fast_sizes(&self) -> Option<usize> {
         default_iter_fast_sizes::<(FA, FB), _>(self)
+    }
+}
+
+pub fn deserialize_from_iter<'de, F, A, T>(de: Deserializer<'de>) -> Result<T, Error>
+where
+    F: Formula + ?Sized,
+    A: Deserialize<'de, F>,
+    T: FromIterator<A>,
+{
+    let mut iter = de.into_iter::<F, A>()?;
+    let mut err = None;
+    let value = T::from_iter(core::iter::from_fn(|| match iter.next() {
+        None => None,
+        Some(Ok(elem)) => Some(elem),
+        Some(Err(e)) => {
+            err = Some(e);
+            None
+        }
+    }));
+
+    match err {
+        None => Ok(value),
+        Some(e) => Err(e),
+    }
+}
+
+pub fn deserialize_extend_iter<'de, F, A, T>(
+    value: &mut T,
+    de: Deserializer<'de>,
+) -> Result<(), Error>
+where
+    F: Formula + ?Sized,
+    A: Deserialize<'de, F>,
+    T: Extend<A>,
+{
+    let mut iter = de.into_iter::<F, A>()?;
+    let mut err = None;
+    value.extend(core::iter::from_fn(|| match iter.next() {
+        None => None,
+        Some(Ok(elem)) => Some(elem),
+        Some(Err(e)) => {
+            err = Some(e);
+            None
+        }
+    }));
+
+    match err {
+        None => Ok(()),
+        Some(e) => Err(e),
     }
 }

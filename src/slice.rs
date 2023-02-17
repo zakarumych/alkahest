@@ -1,20 +1,47 @@
+use core::mem::size_of;
+
 use crate::{
     formula::{BareFormula, Formula},
-    serialize::Serialize,
+    serialize::{Serialize, Serializer},
+    size::FixedUsize,
 };
 
 impl<F> Formula for [F]
 where
     F: Formula,
 {
-    const MAX_STACK_SIZE: Option<usize> = None;
+    const MAX_STACK_SIZE: Option<usize> = match F::MAX_STACK_SIZE {
+        Some(0) => Some(size_of::<FixedUsize>()),
+        Some(_) => None,
+        None => None,
+    };
     const EXACT_SIZE: bool = false;
     const HEAPLESS: bool = F::HEAPLESS;
 }
 
 impl<F> BareFormula for [F] where F: Formula {}
 
-#[inline(always)]
+impl<'ser, F, T> Serialize<[F]> for &'ser [T]
+where
+    F: Formula,
+    &'ser T: Serialize<F>,
+{
+    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    where
+        Self: Sized,
+        S: Serializer,
+    {
+        let mut ser = ser.into();
+        ser.write_slice::<F, &'ser T>(self.iter())?;
+        ser.finish()
+    }
+
+    fn fast_sizes(&self) -> Option<usize> {
+        default_iter_fast_sizes_owned::<F, &'ser T, _>(self.iter())
+    }
+}
+
+#[inline(never)]
 pub fn default_iter_fast_sizes<F, I>(iter: &I) -> Option<usize>
 where
     F: Formula,
@@ -24,7 +51,7 @@ where
     default_iter_fast_sizes_unchecked::<F, I>(iter)
 }
 
-#[inline(always)]
+#[inline(never)]
 pub fn default_iter_fast_sizes_unchecked<F, I>(iter: &I) -> Option<usize>
 where
     F: Formula,
@@ -46,7 +73,7 @@ where
     }
 }
 
-#[inline(always)]
+#[inline(never)]
 pub fn default_iter_fast_sizes_owned<F, T, I>(iter: I) -> Option<usize>
 where
     F: Formula,
@@ -81,7 +108,7 @@ where
     }
 }
 
-#[inline(always)]
+#[inline(never)]
 pub fn default_iter_fast_sizes_by_ref<'a, F, T, I>(iter: I) -> Option<usize>
 where
     F: Formula,

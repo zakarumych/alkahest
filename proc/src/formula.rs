@@ -108,13 +108,13 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 impl #impl_generics #ident #type_generics #where_clause {
                     #(
                         #[doc(hidden)]
-                        #[inline(always)]
+                        #[inline(never)]
                         #[allow(non_upper_case_globals)]
                         pub const #field_names_order_checks: [(); #field_check_ids] = [(); #field_check_ids];
                     )*
 
                     #[doc(hidden)]
-                    #[inline(always)]
+                    #[inline(never)]
                     pub const __ALKAHEST_FORMULA_FIELD_COUNT: [(); #field_count] = [(); #field_count];
 
                     #[doc(hidden)]
@@ -130,7 +130,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         #[allow(unused_mut)]
                         let mut max_size = Some(0);
                         #(
-                            max_size = ::alkahest::private::sum_size_relaxed(max_size, <#all_field_types as ::alkahest::private::Formula>::MAX_STACK_SIZE);
+                            max_size = ::alkahest::private::sum_size(max_size, <#all_field_types as ::alkahest::private::Formula>::MAX_STACK_SIZE);
                         )*;
                         // #expand_size
                         max_size
@@ -277,27 +277,27 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 impl #impl_generics #ident #type_generics #where_clause {
                     #(#(
                         #[doc(hidden)]
-                        #[inline(always)]
+                        #[inline(never)]
                         #[allow(non_upper_case_globals)]
                         pub const #field_names_order_checks: [(); #field_check_ids] = [(); #field_check_ids];
                     )*)*
 
                     #(
                         #[doc(hidden)]
-                        #[inline(always)]
+                        #[inline(never)]
                         #[allow(non_upper_case_globals)]
                         pub const #field_count_checks: [(); #field_count] = [(); #field_count];
                     )*
 
                     #(
                         #[doc(hidden)]
-                        #[inline(always)]
+                        #[inline(never)]
                         #[allow(non_upper_case_globals)]
                         pub const #field_variant_name_ids: u32 = #field_variant_ids;
                     )*
 
                     #[doc(hidden)]
-                    #[inline(always)]
+                    #[inline(never)]
                     pub const __ALKAHEST_FORMULA_VARIANT_COUNT: [(); #variant_count] = [(); #variant_count];
 
                     #[doc(hidden)]
@@ -318,7 +318,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                 #[allow(unused_mut)]
                                 let mut max_size = Some(0);
                                 #(
-                                    max_size = ::alkahest::private::sum_size_relaxed(max_size, <#all_field_types as ::alkahest::private::Formula>::MAX_STACK_SIZE);
+                                    max_size = ::alkahest::private::sum_size(max_size, <#all_field_types as ::alkahest::private::Formula>::MAX_STACK_SIZE);
                                 )*;
                                 max_size
                             };
@@ -326,7 +326,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         )*
 
                         // #expand_size
-                        ::alkahest::private::sum_size_relaxed(::alkahest::private::VARIANT_SIZE_OPT, max_size)
+                        ::alkahest::private::sum_size(::alkahest::private::VARIANT_SIZE_OPT, max_size)
                     };
 
                     const EXACT_SIZE: ::alkahest::private::bool = true && {
@@ -337,7 +337,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                 #[allow(unused_mut)]
                                 let mut max_size = Some(0);
                                 #(
-                                    max_size = ::alkahest::private::sum_size_relaxed(max_size, <#all_field_types as ::alkahest::private::Formula>::MAX_STACK_SIZE);
+                                    max_size = ::alkahest::private::sum_size(max_size, <#all_field_types as ::alkahest::private::Formula>::MAX_STACK_SIZE);
                                 )*;
                                 max_size
                             };
