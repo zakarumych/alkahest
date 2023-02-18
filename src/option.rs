@@ -39,10 +39,10 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         match self {
             None => Some(1),
-            Some(value) => Some(value.fast_sizes()? + 1),
+            Some(value) => Some(value.size_hint()? + 1),
         }
     }
 }
@@ -71,10 +71,10 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         match self {
             None => Some(1),
-            Some(value) => Some((&value).fast_sizes()? + 1),
+            Some(value) => Some((&value).size_hint()? + 1),
         }
     }
 }

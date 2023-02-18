@@ -36,7 +36,7 @@ macro_rules! impl_primitive {
             }
 
             #[inline(never)]
-            fn fast_sizes(&self) -> Option<usize> {
+            fn size_hint(&self) -> Option<usize> {
                 Some(size_of::<$ty>())
             }
         }
@@ -53,7 +53,7 @@ macro_rules! impl_primitive {
             }
 
             #[inline(never)]
-            fn fast_sizes(&self) -> Option<usize> {
+            fn size_hint(&self) -> Option<usize> {
                 Some(size_of::<$ty>())
             }
         }
@@ -123,7 +123,7 @@ impl Serialize<bool> for bool {
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         Some(size_of::<u8>())
     }
 }
@@ -138,7 +138,7 @@ impl Serialize<bool> for &bool {
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         Some(size_of::<u8>())
     }
 }

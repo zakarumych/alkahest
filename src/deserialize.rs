@@ -2,7 +2,7 @@ use core::{iter::FusedIterator, marker::PhantomData, mem::size_of, str::Utf8Erro
 
 use crate::{
     cold::{cold, err},
-    formula::{unwrap_size, Formula},
+    formula::{reference_size, unwrap_size, Formula},
     size::{FixedIsizeType, FixedUsize, FixedUsizeType},
 };
 
@@ -168,28 +168,26 @@ impl<'de> Deserializer<'de> {
     }
 
     #[inline(never)]
-    pub fn deref<F>(mut self) -> Result<Deserializer<'de>, Error>
+    pub fn deref<F>(self) -> Result<Deserializer<'de>, Error>
     where
         F: Formula + ?Sized,
     {
-        let (address, size) = match F::MAX_STACK_SIZE {
-            Some(0) => (0, 0),
-            Some(max_stack) => {
-                let address = self.read_value::<FixedUsize, usize>(false)?;
-                (address, max_stack)
-            }
-            None => {
-                let [size, address] = self.read_value::<[FixedUsize; 2], [usize; 2]>(false)?;
-                (address, size)
-            }
-        };
+        let reference_size = reference_size::<F>();
+        if self.stack < reference_size {
+            return err(Error::OutOfBounds);
+        }
+        if self.stack != reference_size {
+            return err(Error::WrongLength);
+        }
 
-        if address > self.input.len() {
+        let (head, tail) = self.input.split_at(self.input.len() - reference_size);
+        let (address, size) = read_reference::<F>(tail, head.len());
+
+        if address > head.len() {
             return err(Error::WrongAddress);
         }
 
-        let input = &self.input[..address];
-        self.finish()?;
+        let input = &head[..address];
 
         Deserializer::new(size, input)
     }
@@ -422,14 +420,25 @@ where
 /// Reads size of the value from the input.
 /// Returns `None` if the input is too short to determine the size.
 #[inline(never)]
-pub fn value_size(input: &[u8]) -> Option<usize> {
-    if input.len() < FIELD_SIZE {
-        return None;
+pub fn value_size<F>(input: &[u8]) -> Option<usize>
+where
+    F: Formula + ?Sized,
+{
+    match F::MAX_STACK_SIZE {
+        Some(0) => Some(0),
+        _ => {
+            if input.len() < size_of::<FixedUsize>() {
+                None
+            } else {
+                let mut de = Deserializer::new_unchecked(
+                    size_of::<FixedUsize>(),
+                    &input[..size_of::<FixedUsize>()],
+                );
+                let address = de.read_value::<FixedUsize, usize>(false).unwrap();
+                Some(address)
+            }
+        }
     }
-
-    let mut de = Deserializer::new_unchecked(FIELD_SIZE, &input[..FIELD_SIZE]);
-    let address = de.read_value::<FixedUsize, _>(false).unwrap();
-    Some(address)
 }
 
 #[inline(never)]
@@ -438,12 +447,13 @@ where
     F: Formula + ?Sized,
     T: Deserialize<'de, F>,
 {
-    if input.len() < HEADER_SIZE {
+    let reference_size = reference_size::<F>();
+
+    if input.len() < reference_size {
         return err(Error::OutOfBounds);
     }
 
-    let mut de = Deserializer::new_unchecked(HEADER_SIZE, &input[..HEADER_SIZE]);
-    let [size, address] = de.read_value::<[FixedUsize; 2], [usize; 2]>(false).unwrap();
+    let (address, size) = read_reference::<F>(input, input.len() - reference_size);
 
     if size > address {
         return err(Error::WrongAddress);
@@ -465,28 +475,50 @@ where
     F: Formula + ?Sized,
     T: Deserialize<'de, F> + ?Sized,
 {
-    if input.len() < HEADER_SIZE {
+    let reference_size = reference_size::<F>();
+
+    if input.len() < reference_size {
         return err(Error::OutOfBounds);
     }
 
-    let mut de = Deserializer::new_unchecked(HEADER_SIZE, &input[..HEADER_SIZE]);
-    let [size, address] = de.read_value::<[FixedUsize; 2], [usize; 2]>(false)?;
+    let (address, size) = read_reference::<F>(input, input.len() - reference_size);
 
     if size > address {
         return err(Error::WrongAddress);
     }
 
-    let end = usize::from(address);
-
-    if end > input.len() {
+    if address > input.len() {
         return err(Error::OutOfBounds);
     }
 
-    let de = Deserializer::new_unchecked(size.into(), &input[..end]);
+    let de = Deserializer::new_unchecked(size.into(), &input[..address]);
     <T as Deserialize<'de, F>>::deserialize_in_place(place, de)?;
 
-    Ok(end)
+    Ok(address)
 }
 
-const FIELD_SIZE: usize = size_of::<FixedUsize>();
-const HEADER_SIZE: usize = FIELD_SIZE * 2;
+#[inline(never)]
+fn read_reference<F>(input: &[u8], len: usize) -> (usize, usize)
+where
+    F: Formula + ?Sized,
+{
+    let reference_size = reference_size::<F>();
+    debug_assert!(reference_size <= input.len());
+
+    match F::MAX_STACK_SIZE {
+        Some(0) => {
+            // do nothing
+            (0, 0)
+        }
+        Some(max_stack) => {
+            let mut de = Deserializer::new(reference_size, &input[..reference_size]).unwrap();
+            let Ok(address) = de.read_value::<FixedUsize, usize>(true) else { unreachable!(); };
+            (address, max_stack.min(len))
+        }
+        None => {
+            let mut de = Deserializer::new(reference_size, &input[..reference_size]).unwrap();
+            let Ok([size, address]) = de.read_value::<[FixedUsize; 2], [usize; 2]>(true) else { unreachable!(); };
+            (address, size)
+        }
+    }
+}

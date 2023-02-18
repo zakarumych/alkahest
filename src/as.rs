@@ -35,8 +35,8 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
-        <T as Serialize<F>>::fast_sizes(self)
+    fn size_hint(&self) -> Option<usize> {
+        <T as Serialize<F>>::size_hint(self)
     }
 }
 

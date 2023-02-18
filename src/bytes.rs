@@ -28,7 +28,7 @@ impl Serialize<Bytes> for &[u8] {
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         Some(self.len())
     }
 }

@@ -30,8 +30,8 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
-        let size = self.fast_sizes()?;
+    fn size_hint(&self) -> Option<usize> {
+        let size = self.size_hint()?;
         Some(size + size_of::<[FixedUsize; 2]>())
     }
 }
@@ -65,7 +65,7 @@ impl Serialize<str> for String {
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         Some(self.len())
     }
 }
@@ -82,7 +82,7 @@ impl Serialize<str> for &String {
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         Some(self.len())
     }
 }

@@ -515,7 +515,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         }
 
                         #[inline(never)]
-                        fn fast_sizes(&self) -> ::alkahest::private::Option<::alkahest::private::usize> {
+                        fn size_hint(&self) -> ::alkahest::private::Option<::alkahest::private::usize> {
                             if let ::alkahest::private::Option::Some(size) = ::alkahest::private::formula_fast_sizes::<#formula_path>() {
                                 return Some(size);
                             }
@@ -529,7 +529,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                     #formula_path #with_variant #bind_ref_names => #bound_names,
                                     _ => unreachable!(),
                                 });
-                                __size += with_formula.fast_sizes(#bound_names, #field_count == field_idx)?;
+                                __size += with_formula.size_hint(#bound_names, #field_count == field_idx)?;
                             )*
                             Some(__size)
                         }
@@ -594,7 +594,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         }
 
                         #[inline(never)]
-                        fn fast_sizes(&self) -> ::alkahest::private::Option<::alkahest::private::usize> {
+                        fn size_hint(&self) -> ::alkahest::private::Option<::alkahest::private::usize> {
                             if let ::alkahest::private::Option::Some(size) = ::alkahest::private::formula_fast_sizes::<#formula_path>() {
                                 return Some(size);
                             }
@@ -608,7 +608,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                     #formula_path #with_variant #bind_ref_names => #bound_names,
                                     _ => unreachable!(),
                                 });
-                                __size += with_formula.fast_sizes(&#bound_names, #field_count == field_idx)?;
+                                __size += with_formula.size_hint(&#bound_names, #field_count == field_idx)?;
                             )*
                             Some(__size)
                         }
@@ -820,7 +820,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         }
 
                         #[inline(never)]
-                        fn fast_sizes(&self) -> ::alkahest::private::Option<::alkahest::private::usize> {
+                        fn size_hint(&self) -> ::alkahest::private::Option<::alkahest::private::usize> {
                             if let ::alkahest::private::Option::Some(size) = ::alkahest::private::formula_fast_sizes::<#formula_path>() {
                                 return Some(size);
                             }
@@ -838,7 +838,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                                 #formula_path::#variant_names #bind_ref_names => #bound_names,
                                                 _ => unreachable!(),
                                             });
-                                            __size += with_formula.fast_sizes(#bound_names, #field_counts == field_idx)?;
+                                            __size += with_formula.size_hint(#bound_names, #field_counts == field_idx)?;
                                         )*
                                     }
                                 )*
@@ -901,7 +901,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         }
 
                         #[inline(never)]
-                        fn fast_sizes(&self) -> ::alkahest::private::Option<::alkahest::private::usize> {
+                        fn size_hint(&self) -> ::alkahest::private::Option<::alkahest::private::usize> {
                             if let ::alkahest::private::Option::Some(size) = ::alkahest::private::formula_fast_sizes::<#formula_path>() {
                                 return Some(size);
                             }
@@ -919,7 +919,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                                 #formula_path::#variant_names #bind_ref_names => #bound_names,
                                                 _ => unreachable!(),
                                             });
-                                            __size += with_formula.fast_sizes(&#bound_names, #field_counts == field_idx)?;
+                                            __size += with_formula.size_hint(&#bound_names, #field_counts == field_idx)?;
                                         )*
                                     }
                                 )*

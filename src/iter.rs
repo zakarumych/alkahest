@@ -36,7 +36,7 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, I>(&self.0)
     }
 }
@@ -56,7 +56,7 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes_unchecked::<F, _>(self)
     }
 }
@@ -76,7 +76,7 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes_unchecked::<F, _>(self)
     }
 }
@@ -97,7 +97,7 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
 }
@@ -117,7 +117,7 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
 }
@@ -137,7 +137,7 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
 }
@@ -156,7 +156,7 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         Some(0)
     }
 }
@@ -178,7 +178,7 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes_unchecked::<(FixedUsize, F), _>(self)
     }
 }
@@ -199,7 +199,7 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
 }
@@ -220,7 +220,7 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
 }
@@ -242,7 +242,7 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
 }
@@ -263,7 +263,7 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
 }
@@ -283,7 +283,7 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
 }
@@ -303,7 +303,7 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
 }
@@ -324,7 +324,7 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
 }
@@ -345,7 +345,7 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
 }
@@ -366,7 +366,7 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
 }
@@ -385,7 +385,7 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
 }
@@ -405,7 +405,7 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
 }
@@ -425,7 +425,7 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
 }
@@ -445,7 +445,7 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
 }
@@ -466,7 +466,7 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
 }
@@ -486,7 +486,7 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
 }
@@ -507,7 +507,7 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
 }
@@ -527,7 +527,7 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
 }
@@ -547,7 +547,7 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
 }
@@ -567,7 +567,7 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
 }
@@ -588,7 +588,7 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
 }
@@ -611,7 +611,7 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<(FA, FB), _>(self)
     }
 }

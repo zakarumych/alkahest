@@ -14,12 +14,12 @@ description = "Fantastic serialization library with zero-overhead serialization 
 alloc = [] # enables impls for types from `alloc` crate.
 derive = ["alkahest-proc"]
 
-# TODO: Control on value or type level?
-# Keep features for defaults?
-fixed8 = [] # sets size of `FixedUsize` and `FixedIsize` to 8 bits.
-fixed16 = [] # sets size of `FixedUsize` and `FixedIsize` to 16 bits.
+## TODO: Control on value or type level?
+## Keep features for defaults?
+#fixed8 = [] # sets size of `FixedUsize` and `FixedIsize` to 8 bits.
+#fixed16 = [] # sets size of `FixedUsize` and `FixedIsize` to 16 bits.
 fixed32 = [] # sets size of `FixedUsize` and `FixedIsize` to 32 bits. Default.
-fixed64 = [] # sets size of `FixedUsize` and `FixedIsize` to 64 bits.
+#fixed64 = [] # sets size of `FixedUsize` and `FixedIsize` to 64 bits.
 default = ["alloc", "fixed32"]
 
 serde-bincode = ["bincode", "serde", "alloc"]

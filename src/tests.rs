@@ -6,7 +6,7 @@ use crate::{
     r#as::As,
     reference::Ref,
     serialize::{
-        serialize, serialize_or_size, serialized_size, BufferExhausted, Serialize, HEADER_SIZE,
+        header_size, serialize, serialize_or_size, serialized_size, BufferExhausted, Serialize,
     },
 };
 
@@ -23,42 +23,47 @@ where
         panic!("Test data is too large");
     }
 
-    assert!(HEADER_SIZE <= size);
+    let header_size = header_size::<F>();
+    assert!(header_size <= size);
 
     match (F::HEAPLESS, F::EXACT_SIZE, F::MAX_STACK_SIZE) {
-        (true, true, Some(max_stack)) => assert_eq!(HEADER_SIZE + max_stack, size),
-        (true, false, Some(max_stack)) => assert!(HEADER_SIZE + max_stack >= size),
+        (true, true, Some(max_stack)) => assert_eq!(header_size + max_stack, size),
+        (true, false, Some(max_stack)) => assert!(header_size + max_stack >= size),
         _ => {}
     }
 
     match serialize_or_size::<F, _>(value, &mut []) {
-        Ok(_) => panic!("expected error"),
+        Ok(_) => assert_eq!(size, 0),
         Err(err) => assert_eq!(err.required, size),
     }
 
-    match serialize_or_size::<F, _>(value, &mut buffer[..size - 1]) {
-        Ok(_) => panic!("expected error"),
-        Err(err) => assert_eq!(err.required, size),
+    if size > 0 {
+        match serialize_or_size::<F, _>(value, &mut buffer[..size - 1]) {
+            Ok(_) => panic!("expected error"),
+            Err(err) => assert_eq!(err.required, size),
+        }
     }
 
     let size1 = serialize_or_size::<F, _>(value, buffer).expect("expected success");
     assert_eq!(size, size1);
-    assert_eq!(size, value_size(&buffer).expect("expected success"));
+    assert_eq!(size, value_size::<F>(&buffer).expect("expected success"));
     let buffer2 = &mut buffer[size..];
 
     match serialize::<F, _>(value, &mut []) {
-        Ok(_) => panic!("expected error"),
+        Ok(_) => assert_eq!(size, 0),
         Err(BufferExhausted) => {}
     }
 
-    match serialize::<F, _>(value, &mut buffer2[..size - 1]) {
-        Ok(_) => panic!("expected error"),
-        Err(BufferExhausted) => {}
+    if size > 0 {
+        match serialize::<F, _>(value, &mut buffer2[..size - 1]) {
+            Ok(_) => panic!("expected error"),
+            Err(BufferExhausted) => {}
+        }
     }
 
     let size2 = serialize::<F, _>(value, buffer2).expect("expected success");
     assert_eq!(size, size2);
-    assert_eq!(size, value_size(&buffer2).expect("expected success"));
+    assert_eq!(size, value_size::<F>(&buffer2).expect("expected success"));
 
     let buffer = &buffer[..];
     let buffer2 = &buffer[size..];

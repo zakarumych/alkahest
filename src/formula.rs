@@ -109,7 +109,7 @@ pub trait Formula {
     const HEAPLESS: bool;
 }
 
-#[inline(always)]
+#[inline(never)]
 pub const fn reference_size<F>() -> usize
 where
     F: Formula + ?Sized,
@@ -134,7 +134,7 @@ where
 /// [`As`]: crate::As
 pub trait BareFormula: Formula {}
 
-#[inline(always)]
+#[inline(never)]
 pub const fn unwrap_size(a: Option<usize>) -> usize {
     let (arr, idx) = match a {
         None => ([0], 1), // Error in both runtime and compile time.
@@ -145,7 +145,7 @@ pub const fn unwrap_size(a: Option<usize>) -> usize {
 
 /// Function to combine sizes of formulas.
 /// If any of two is `None` then result is `None`.
-#[inline(always)]
+#[inline(never)]
 pub const fn sum_size(a: Option<usize>, b: Option<usize>) -> Option<usize> {
     match (a, b) {
         (None, _) | (_, None) => None,
@@ -157,7 +157,7 @@ pub const fn sum_size(a: Option<usize>, b: Option<usize>) -> Option<usize> {
 /// Order of arguments is not important.
 /// If any argument is `None` then result is `None`.
 /// If both arguments are `Some` then result is maximum of the two.
-#[inline(always)]
+#[inline(never)]
 pub const fn max_size(a: Option<usize>, b: Option<usize>) -> Option<usize> {
     match (a, b) {
         (None, _) => None,
@@ -170,7 +170,7 @@ pub const fn max_size(a: Option<usize>, b: Option<usize>) -> Option<usize> {
 /// Function for multiplying size of formula by a constant.
 /// First argument cannot be `None` and will cause an error.
 /// If first argument is `Some` then product of arguments is returned.
-#[inline(always)]
+#[inline(never)]
 pub const fn repeat_size(a: Option<usize>, n: usize) -> Option<usize> {
     match a {
         None => None,
@@ -178,7 +178,7 @@ pub const fn repeat_size(a: Option<usize>, n: usize) -> Option<usize> {
     }
 }
 
-#[inline(always)]
+#[inline(never)]
 pub fn formula_fast_sizes<F>() -> Option<usize>
 where
     F: Formula + ?Sized,

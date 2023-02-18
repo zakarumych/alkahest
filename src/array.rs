@@ -35,14 +35,14 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         if let Some(size) = formula_fast_sizes::<[F; N]>() {
             return Some(size);
         }
         if N <= 4 {
             let mut size = 0;
             for elem in self.iter() {
-                size += elem.fast_sizes()?;
+                size += elem.size_hint()?;
             }
             Some(size)
         } else {
@@ -68,14 +68,14 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         if let Some(size) = formula_fast_sizes::<[F; N]>() {
             return Some(size);
         }
         if N <= 4 {
             let mut size = 0;
             for elem in self.iter() {
-                size += (&elem).fast_sizes()?;
+                size += (&elem).size_hint()?;
             }
             Some(size)
         } else {
@@ -101,7 +101,7 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         if let Some(size) = formula_fast_sizes::<[F]>() {
             return Some(size);
         }
@@ -111,7 +111,7 @@ where
                 if F::MAX_STACK_SIZE.is_none() {
                     size += size_of::<FixedUsize>();
                 }
-                size += elem.fast_sizes()?;
+                size += elem.size_hint()?;
             }
             Some(size)
         } else {
@@ -137,7 +137,7 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         if let Some(size) = formula_fast_sizes::<[F]>() {
             return Some(size);
         }
@@ -147,7 +147,7 @@ where
                 if F::MAX_STACK_SIZE.is_none() {
                     size += size_of::<FixedUsize>();
                 }
-                size += (&elem).fast_sizes()?;
+                size += (&elem).size_hint()?;
             }
             Some(size)
         } else {

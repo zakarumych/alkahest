@@ -40,7 +40,7 @@ use crate::{
 ///         ser.finish()
 ///     }
 ///
-///     fn fast_sizes(&self) -> Option<usize> {
+///     fn size_hint(&self) -> Option<usize> {
 ///         Some(3)
 ///     }
 /// }
@@ -145,7 +145,7 @@ pub trait Serialize<F: Formula + ?Sized> {
     /// Returning incorrect sizes may cause panic during implementation
     /// or broken data.
     // #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize>;
+    fn size_hint(&self) -> Option<usize>;
 }
 
 impl<'ser, F, T: ?Sized> Serialize<F> for &&'ser T
@@ -161,8 +161,8 @@ where
         <&'ser T as Serialize<F>>::serialize(self, serializer)
     }
 
-    fn fast_sizes(&self) -> Option<usize> {
-        <&'ser T as Serialize<F>>::fast_sizes(self)
+    fn size_hint(&self) -> Option<usize> {
+        <&'ser T as Serialize<F>>::size_hint(self)
     }
 }
 
@@ -344,6 +344,13 @@ struct IntoSerializer<'ser> {
     heap: usize,
 }
 
+impl<'ser> From<IntoSerializer<'ser>> for PanickingSerializer<'ser> {
+    #[inline(never)]
+    fn from(into: IntoSerializer<'ser>) -> Self {
+        PanickingSerializer::new(into.heap, into.output)
+    }
+}
+
 impl<'ser> From<IntoSerializer<'ser>> for FailFastSerializer<'ser> {
     #[inline(never)]
     fn from(into: IntoSerializer<'ser>) -> Self {
@@ -355,6 +362,170 @@ impl<'ser> From<IntoSerializer<'ser>> for ExactSizeSerializer<'ser> {
     #[inline(never)]
     fn from(into: IntoSerializer<'ser>) -> Self {
         ExactSizeSerializer::new(into.heap, into.output)
+    }
+}
+
+/// Implementation of `Serializer` that panics
+/// when output buffer is exhausted.
+/// Omits checks that are present in `FailFastSerializer`.
+#[must_use]
+struct PanickingSerializer<'ser> {
+    /// Output buffer sub-slice usable for serialization.
+    output: &'ser mut [u8],
+
+    // size of the heap
+    heap: usize,
+
+    // start of the stack
+    stack: usize,
+}
+
+impl<'ser> PanickingSerializer<'ser> {
+    #[must_use]
+    #[inline(never)]
+    fn new(heap: usize, output: &'ser mut [u8]) -> Self {
+        PanickingSerializer {
+            heap,
+            stack: 0,
+            output,
+        }
+    }
+
+    #[inline(never)]
+    fn sub(&mut self) -> IntoSerializer {
+        let at = self.output.len() - self.stack;
+        IntoSerializer {
+            output: &mut self.output[..at],
+            heap: self.heap,
+        }
+    }
+
+    #[inline(never)]
+    fn write_value<F, T>(&mut self, value: T, last: bool) -> Result<(), Infallible>
+    where
+        F: Formula + ?Sized,
+        T: Serialize<F>,
+    {
+        if !last && F::MAX_STACK_SIZE.is_none() {
+            self.stack += size_of::<FixedUsize>();
+        }
+
+        let (heap, stack) =
+            <T as Serialize<F>>::serialize::<PanickingSerializer>(value, self.sub())?;
+
+        match (last, F::MAX_STACK_SIZE) {
+            (true, None) => {
+                self.stack += stack;
+            }
+            (true, Some(max_stack)) => {
+                debug_assert!(stack <= max_stack);
+                self.stack += stack;
+            }
+            (false, None) => {
+                let at = self.output.len() - self.stack;
+                let size = FixedUsize::truncate_unchecked(stack);
+                self.output[at..][..size_of::<FixedUsize>()].copy_from_slice(&size.to_le_bytes());
+                self.stack += stack;
+            }
+            (false, Some(max_stack)) => {
+                debug_assert!(stack <= max_stack);
+                self.stack += max_stack;
+            }
+        }
+
+        self.heap = heap;
+        Ok(())
+    }
+}
+
+impl<'ser> Serializer for PanickingSerializer<'ser> {
+    type Ok = (usize, usize);
+    type Error = Infallible;
+
+    #[inline(never)]
+    fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), Infallible> {
+        let at = self.output.len() - self.stack - bytes.len();
+        self.output[at..].copy_from_slice(bytes);
+        self.stack += bytes.len();
+        Ok(())
+    }
+
+    #[inline(never)]
+    fn write_value<F, T>(&mut self, value: T) -> Result<(), Infallible>
+    where
+        F: Formula + ?Sized,
+        T: Serialize<F>,
+    {
+        self.write_value(value, false)
+    }
+
+    #[inline(never)]
+    fn write_last_value<F, T>(mut self, value: T) -> Result<(usize, usize), Infallible>
+    where
+        F: Formula + ?Sized,
+        T: Serialize<F>,
+    {
+        self.write_value(value, true)?;
+        self.finish()
+    }
+
+    #[inline(never)]
+    fn write_ref<F, T>(mut self, value: T) -> Result<(usize, usize), Infallible>
+    where
+        F: Formula + ?Sized,
+        T: Serialize<F>,
+    {
+        let reference_size = reference_size::<F>();
+
+        self.stack += reference_size;
+
+        // Can we get promised sizes?
+        let promised = <T as Serialize<F>>::size_hint(&value);
+
+        let ref_start = self.output.len() - self.stack;
+        let at = match promised {
+            None => ref_start,
+            Some(size) => self.heap + size,
+        };
+
+        let Ok((actual_heap, actual_stack)) = <T as Serialize<F>>::serialize::<PanickingSerializer>(
+            value,
+            IntoSerializer {
+                output: &mut self.output[..at],
+                heap: self.heap,
+            },
+        ) else {
+            unreachable!();
+        };
+
+        if let Some(size) = promised {
+            debug_assert!(
+                self.heap + size >= actual_heap + actual_stack,
+                "<{} as Serialize<{}>>::size_hint() result is incorrect",
+                type_name::<T>(),
+                type_name::<F>()
+            );
+        };
+
+        check_stack::<F, T>(actual_stack);
+
+        // let end = self.output.len() - self.stack;
+        to_heap(&mut self.output[..at], actual_heap, actual_stack);
+
+        self.heap = actual_heap + actual_stack;
+
+        write_reference::<F>(
+            self.heap,
+            actual_stack,
+            &mut self.output[ref_start..][..reference_size],
+        );
+
+        Ok((self.heap, self.stack))
+    }
+
+    #[inline(never)]
+    fn finish(self) -> Result<(usize, usize), Infallible> {
+        Ok((self.heap, self.stack))
     }
 }
 
@@ -484,7 +655,7 @@ impl<'ser> Serializer for FailFastSerializer<'ser> {
         self.stack += reference_size;
 
         // Can we get promised sizes?
-        let promised = <T as Serialize<F>>::fast_sizes(&value);
+        let promised = <T as Serialize<F>>::size_hint(&value);
 
         let ref_start = self.output.len() - self.stack;
         let at = match promised {
@@ -512,38 +683,25 @@ impl<'ser> Serializer for FailFastSerializer<'ser> {
         )?;
 
         if let Some(size) = promised {
-            debug_assert_eq!(
-                self.heap + size,
-                actual_heap + actual_stack,
-                "<{} as Serialize<{}>>::fast_size() result is inaccurate",
+            debug_assert!(
+                self.heap + size >= actual_heap + actual_stack,
+                "<{} as Serialize<{}>>::size_hint() result is incorrect",
                 type_name::<T>(),
                 type_name::<F>()
             );
-        } else {
-            check_stack::<F, T>(actual_stack);
-
-            // let end = self.output.len() - self.stack;
-            to_heap(&mut self.output[..at], actual_heap, actual_stack);
         }
+        check_stack::<F, T>(actual_stack);
+
+        // let end = self.output.len() - self.stack;
+        to_heap(&mut self.output[..at], actual_heap, actual_stack);
 
         self.heap = actual_heap + actual_stack;
 
-        match F::MAX_STACK_SIZE {
-            Some(0) => {}
-            Some(_) => {
-                let address = FixedUsize::truncate_unchecked(self.heap);
-                self.output[ref_start..][..size_of::<FixedUsize>()]
-                    .copy_from_slice(&address.to_le_bytes());
-            }
-            None => {
-                let address = FixedUsize::truncate_unchecked(self.heap);
-                self.output[ref_start..][..size_of::<FixedUsize>()]
-                    .copy_from_slice(&address.to_le_bytes());
-                let size = FixedUsize::truncate_unchecked(actual_stack);
-                self.output[ref_start + size_of::<FixedUsize>()..][..size_of::<FixedUsize>()]
-                    .copy_from_slice(&size.to_le_bytes());
-            }
-        }
+        write_reference::<F>(
+            self.heap,
+            actual_stack,
+            &mut self.output[ref_start..][..reference_size],
+        );
 
         Ok((self.heap, self.stack))
     }
@@ -811,16 +969,17 @@ where
     F: Formula + ?Sized,
     T: Serialize<F>,
 {
-    if output.len() < HEADER_SIZE {
+    let reference_size = reference_size::<F>();
+    if output.len() < reference_size {
         return err(BufferExhausted);
     }
 
     // Can we get promised sizes?
-    let promised = <T as Serialize<F>>::fast_sizes(&value);
+    let promised = <T as Serialize<F>>::size_hint(&value);
 
     let at = match promised {
         None => output.len(),
-        Some(size) => HEADER_SIZE + size,
+        Some(size) => reference_size + size,
     };
 
     if at > output.len() {
@@ -831,30 +990,28 @@ where
         value,
         IntoSerializer {
             output: &mut output[..at],
-            heap: HEADER_SIZE,
+            heap: reference_size,
         },
     )
     .map_err(|()| BufferExhausted)?;
 
     if let Some(size) = promised {
-        debug_assert_eq!(
-            HEADER_SIZE + size,
-            actual_heap + actual_stack,
-            "<{} as Serialize<{}>>::fast_size() result is inaccurate",
+        debug_assert!(
+            reference_size + size >= actual_heap + actual_stack,
+            "<{} as Serialize<{}>>::size_hint() result is incorrect",
             type_name::<T>(),
             type_name::<F>()
         );
-    } else {
-        check_stack::<F, T>(actual_stack);
-        to_heap(output, actual_heap, actual_stack);
     }
 
-    let address = actual_heap + actual_stack;
-    let size = actual_stack;
+    check_stack::<F, T>(actual_stack);
+    to_heap(&mut output[..at], actual_heap, actual_stack);
 
-    let mut ser = FailFastSerializer::new(0, &mut output[..HEADER_SIZE]);
-    ser.write_value::<[FixedUsize; 2], _>([size, address], false)
-        .unwrap();
+    write_reference::<F>(
+        actual_heap + actual_stack,
+        actual_stack,
+        &mut output[..reference_size],
+    );
 
     Ok(actual_heap + actual_stack)
 }
@@ -882,13 +1039,14 @@ where
     F: Formula + ?Sized,
     T: Serialize<F>,
 {
-    if output.len() < HEADER_SIZE {
+    let reference_size = reference_size::<F>();
+    if output.len() < reference_size {
         return err(BufferSizeRequired {
             required: serialized_size::<F, _>(value),
         });
     }
 
-    let mut ser = ExactSizeSerializer::new(HEADER_SIZE, output);
+    let mut ser = ExactSizeSerializer::new(reference_size, output);
     ser.write_value::<F, _>(value, true).unwrap();
     let (heap, stack) = match ser.finish() {
         Err((heap, stack)) => {
@@ -901,11 +1059,7 @@ where
 
     to_heap(output, heap, stack);
 
-    let address = FixedUsize::truncate_unchecked(heap + stack);
-    let size = FixedUsize::truncate_unchecked(stack);
-    let mut ser = FailFastSerializer::new(0, &mut output[..HEADER_SIZE]);
-    ser.write_value::<[FixedUsize; 2], _>([size, address], false)
-        .unwrap();
+    write_reference::<F>(heap + stack, stack, &mut output[..reference_size]);
 
     Ok(heap + stack)
 }
@@ -928,8 +1082,9 @@ where
     F: Formula + ?Sized,
     T: Serialize<F>,
 {
+    let reference_size = reference_size::<F>();
     let (heap, stack) = serialized_sizes::<F, T>(value);
-    heap + stack + HEADER_SIZE
+    heap + stack + reference_size
 }
 
 #[inline(never)]
@@ -951,9 +1106,6 @@ where
     };
 }
 
-const FIELD_SIZE: usize = size_of::<FixedUsize>();
-pub const HEADER_SIZE: usize = FIELD_SIZE * 2;
-
 /// Moves stack bytes to the heap
 #[inline(never)]
 fn to_heap(output: &mut [u8], heap: usize, stack: usize) {
@@ -967,4 +1119,35 @@ fn to_heap(output: &mut [u8], heap: usize, stack: usize) {
     // } else {
     output.copy_within(len - stack.., heap);
     // }
+}
+
+#[inline(never)]
+fn write_reference<F>(address: usize, size: usize, output: &mut [u8])
+where
+    F: Formula + ?Sized,
+{
+    let reference_size = reference_size::<F>();
+    debug_assert_eq!(reference_size, output.len());
+
+    match F::MAX_STACK_SIZE {
+        None => {
+            let ser = PanickingSerializer::new(0, output);
+            let Ok(_) = ser.write_last_value::<[FixedUsize; 2], _>([size, address]) else { unreachable!(); };
+        }
+        Some(0) => {
+            // do nothing
+        }
+        Some(_) => {
+            let ser = PanickingSerializer::new(0, output);
+            let Ok(_) = ser.write_last_value::<FixedUsize, _>(address) else { unreachable!(); };
+        }
+    }
+}
+
+#[inline(never)]
+pub fn header_size<F>() -> usize
+where
+    F: Formula + ?Sized,
+{
+    reference_size::<F>()
 }

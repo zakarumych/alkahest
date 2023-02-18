@@ -107,7 +107,7 @@ impl Serialize<FixedUsize> for FixedUsize {
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         Some(size_of::<FixedUsizeType>())
     }
 }
@@ -122,7 +122,7 @@ impl Serialize<FixedUsize> for &FixedUsize {
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         Some(size_of::<FixedUsizeType>())
     }
 }
@@ -137,7 +137,7 @@ impl Serialize<FixedUsize> for usize {
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         Some(size_of::<FixedUsizeType>())
     }
 }
@@ -152,7 +152,7 @@ impl Serialize<FixedUsize> for &usize {
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         Some(size_of::<FixedUsizeType>())
     }
 }
@@ -272,8 +272,8 @@ impl Serialize<FixedIsize> for FixedIsize {
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
-        <FixedIsizeType as Serialize<FixedIsizeType>>::fast_sizes(&self.0)
+    fn size_hint(&self) -> Option<usize> {
+        <FixedIsizeType as Serialize<FixedIsizeType>>::size_hint(&self.0)
     }
 }
 
@@ -287,8 +287,8 @@ impl Serialize<FixedIsize> for &FixedIsize {
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
-        <FixedIsizeType as Serialize<FixedIsizeType>>::fast_sizes(&self.0)
+    fn size_hint(&self) -> Option<usize> {
+        <FixedIsizeType as Serialize<FixedIsizeType>>::size_hint(&self.0)
     }
 }
 
@@ -302,7 +302,7 @@ impl Serialize<FixedIsize> for isize {
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         Some(size_of::<FixedIsizeType>())
     }
 }
@@ -317,7 +317,7 @@ impl Serialize<FixedIsize> for &isize {
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         Some(size_of::<FixedIsizeType>())
     }
 }

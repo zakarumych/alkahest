@@ -33,7 +33,7 @@ where
         }
     }
 
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         None
     }
 }
@@ -92,7 +92,7 @@ where
         }
     }
 
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         None
     }
 }

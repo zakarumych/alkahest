@@ -36,7 +36,7 @@ where
         ser.finish()
     }
 
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes_owned::<F, &'ser T, _>(self.iter())
     }
 }
@@ -98,7 +98,7 @@ where
                 Some(upper) if upper <= 4 => {
                     let mut size = 0;
                     for elem in iter {
-                        size += <T as Serialize<F>>::fast_sizes(&elem)?;
+                        size += <T as Serialize<F>>::size_hint(&elem)?;
                     }
                     Some(size)
                 }
@@ -133,7 +133,7 @@ where
                 Some(upper) if upper <= 4 => {
                     let mut size = 0;
                     for elem in iter {
-                        size += <T as Serialize<F>>::fast_sizes(elem)?;
+                        size += <T as Serialize<F>>::size_hint(elem)?;
                     }
                     Some(size)
                 }

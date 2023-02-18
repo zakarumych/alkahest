@@ -25,7 +25,7 @@ impl Serialize<()> for () {
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         Some(0)
     }
 }
@@ -40,7 +40,7 @@ impl Serialize<()> for &'_ () {
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         Some(0)
     }
 }
@@ -107,7 +107,7 @@ macro_rules! impl_for_tuple {
             }
 
             #[inline(never)]
-            fn fast_sizes(&self) -> Option<usize> {
+            fn size_hint(&self) -> Option<usize> {
                 #![allow(non_snake_case, unused_mut)]
                 let mut size = 0;
                 let ($($b,)* $bt,) = self;
@@ -115,9 +115,9 @@ macro_rules! impl_for_tuple {
                     if $a::MAX_STACK_SIZE.is_none() {
                         size += size_of::<FixedUsize>();
                     }
-                    size += <$b as Serialize<$a>>::fast_sizes($b)?;
+                    size += <$b as Serialize<$a>>::size_hint($b)?;
                 )*
-                Some(size + $bt.fast_sizes()?)
+                Some(size + $bt.size_hint()?)
             }
         }
 
@@ -146,7 +146,7 @@ macro_rules! impl_for_tuple {
             }
 
             #[inline(never)]
-            fn fast_sizes(&self) -> Option<usize> {
+            fn size_hint(&self) -> Option<usize> {
                 #![allow(non_snake_case, unused_mut)]
                 let mut size = 0;
                 let ($($b,)* $bt,) = self;
@@ -154,9 +154,9 @@ macro_rules! impl_for_tuple {
                     if $a::MAX_STACK_SIZE.is_none() {
                         size += size_of::<FixedUsize>();
                     }
-                    size += <&'ser $b as Serialize<$a>>::fast_sizes(&$b)?;
+                    size += <&'ser $b as Serialize<$a>>::size_hint(&$b)?;
                 )*
-                Some(size + $bt.fast_sizes()?)
+                Some(size + $bt.size_hint()?)
             }
         }
 

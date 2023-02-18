@@ -37,8 +37,8 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
-        let size = self.fast_sizes()?;
+    fn size_hint(&self) -> Option<usize> {
+        let size = self.size_hint()?;
         Some(size + size_of::<[FixedUsize; 2]>())
     }
 }
@@ -77,7 +77,7 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes_by_ref::<F, T, _>(self.iter())
     }
 }
@@ -98,7 +98,7 @@ where
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes_owned::<F, &'ser T, _>(self.iter())
     }
 }
@@ -147,7 +147,7 @@ impl Serialize<Bytes> for Vec<u8> {
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         Some(self.len())
     }
 }
@@ -164,7 +164,7 @@ impl Serialize<Bytes> for &Vec<u8> {
     }
 
     #[inline(never)]
-    fn fast_sizes(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<usize> {
         Some(self.len())
     }
 }

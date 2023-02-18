@@ -52,8 +52,8 @@ pub use crate::{
     r#as::As,
     reference::Ref,
     serialize::{
-        serialize, serialize_or_size, serialized_size, BufferExhausted, BufferSizeRequired,
-        Serialize, Serializer, HEADER_SIZE,
+        header_size, serialize, serialize_or_size, serialized_size, BufferExhausted,
+        BufferSizeRequired, Serialize, Serializer,
     },
     size::{FixedIsize, FixedUsize},
     skip::Skip,
@@ -131,11 +131,11 @@ pub mod private {
         }
 
         #[inline(never)]
-        pub fn fast_sizes<T>(self, value: &T, last: bool) -> Option<usize>
+        pub fn size_hint<T>(self, value: &T, last: bool) -> Option<usize>
         where
             T: Serialize<F>,
         {
-            let size = <T as Serialize<F>>::fast_sizes(value)?;
+            let size = <T as Serialize<F>>::size_hint(value)?;
             if last || F::MAX_STACK_SIZE.is_some() {
                 Some(size)
             } else {
