@@ -1,6 +1,7 @@
 #![doc = include_str!("../README.md")]
 #![no_std]
 #![forbid(unsafe_code)]
+#![deny(warnings)]
 #![doc(test(attr(deny(warnings))))]
 
 extern crate self as alkahest;
