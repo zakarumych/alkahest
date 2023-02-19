@@ -308,8 +308,8 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 deserialize_generics.split_for_impl();
             Ok(quote::quote! {
                 impl #impl_deserialize_generics ::alkahest::private::Deserialize<#de, #formula_path> for #ident #type_generics #where_serialize_clause {
-                    #[inline(never)]
-                    fn deserialize(mut de: ::alkahest::private::Deserializer<#de>) -> ::alkahest::private::Result<Self, ::alkahest::private::Error> {
+                    #[inline(always)]
+                    fn deserialize(mut de: ::alkahest::private::Deserializer<#de>) -> ::alkahest::private::Result<Self, ::alkahest::private::DeserializeError> {
                         // Checks compilation of code in the block.
                         #[allow(unused)]
                         {
@@ -333,8 +333,8 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         ::alkahest::private::Result::Ok(value)
                     }
 
-                    #[inline(never)]
-                    fn deserialize_in_place(&mut self, mut de: ::alkahest::private::Deserializer<#de>) -> Result<(), ::alkahest::private::Error> {
+                    #[inline(always)]
+                    fn deserialize_in_place(&mut self, mut de: ::alkahest::private::Deserializer<#de>) -> Result<(), ::alkahest::private::DeserializeError> {
                         let #ident #bind_ref_mut_names = *self;
 
                         let mut field_idx = 0;
@@ -566,8 +566,8 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 deserialize_generics.split_for_impl();
             Ok(quote::quote! {
                 impl #impl_deserialize_generics ::alkahest::private::Deserialize<#de, #formula_path> for #ident #type_generics #where_serialize_clause {
-                    #[inline(never)]
-                    fn deserialize(mut de: ::alkahest::private::Deserializer<#de>) -> ::alkahest::private::Result<Self, ::alkahest::private::Error> {
+                    #[inline(always)]
+                    fn deserialize(mut de: ::alkahest::private::Deserializer<#de>) -> ::alkahest::private::Result<Self, ::alkahest::private::DeserializeError> {
                         // Checks compilation of code in the block.
                         #[allow(unused)]
                         {
@@ -595,12 +595,12 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                     ::alkahest::private::Result::Ok(#ident::#variant_names #bind_names)
                                 }
                             )*
-                            invalid => ::alkahest::private::err(::alkahest::private::Error::WrongVariant(invalid)),
+                            invalid => ::alkahest::private::err(::alkahest::private::DeserializeError::WrongVariant(invalid)),
                         }
                     }
 
-                    #[inline(never)]
-                    fn deserialize_in_place(&mut self, mut de: ::alkahest::private::Deserializer<#de>) -> Result<(), ::alkahest::private::Error> {
+                    #[inline(always)]
+                    fn deserialize_in_place(&mut self, mut de: ::alkahest::private::Deserializer<#de>) -> Result<(), ::alkahest::private::DeserializeError> {
                         // Checks compilation of code in the block.
                         #[allow(unused)]
                         let _ = || {
@@ -645,7 +645,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                     ::alkahest::private::Result::Ok(())
                                 }
                             )*
-                            (invalid, _) => ::alkahest::private::err(::alkahest::private::Error::WrongVariant(invalid)),
+                            (invalid, _) => ::alkahest::private::err(::alkahest::private::DeserializeError::WrongVariant(invalid)),
                         }
                     }
                 }

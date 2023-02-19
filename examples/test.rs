@@ -1,3 +1,5 @@
+#![deny(warnings)]
+
 use alkahest::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Formula, Serialize, Deserialize)]

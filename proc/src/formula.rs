@@ -92,13 +92,16 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
             let touch_fields = match &data.fields {
                 syn::Fields::Unit => quote::quote! {},
                 syn::Fields::Unnamed(fields) => {
-                    let fields = (0..fields.unnamed.len()).map(|_| quote::quote! { _ });
+                    let fields = (0..fields.unnamed.len()).map(|idx| {
+                        let ident = quote::format_ident!("__{}", idx);
+                        quote::quote! { #ident }
+                    });
                     quote::quote! { ( #(#fields),* ) }
                 }
                 syn::Fields::Named(fields) => {
                     let fields = fields.named.iter().map(|field| {
                         let ident = &field.ident;
-                        quote::quote! { #ident: _ }
+                        quote::quote! { #ident }
                     });
                     quote::quote! { { #(#fields),* } }
                 }
@@ -108,19 +111,18 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 impl #impl_generics #ident #type_generics #where_clause {
                     #(
                         #[doc(hidden)]
-                        #[inline(never)]
+                        #[inline(always)]
                         #[allow(non_upper_case_globals)]
                         pub const #field_names_order_checks: [(); #field_check_ids] = [(); #field_check_ids];
                     )*
 
                     #[doc(hidden)]
-                    #[inline(never)]
+                    #[inline(always)]
                     pub const __ALKAHEST_FORMULA_FIELD_COUNT: [(); #field_count] = [(); #field_count];
 
                     #[doc(hidden)]
-                    #[allow(dead_code)]
-                    #[allow(unreachable_code)]
-                    fn __alkahest_touch_fields(&self) {
+                    #[allow(dead_code, unused_variables)]
+                    fn __alkahest_touch(&self) {
                         let Self #touch_fields = self;
                     }
                 }
@@ -246,65 +248,98 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
 
             let variant_count = data.variants.len();
 
+            let touch_variants = data
+                .variants
+                .iter()
+                .map(|v| {
+                    let variant_ident = &v.ident;
+                    match &v.fields {
+                        syn::Fields::Unit => quote::quote! {
+                            Self :: #variant_ident => {}
+                        },
+                        syn::Fields::Unnamed(fields) => {
+                            let fields = (0..fields.unnamed.len()).map(|idx| {
+                                let ident = quote::format_ident!("__{}", idx);
+                                quote::quote! { #ident }
+                            });
+                            quote::quote! { Self :: #variant_ident ( #(#fields),* ) => {} }
+                        }
+                        syn::Fields::Named(fields) => {
+                            let fields = fields.named.iter().map(|field| {
+                                let ident = &field.ident;
+                                quote::quote! { #ident }
+                            });
+                            quote::quote! { Self :: #variant_ident { #(#fields),* } => {} }
+                        }
+                    }
+                })
+                .collect::<Vec<_>>();
+
             let construct_variants = data
                 .variants
                 .iter()
                 .map(|v| {
                     let variant_ident = &v.ident;
-                    let construct_fields = match &v.fields {
-                        syn::Fields::Unit => quote::quote! {},
+                    match &v.fields {
+                        syn::Fields::Unit => quote::quote! {
+                            let _ = Self :: #variant_ident;
+                        },
                         syn::Fields::Unnamed(fields) => {
                             let fields =
-                                (0..fields.unnamed.len()).map(|_| quote::quote! { return });
-                            quote::quote! { ( #(#fields),* ) }
+                                (0..fields.unnamed.len()).map(|_| quote::quote! { fake() });
+                            quote::quote! { let _ = Self :: #variant_ident ( #(#fields),* ); }
                         }
                         syn::Fields::Named(fields) => {
                             let fields = fields.named.iter().map(|field| {
                                 let ident = &field.ident;
-                                quote::quote! { #ident: return }
+                                quote::quote! { #ident: fake() }
                             });
-                            quote::quote! { { #(#fields),* } }
+                            quote::quote! { let _ = Self :: #variant_ident { #(#fields),* }; }
                         }
-                    };
-
-                    quote::quote! {
-                        #ident :: #variant_ident #construct_fields;
                     }
                 })
-                .collect::<TokenStream>();
+                .collect::<Vec<_>>();
 
             Ok(quote::quote! {
                 impl #impl_generics #ident #type_generics #where_clause {
                     #(#(
                         #[doc(hidden)]
-                        #[inline(never)]
+                        #[inline(always)]
                         #[allow(non_upper_case_globals)]
                         pub const #field_names_order_checks: [(); #field_check_ids] = [(); #field_check_ids];
                     )*)*
 
                     #(
                         #[doc(hidden)]
-                        #[inline(never)]
+                        #[inline(always)]
                         #[allow(non_upper_case_globals)]
                         pub const #field_count_checks: [(); #field_count] = [(); #field_count];
                     )*
 
                     #(
                         #[doc(hidden)]
-                        #[inline(never)]
+                        #[inline(always)]
                         #[allow(non_upper_case_globals)]
                         pub const #field_variant_name_ids: u32 = #field_variant_ids;
                     )*
 
                     #[doc(hidden)]
-                    #[inline(never)]
+                    #[inline(always)]
                     pub const __ALKAHEST_FORMULA_VARIANT_COUNT: [(); #variant_count] = [(); #variant_count];
 
                     #[doc(hidden)]
-                    #[allow(dead_code)]
-                    #[allow(unreachable_code)]
-                    fn __alkahest__construct_value() {
-                        #construct_variants
+                    #[allow(dead_code, unused_variables)]
+                    fn __alkahest_touch(&self) {
+                        match self {
+                            #( #touch_variants )*
+                        }
+                    }
+
+                    #[doc(hidden)]
+                    #[allow(dead_code, unused_variables)]
+                    fn __alkahest_construct() {
+                        fn fake<T>() -> T { loop {} }
+                        #(#construct_variants)*
                     }
                 }
 

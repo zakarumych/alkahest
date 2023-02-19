@@ -1,5 +1,5 @@
 use crate::{
-    deserialize::{Deserialize, Deserializer, Error},
+    deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::Formula,
     serialize::{Serialize, Serializer},
     size::FixedUsize,
@@ -27,7 +27,7 @@ where
     I: Iterator<Item = T>,
     T: Serialize<F>,
 {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -35,7 +35,7 @@ where
         serialize_iter_to_slice!(F : self.0 => ser)
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, I>(&self.0)
     }
@@ -47,7 +47,7 @@ where
     T: Serialize<F>,
     core::ops::Range<T>: Iterator<Item = T>,
 {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -55,7 +55,7 @@ where
         serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes_unchecked::<F, _>(self)
     }
@@ -67,7 +67,7 @@ where
     T: Serialize<F>,
     core::ops::RangeInclusive<T>: Iterator<Item = T>,
 {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -75,7 +75,7 @@ where
         serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes_unchecked::<F, _>(self)
     }
@@ -88,7 +88,7 @@ where
     B: Iterator<Item = T>,
     T: Serialize<F>,
 {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -96,7 +96,7 @@ where
         serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -108,7 +108,7 @@ where
     I: Iterator<Item = &'a T>,
     T: Clone + Serialize<F> + 'a,
 {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -116,7 +116,7 @@ where
         serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -128,7 +128,7 @@ where
     I: Iterator<Item = &'a T>,
     T: Copy + Serialize<F> + 'a,
 {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -136,7 +136,7 @@ where
         serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -147,7 +147,7 @@ where
     F: Formula,
     T: Copy + Serialize<F>,
 {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -155,7 +155,7 @@ where
         serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         Some(0)
     }
@@ -169,7 +169,7 @@ where
     I: Iterator<Item = T>,
     T: Serialize<F>,
 {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -177,7 +177,7 @@ where
         serialize_iter_to_slice!((FixedUsize, F) : self => ser)
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes_unchecked::<(FixedUsize, F), _>(self)
     }
@@ -190,7 +190,7 @@ where
     P: FnMut(&T) -> bool,
     T: Serialize<F>,
 {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -198,7 +198,7 @@ where
         serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -211,7 +211,7 @@ where
     P: FnMut(I::Item) -> Option<T>,
     T: Serialize<F>,
 {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -219,7 +219,7 @@ where
         serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -233,7 +233,7 @@ where
     U: IntoIterator<Item = T>,
     T: Serialize<F>,
 {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -241,7 +241,7 @@ where
         serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -254,7 +254,7 @@ where
     I::Item: IntoIterator<Item = T>,
     T: Serialize<F>,
 {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -262,7 +262,7 @@ where
         serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -274,7 +274,7 @@ where
     P: FnMut() -> Option<T>,
     T: Serialize<F>,
 {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -282,7 +282,7 @@ where
         serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -294,7 +294,7 @@ where
     I: Iterator<Item = T>,
     T: Serialize<F>,
 {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -302,7 +302,7 @@ where
         serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -315,7 +315,7 @@ where
     T: Serialize<F>,
     X: FnMut(&T),
 {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -323,7 +323,7 @@ where
         serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -336,7 +336,7 @@ where
     P: FnMut(I::Item) -> T,
     T: Serialize<F>,
 {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -344,7 +344,7 @@ where
         serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -357,7 +357,7 @@ where
     P: FnMut(I::Item) -> Option<T>,
     T: Serialize<F>,
 {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -365,7 +365,7 @@ where
         serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -376,7 +376,7 @@ where
     F: Formula,
     T: Serialize<F>,
 {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -384,7 +384,7 @@ where
         serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -396,7 +396,7 @@ where
     P: FnOnce() -> T,
     T: Serialize<F>,
 {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -404,7 +404,7 @@ where
         serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -416,7 +416,7 @@ where
     I: Iterator<Item = T>,
     T: Serialize<F>,
 {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -424,7 +424,7 @@ where
         serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -436,7 +436,7 @@ where
     I: DoubleEndedIterator<Item = T>,
     T: Serialize<F>,
 {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -444,7 +444,7 @@ where
         serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -457,7 +457,7 @@ where
     P: FnMut(&mut St, I::Item) -> Option<T>,
     T: Serialize<F>,
 {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -465,7 +465,7 @@ where
         serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -477,7 +477,7 @@ where
     I: Iterator<Item = T>,
     T: Serialize<F>,
 {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -485,7 +485,7 @@ where
         serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -498,7 +498,7 @@ where
     P: FnMut(&T) -> bool,
     T: Serialize<F>,
 {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -506,7 +506,7 @@ where
         serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -518,7 +518,7 @@ where
     I: Iterator<Item = T>,
     T: Serialize<F>,
 {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -526,7 +526,7 @@ where
         serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -538,7 +538,7 @@ where
     P: FnMut(&T) -> Option<T>,
     T: Serialize<F>,
 {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -546,7 +546,7 @@ where
         serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -558,7 +558,7 @@ where
     I: Iterator<Item = T>,
     T: Serialize<F>,
 {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -566,7 +566,7 @@ where
         serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -579,7 +579,7 @@ where
     P: FnMut(&T) -> bool,
     T: Serialize<F>,
 {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -587,7 +587,7 @@ where
         serialize_iter_to_slice!(F : self => ser)
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<F, _>(self)
     }
@@ -602,7 +602,7 @@ where
     A::Item: Serialize<FA>,
     B::Item: Serialize<FB>,
 {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -610,13 +610,13 @@ where
         serialize_iter_to_slice!((FA, FB) : self => ser)
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes::<(FA, FB), _>(self)
     }
 }
 
-pub fn deserialize_from_iter<'de, F, A, T>(de: Deserializer<'de>) -> Result<T, Error>
+pub fn deserialize_from_iter<'de, F, A, T>(de: Deserializer<'de>) -> Result<T, DeserializeError>
 where
     F: Formula + ?Sized,
     A: Deserialize<'de, F>,
@@ -642,7 +642,7 @@ where
 pub fn deserialize_extend_iter<'de, F, A, T>(
     value: &mut T,
     de: Deserializer<'de>,
-) -> Result<(), Error>
+) -> Result<(), DeserializeError>
 where
     F: Formula + ?Sized,
     A: Deserialize<'de, F>,

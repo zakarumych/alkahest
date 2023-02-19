@@ -1,6 +1,6 @@
 use crate::{
     cold::err,
-    deserialize::{Deserialize, Deserializer, Error},
+    deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::{BareFormula, Formula},
     serialize::{Serialize, Serializer},
 };
@@ -14,7 +14,7 @@ impl Formula for str {
 impl BareFormula for str {}
 
 impl Serialize<str> for &str {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -24,34 +24,37 @@ impl Serialize<str> for &str {
         ser.finish()
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         Some(self.len())
     }
 }
 
 impl<'de, 'fe: 'de> Deserialize<'fe, str> for &'de str {
-    #[inline(never)]
-    fn deserialize(deserializer: Deserializer<'fe>) -> Result<Self, Error>
+    #[inline(always)]
+    fn deserialize(deserializer: Deserializer<'fe>) -> Result<Self, DeserializeError>
     where
         Self: Sized,
     {
         let bytes = deserializer.read_all_bytes();
         match core::str::from_utf8(bytes) {
             Ok(s) => Ok(s),
-            Err(error) => err(Error::NonUtf8(error)),
+            Err(error) => err(DeserializeError::NonUtf8(error)),
         }
     }
 
-    #[inline(never)]
-    fn deserialize_in_place(&mut self, deserializer: Deserializer<'fe>) -> Result<(), Error> {
+    #[inline(always)]
+    fn deserialize_in_place(
+        &mut self,
+        deserializer: Deserializer<'fe>,
+    ) -> Result<(), DeserializeError> {
         let bytes = deserializer.read_all_bytes();
         match core::str::from_utf8(bytes) {
             Ok(s) => {
                 *self = s;
                 Ok(())
             }
-            Err(error) => err(Error::NonUtf8(error)),
+            Err(error) => err(DeserializeError::NonUtf8(error)),
         }
     }
 }

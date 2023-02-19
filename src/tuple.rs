@@ -1,7 +1,7 @@
 use core::mem::size_of;
 
 use crate::{
-    deserialize::{Deserialize, Deserializer, Error},
+    deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::{sum_size, BareFormula, Formula},
     serialize::{Serialize, Serializer},
     size::FixedUsize,
@@ -16,7 +16,7 @@ impl Formula for () {
 impl BareFormula for () {}
 
 impl Serialize<()> for () {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -24,14 +24,14 @@ impl Serialize<()> for () {
         ser.into().finish()
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         Some(0)
     }
 }
 
 impl Serialize<()> for &'_ () {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -39,20 +39,20 @@ impl Serialize<()> for &'_ () {
         ser.into().finish()
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         Some(0)
     }
 }
 
 impl Deserialize<'_, ()> for () {
-    #[inline(never)]
-    fn deserialize(_de: Deserializer) -> Result<(), Error> {
+    #[inline(always)]
+    fn deserialize(_de: Deserializer) -> Result<(), DeserializeError> {
         Ok(())
     }
 
-    #[inline(never)]
-    fn deserialize_in_place(&mut self, _de: Deserializer) -> Result<(), Error> {
+    #[inline(always)]
+    fn deserialize_in_place(&mut self, _de: Deserializer) -> Result<(), DeserializeError> {
         Ok(())
     }
 }
@@ -92,7 +92,7 @@ macro_rules! impl_for_tuple {
             $at: Formula + ?Sized,
             $bt: Serialize<$at>,
         {
-            #[inline(never)]
+            #[inline(always)]
             fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
             where
                 S: Serializer,
@@ -106,7 +106,7 @@ macro_rules! impl_for_tuple {
                 ser.write_last_value::<$at, $bt>($bt)
             }
 
-            #[inline(never)]
+            #[inline(always)]
             fn size_hint(&self) -> Option<usize> {
                 #![allow(non_snake_case, unused_mut)]
                 let mut size = 0;
@@ -131,7 +131,7 @@ macro_rules! impl_for_tuple {
             &'ser $bt: Serialize<$at>,
             $bt: ?Sized,
         {
-            #[inline(never)]
+            #[inline(always)]
             fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
             where
                 S: Serializer,
@@ -145,7 +145,7 @@ macro_rules! impl_for_tuple {
                 ser.write_last_value::<$at, &$bt>($bt)
             }
 
-            #[inline(never)]
+            #[inline(always)]
             fn size_hint(&self) -> Option<usize> {
                 #![allow(non_snake_case, unused_mut)]
                 let mut size = 0;
@@ -169,8 +169,8 @@ macro_rules! impl_for_tuple {
             $at: Formula + ?Sized,
             $bt: Deserialize<'de, $at>,
         {
-            #[inline(never)]
-            fn deserialize(mut de: Deserializer<'de>) -> Result<($($b,)* $bt,), Error> {
+            #[inline(always)]
+            fn deserialize(mut de: Deserializer<'de>) -> Result<($($b,)* $bt,), DeserializeError> {
                 #![allow(non_snake_case)]
                 $(
                     let $b = de.read_value::<$a, $b>(false)?;
@@ -182,8 +182,8 @@ macro_rules! impl_for_tuple {
                 Ok(value)
             }
 
-            #[inline(never)]
-            fn deserialize_in_place(&mut self, mut de: Deserializer<'de>) -> Result<(), Error> {
+            #[inline(always)]
+            fn deserialize_in_place(&mut self, mut de: Deserializer<'de>) -> Result<(), DeserializeError> {
                 #![allow(non_snake_case)]
 
                 let ($($b,)* $bt,) = self;

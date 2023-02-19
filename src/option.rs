@@ -1,5 +1,5 @@
 use crate::{
-    deserialize::{Deserialize, Deserializer, Error},
+    deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::{sum_size, BareFormula, Formula},
     serialize::{Serialize, Serializer},
 };
@@ -20,7 +20,7 @@ where
     F: Formula,
     T: Serialize<F>,
 {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -38,7 +38,7 @@ where
         }
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         match self {
             None => Some(1),
@@ -52,7 +52,7 @@ where
     F: Formula,
     &'ser T: Serialize<F>,
 {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -70,7 +70,7 @@ where
         }
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         match self {
             None => Some(1),
@@ -84,8 +84,8 @@ where
     F: Formula,
     T: Deserialize<'de, F>,
 {
-    #[inline(never)]
-    fn deserialize(mut de: Deserializer<'de>) -> Result<Self, Error> {
+    #[inline(always)]
+    fn deserialize(mut de: Deserializer<'de>) -> Result<Self, DeserializeError> {
         let is_some: u8 = de.read_bytes(1)?[0];
         if is_some != 0 {
             Ok(Some(de.read_value::<F, T>(true)?))
@@ -94,8 +94,8 @@ where
         }
     }
 
-    #[inline(never)]
-    fn deserialize_in_place(&mut self, mut de: Deserializer<'de>) -> Result<(), Error> {
+    #[inline(always)]
+    fn deserialize_in_place(&mut self, mut de: Deserializer<'de>) -> Result<(), DeserializeError> {
         let is_some: u8 = de.read_bytes(1)?[0];
         if is_some != 0 {
             match self {

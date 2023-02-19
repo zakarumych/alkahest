@@ -1,7 +1,7 @@
 #![doc = include_str!("../README.md")]
 #![no_std]
 #![forbid(unsafe_code)]
-// #![doc(test(attr(deny(warnings))))]
+#![doc(test(attr(deny(warnings))))]
 
 extern crate self as alkahest;
 
@@ -44,7 +44,8 @@ mod bincode;
 pub use crate::{
     bytes::Bytes,
     deserialize::{
-        deserialize, deserialize_in_place, value_size, DeIter, Deserialize, Deserializer, Error,
+        deserialize, deserialize_in_place, value_size, DeIter, Deserialize, DeserializeError,
+        Deserializer,
     },
     formula::{max_size, BareFormula, Formula},
     iter::{deserialize_from_iter, SerIter},
@@ -71,7 +72,7 @@ pub mod private {
     use crate::FixedUsize;
     pub use crate::{
         cold::{cold, err},
-        deserialize::{Deserialize, Deserializer, Error},
+        deserialize::{Deserialize, DeserializeError, Deserializer},
         formula::{formula_fast_sizes, max_size, sum_size, BareFormula, Formula},
         serialize::{Serialize, Serializer},
     };
@@ -89,7 +90,7 @@ pub mod private {
     where
         F: Formula + ?Sized,
     {
-        #[inline(never)]
+        #[inline(always)]
         pub fn write_value<T, S>(self, ser: &mut S, value: T) -> Result<(), S::Error>
         where
             S: Serializer,
@@ -98,7 +99,7 @@ pub mod private {
             ser.write_value::<F, T>(value)
         }
 
-        #[inline(never)]
+        #[inline(always)]
         pub fn write_last_value<T, S>(self, ser: S, value: T) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
@@ -107,8 +108,12 @@ pub mod private {
             ser.write_last_value::<F, T>(value)
         }
 
-        #[inline(never)]
-        pub fn read_value<'de, T>(self, de: &mut Deserializer<'de>, last: bool) -> Result<T, Error>
+        #[inline(always)]
+        pub fn read_value<'de, T>(
+            self,
+            de: &mut Deserializer<'de>,
+            last: bool,
+        ) -> Result<T, DeserializeError>
         where
             F: Formula,
             T: Deserialize<'de, F>,
@@ -116,13 +121,13 @@ pub mod private {
             de.read_value::<F, T>(last)
         }
 
-        #[inline(never)]
+        #[inline(always)]
         pub fn read_in_place<'de, T>(
             self,
             place: &mut T,
             de: &mut Deserializer<'de>,
             last: bool,
-        ) -> Result<(), Error>
+        ) -> Result<(), DeserializeError>
         where
             F: Formula,
             T: Deserialize<'de, F>,
@@ -130,7 +135,7 @@ pub mod private {
             de.read_in_place::<F, T>(place, last)
         }
 
-        #[inline(never)]
+        #[inline(always)]
         pub fn size_hint<T>(self, value: &T, last: bool) -> Option<usize>
         where
             T: Serialize<F>,
@@ -144,7 +149,7 @@ pub mod private {
         }
     }
 
-    #[inline(never)]
+    #[inline(always)]
     pub fn with_formula<F: Formula + ?Sized, L: Formula + ?Sized>(
         _: impl FnOnce(&F) -> &L,
     ) -> WithFormula<L> {

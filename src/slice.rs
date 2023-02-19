@@ -41,7 +41,7 @@ where
     }
 }
 
-#[inline(never)]
+#[inline(always)]
 pub fn default_iter_fast_sizes<F, I>(iter: &I) -> Option<usize>
 where
     F: Formula,
@@ -51,7 +51,7 @@ where
     default_iter_fast_sizes_unchecked::<F, I>(iter)
 }
 
-#[inline(never)]
+#[inline(always)]
 pub fn default_iter_fast_sizes_unchecked<F, I>(iter: &I) -> Option<usize>
 where
     F: Formula,
@@ -73,7 +73,7 @@ where
     }
 }
 
-#[inline(never)]
+#[inline(always)]
 pub fn default_iter_fast_sizes_owned<F, T, I>(iter: I) -> Option<usize>
 where
     F: Formula,
@@ -108,7 +108,7 @@ where
     }
 }
 
-#[inline(never)]
+#[inline(always)]
 pub fn default_iter_fast_sizes_by_ref<'a, F, T, I>(iter: I) -> Option<usize>
 where
     F: Formula,

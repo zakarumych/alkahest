@@ -36,7 +36,7 @@ use crate::{
 ///         S: Serializer,
 ///     {
 ///         let mut ser = ser.into();
-///         ser.write_bytes(b"qwe");
+///         ser.write_bytes(b"qwe")?;
 ///         ser.finish()
 ///     }
 ///
@@ -74,7 +74,7 @@ struct TupleFormula(u8, [u16]);
 
 
 #[derive(Serialize)]
-#[alkahest(owned(TupleFormula))] // `owned()` because iterators cannot be serialzied by reference.
+#[alkahest(owned(TupleFormula))] // `owned()` because iterators cannot be serialized by reference.
 struct TupleSerialize(u8, std::iter::Once<u16>);
 
 
@@ -108,6 +108,9 @@ enum EnumFormula {
 /// `&str` can be serialized with `String` formula.
 #[derive(Serialize)]
 #[alkahest(EnumFormula)]
+# // While `Formula` derive macro makes all variants and fields used,
+# // this is not the case for `Serialize` derive macro.
+# #[allow(dead_code)]
 enum EnumSerialize<'a> {
     A,
     B(u8),
@@ -144,7 +147,7 @@ pub trait Serialize<F: Formula + ?Sized> {
     ///
     /// Returning incorrect sizes may cause panic during implementation
     /// or broken data.
-    // #[inline(never)]
+    // #[inline(always)]
     fn size_hint(&self) -> Option<usize>;
 }
 
@@ -238,7 +241,7 @@ pub trait Serializer {
 struct IntoDrySerializer;
 
 impl From<IntoDrySerializer> for DrySerializer {
-    #[inline(never)]
+    #[inline(always)]
     fn from(_: IntoDrySerializer) -> Self {
         DrySerializer::new()
     }
@@ -251,7 +254,7 @@ struct DrySerializer {
 }
 
 impl DrySerializer {
-    #[inline(never)]
+    #[inline(always)]
     #[must_use]
     const fn new() -> Self {
         Self {
@@ -261,7 +264,7 @@ impl DrySerializer {
         }
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn write_value<F, T>(&mut self, value: T, last: bool)
     where
         F: Formula + ?Sized,
@@ -294,13 +297,13 @@ impl Serializer for DrySerializer {
     type Ok = (usize, usize);
     type Error = Infallible;
 
-    #[inline(never)]
+    #[inline(always)]
     fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), Infallible> {
         self.stack += bytes.len();
         Ok(())
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn write_value<F, T>(&mut self, value: T) -> Result<(), Infallible>
     where
         F: Formula + ?Sized,
@@ -310,7 +313,7 @@ impl Serializer for DrySerializer {
         Ok(())
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn write_last_value<F, T>(mut self, value: T) -> Result<(usize, usize), Infallible>
     where
         F: Formula + ?Sized,
@@ -320,7 +323,7 @@ impl Serializer for DrySerializer {
         Ok((self.heap, self.stack))
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn write_ref<F, T>(mut self, value: T) -> Result<(usize, usize), Infallible>
     where
         F: Formula + ?Sized,
@@ -333,7 +336,7 @@ impl Serializer for DrySerializer {
         Ok((self.heap, self.stack))
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn finish(self) -> Result<(usize, usize), Infallible> {
         Ok((self.heap, self.stack))
     }
@@ -345,21 +348,21 @@ struct IntoSerializer<'ser> {
 }
 
 impl<'ser> From<IntoSerializer<'ser>> for PanickingSerializer<'ser> {
-    #[inline(never)]
+    #[inline(always)]
     fn from(into: IntoSerializer<'ser>) -> Self {
         PanickingSerializer::new(into.heap, into.output)
     }
 }
 
 impl<'ser> From<IntoSerializer<'ser>> for FailFastSerializer<'ser> {
-    #[inline(never)]
+    #[inline(always)]
     fn from(into: IntoSerializer<'ser>) -> Self {
         FailFastSerializer::new(into.heap, into.output)
     }
 }
 
 impl<'ser> From<IntoSerializer<'ser>> for ExactSizeSerializer<'ser> {
-    #[inline(never)]
+    #[inline(always)]
     fn from(into: IntoSerializer<'ser>) -> Self {
         ExactSizeSerializer::new(into.heap, into.output)
     }
@@ -382,7 +385,7 @@ struct PanickingSerializer<'ser> {
 
 impl<'ser> PanickingSerializer<'ser> {
     #[must_use]
-    #[inline(never)]
+    #[inline(always)]
     fn new(heap: usize, output: &'ser mut [u8]) -> Self {
         PanickingSerializer {
             heap,
@@ -391,7 +394,7 @@ impl<'ser> PanickingSerializer<'ser> {
         }
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn sub(&mut self) -> IntoSerializer {
         let at = self.output.len() - self.stack;
         IntoSerializer {
@@ -400,7 +403,7 @@ impl<'ser> PanickingSerializer<'ser> {
         }
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn write_value<F, T>(&mut self, value: T, last: bool) -> Result<(), Infallible>
     where
         F: Formula + ?Sized,
@@ -442,7 +445,7 @@ impl<'ser> Serializer for PanickingSerializer<'ser> {
     type Ok = (usize, usize);
     type Error = Infallible;
 
-    #[inline(never)]
+    #[inline(always)]
     fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), Infallible> {
         let at = self.output.len() - self.stack - bytes.len();
         self.output[at..].copy_from_slice(bytes);
@@ -450,7 +453,7 @@ impl<'ser> Serializer for PanickingSerializer<'ser> {
         Ok(())
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn write_value<F, T>(&mut self, value: T) -> Result<(), Infallible>
     where
         F: Formula + ?Sized,
@@ -459,7 +462,7 @@ impl<'ser> Serializer for PanickingSerializer<'ser> {
         self.write_value(value, false)
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn write_last_value<F, T>(mut self, value: T) -> Result<(usize, usize), Infallible>
     where
         F: Formula + ?Sized,
@@ -469,7 +472,7 @@ impl<'ser> Serializer for PanickingSerializer<'ser> {
         self.finish()
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn write_ref<F, T>(mut self, value: T) -> Result<(usize, usize), Infallible>
     where
         F: Formula + ?Sized,
@@ -523,7 +526,7 @@ impl<'ser> Serializer for PanickingSerializer<'ser> {
         Ok((self.heap, self.stack))
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn finish(self) -> Result<(usize, usize), Infallible> {
         Ok((self.heap, self.stack))
     }
@@ -547,7 +550,7 @@ struct FailFastSerializer<'ser> {
 
 impl<'ser> FailFastSerializer<'ser> {
     #[must_use]
-    #[inline(never)]
+    #[inline(always)]
     fn new(heap: usize, output: &'ser mut [u8]) -> Self {
         FailFastSerializer {
             heap,
@@ -556,7 +559,7 @@ impl<'ser> FailFastSerializer<'ser> {
         }
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn sub(&mut self) -> IntoSerializer {
         let at = self.output.len() - self.stack;
         IntoSerializer {
@@ -565,7 +568,7 @@ impl<'ser> FailFastSerializer<'ser> {
         }
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn write_value<F, T>(&mut self, value: T, last: bool) -> Result<(), ()>
     where
         F: Formula + ?Sized,
@@ -610,7 +613,7 @@ impl<'ser> Serializer for FailFastSerializer<'ser> {
     type Ok = (usize, usize);
     type Error = ();
 
-    #[inline(never)]
+    #[inline(always)]
     fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), ()> {
         if self.output.len() - self.stack - self.heap < bytes.len() {
             return err(());
@@ -621,7 +624,7 @@ impl<'ser> Serializer for FailFastSerializer<'ser> {
         Ok(())
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn write_value<F, T>(&mut self, value: T) -> Result<(), ()>
     where
         F: Formula + ?Sized,
@@ -630,7 +633,7 @@ impl<'ser> Serializer for FailFastSerializer<'ser> {
         self.write_value(value, false)
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn write_last_value<F, T>(mut self, value: T) -> Result<(usize, usize), ()>
     where
         F: Formula + ?Sized,
@@ -640,7 +643,7 @@ impl<'ser> Serializer for FailFastSerializer<'ser> {
         self.finish()
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn write_ref<F, T>(mut self, value: T) -> Result<(usize, usize), ()>
     where
         F: Formula + ?Sized,
@@ -706,7 +709,7 @@ impl<'ser> Serializer for FailFastSerializer<'ser> {
         Ok((self.heap, self.stack))
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn finish(self) -> Result<(usize, usize), ()> {
         Ok((self.heap, self.stack))
     }
@@ -728,7 +731,7 @@ struct ExactSizeSerializer<'ser> {
 
 impl<'ser> ExactSizeSerializer<'ser> {
     #[must_use]
-    #[inline(never)]
+    #[inline(always)]
     fn new(heap: usize, output: &'ser mut [u8]) -> Self {
         ExactSizeSerializer {
             heap,
@@ -737,7 +740,7 @@ impl<'ser> ExactSizeSerializer<'ser> {
         }
     }
 
-    // #[inline(never)]
+    // #[inline(always)]
     // fn sub_value<F, T>(&mut self, value: T) -> (usize, usize)
     // where
     //     F: Formula + ?Sized,
@@ -770,7 +773,7 @@ impl<'ser> ExactSizeSerializer<'ser> {
     //     }
     // }
 
-    #[inline(never)]
+    #[inline(always)]
     fn sub_value<F, T>(&mut self, value: T) -> (usize, usize)
     where
         F: Formula + ?Sized,
@@ -803,7 +806,7 @@ impl<'ser> ExactSizeSerializer<'ser> {
         }
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn write_value<F, T>(&mut self, value: T, last: bool) -> Result<(), (usize, usize)>
     where
         F: Formula + ?Sized,
@@ -851,7 +854,7 @@ impl<'ser> Serializer for ExactSizeSerializer<'ser> {
     type Ok = (usize, usize);
     type Error = (usize, usize);
 
-    #[inline(never)]
+    #[inline(always)]
     fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), (usize, usize)> {
         match &mut self.output {
             None => cold(),
@@ -869,7 +872,7 @@ impl<'ser> Serializer for ExactSizeSerializer<'ser> {
         Ok(())
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn write_value<F, T>(&mut self, value: T) -> Result<(), (usize, usize)>
     where
         F: Formula + ?Sized,
@@ -878,7 +881,7 @@ impl<'ser> Serializer for ExactSizeSerializer<'ser> {
         self.write_value::<F, T>(value, false)
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn write_last_value<F, T>(mut self, value: T) -> Result<(usize, usize), (usize, usize)>
     where
         F: Formula + ?Sized,
@@ -888,7 +891,7 @@ impl<'ser> Serializer for ExactSizeSerializer<'ser> {
         self.finish()
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn write_ref<F, T>(mut self, value: T) -> Result<(usize, usize), (usize, usize)>
     where
         F: Formula + ?Sized,
@@ -938,7 +941,7 @@ impl<'ser> Serializer for ExactSizeSerializer<'ser> {
         self.finish()
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn finish(self) -> Result<(usize, usize), (usize, usize)> {
         if self.output.is_none() {
             err((self.heap, self.stack))
@@ -948,7 +951,7 @@ impl<'ser> Serializer for ExactSizeSerializer<'ser> {
     }
 }
 
-/// Error that may occur during serialization,
+/// DeserializeError that may occur during serialization,
 /// if buffer is too small to fit serialized data.
 ///
 /// This type does not contain the size of the buffer required to fit serialized data.
@@ -1016,7 +1019,7 @@ where
     Ok(actual_heap + actual_stack)
 }
 
-/// Error that may occur during serialization,
+/// DeserializeError that may occur during serialization,
 /// if buffer is too small to fit serialized data.
 ///
 /// Contains the size of the buffer required to fit serialized data.
@@ -1064,7 +1067,7 @@ where
     Ok(heap + stack)
 }
 
-#[inline(never)]
+#[inline(always)]
 fn serialized_sizes<F, T>(value: T) -> (usize, usize)
 where
     F: Formula + ?Sized,
@@ -1076,7 +1079,7 @@ where
     }
 }
 
-#[inline(never)]
+#[inline(always)]
 pub fn serialized_size<F, T>(value: T) -> usize
 where
     F: Formula + ?Sized,
@@ -1087,7 +1090,7 @@ where
     heap + stack + reference_size
 }
 
-#[inline(never)]
+#[inline(always)]
 #[track_caller]
 fn check_stack<F, T>(stack: usize)
 where
@@ -1107,7 +1110,7 @@ where
 }
 
 /// Moves stack bytes to the heap
-#[inline(never)]
+#[inline(always)]
 fn to_heap(output: &mut [u8], heap: usize, stack: usize) {
     let len = output.len();
     if len == heap + stack {
@@ -1121,7 +1124,7 @@ fn to_heap(output: &mut [u8], heap: usize, stack: usize) {
     // }
 }
 
-#[inline(never)]
+#[inline(always)]
 fn write_reference<F>(address: usize, size: usize, output: &mut [u8])
 where
     F: Formula + ?Sized,
@@ -1144,7 +1147,7 @@ where
     }
 }
 
-#[inline(never)]
+#[inline(always)]
 pub fn header_size<F>() -> usize
 where
     F: Formula + ?Sized,

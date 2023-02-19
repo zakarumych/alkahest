@@ -1,7 +1,7 @@
 use core::marker::PhantomData;
 
 use crate::{
-    deserialize::{Deserialize, Deserializer, Error},
+    deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::{BareFormula, Formula},
     serialize::{Serialize, Serializer},
 };
@@ -25,7 +25,7 @@ where
     F: BareFormula + ?Sized,
     T: Serialize<F>,
 {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         Self: Sized,
@@ -34,7 +34,7 @@ where
         <T as Serialize<F>>::serialize(self, ser)
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         <T as Serialize<F>>::size_hint(self)
     }
@@ -45,16 +45,19 @@ where
     F: BareFormula + ?Sized,
     T: Deserialize<'de, F>,
 {
-    #[inline(never)]
-    fn deserialize(deserializer: Deserializer<'de>) -> Result<Self, Error>
+    #[inline(always)]
+    fn deserialize(deserializer: Deserializer<'de>) -> Result<Self, DeserializeError>
     where
         Self: Sized,
     {
         <T as Deserialize<'de, F>>::deserialize(deserializer)
     }
 
-    #[inline(never)]
-    fn deserialize_in_place(&mut self, deserializer: Deserializer<'de>) -> Result<(), Error> {
+    #[inline(always)]
+    fn deserialize_in_place(
+        &mut self,
+        deserializer: Deserializer<'de>,
+    ) -> Result<(), DeserializeError> {
         <T as Deserialize<'de, F>>::deserialize_in_place(self, deserializer)
     }
 }

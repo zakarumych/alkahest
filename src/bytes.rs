@@ -1,5 +1,5 @@
 use crate::{
-    deserialize::{Deserialize, Deserializer, Error},
+    deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::{BareFormula, Formula},
     serialize::{Serialize, Serializer},
 };
@@ -17,7 +17,7 @@ impl Formula for Bytes {
 impl BareFormula for Bytes {}
 
 impl Serialize<Bytes> for &[u8] {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -27,20 +27,20 @@ impl Serialize<Bytes> for &[u8] {
         ser.finish()
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         Some(self.len())
     }
 }
 
 impl<'de, 'fe: 'de> Deserialize<'fe, Bytes> for &'de [u8] {
-    #[inline(never)]
-    fn deserialize(de: Deserializer<'fe>) -> Result<Self, Error> {
+    #[inline(always)]
+    fn deserialize(de: Deserializer<'fe>) -> Result<Self, DeserializeError> {
         Ok(de.read_all_bytes())
     }
 
-    #[inline(never)]
-    fn deserialize_in_place(&mut self, de: Deserializer<'fe>) -> Result<(), Error> {
+    #[inline(always)]
+    fn deserialize_in_place(&mut self, de: Deserializer<'fe>) -> Result<(), DeserializeError> {
         *self = de.read_all_bytes();
         Ok(())
     }

@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 
 use crate::{
     bytes::Bytes,
-    deserialize::{Deserialize, Deserializer, Error},
+    deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::Formula,
     iter::deserialize_extend_iter,
     reference::Ref,
@@ -27,7 +27,7 @@ where
     F: Formula,
     T: Serialize<[F]>,
 {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         T: Serialize<[F]>,
@@ -36,7 +36,7 @@ where
         ser.into().write_ref::<[F], T>(self)
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         let size = self.size_hint()?;
         Some(size + size_of::<[FixedUsize; 2]>())
@@ -48,14 +48,14 @@ where
     F: Formula,
     T: Deserialize<'de, [F]>,
 {
-    #[inline(never)]
-    fn deserialize(de: Deserializer<'de>) -> Result<T, Error> {
+    #[inline(always)]
+    fn deserialize(de: Deserializer<'de>) -> Result<T, DeserializeError> {
         let de = de.deref::<[F]>()?;
         <T as Deserialize<[F]>>::deserialize(de)
     }
 
-    #[inline(never)]
-    fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), Error> {
+    #[inline(always)]
+    fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), DeserializeError> {
         let de = de.deref::<[F]>()?;
         <T as Deserialize<[F]>>::deserialize_in_place(self, de)
     }
@@ -66,7 +66,7 @@ where
     F: Formula,
     T: Serialize<F>,
 {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -76,7 +76,7 @@ where
         ser.finish()
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes_by_ref::<F, T, _>(self.iter())
     }
@@ -87,7 +87,7 @@ where
     F: Formula,
     &'ser T: Serialize<F>,
 {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -97,7 +97,7 @@ where
         ser.finish()
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         default_iter_fast_sizes_owned::<F, &'ser T, _>(self.iter())
     }
@@ -108,13 +108,13 @@ where
     F: Formula,
     T: Deserialize<'de, F>,
 {
-    #[inline(never)]
-    fn deserialize(de: Deserializer<'de>) -> Result<Self, Error> {
+    #[inline(always)]
+    fn deserialize(de: Deserializer<'de>) -> Result<Self, DeserializeError> {
         de.into_unsized_iter::<F, T>()?.collect()
     }
 
-    #[inline(never)]
-    fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), Error> {
+    #[inline(always)]
+    fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), DeserializeError> {
         self.clear();
         deserialize_extend_iter::<F, T, Self>(self, de)
     }
@@ -125,20 +125,20 @@ where
     F: Formula,
     T: Deserialize<'de, F>,
 {
-    #[inline(never)]
-    fn deserialize(de: Deserializer<'de>) -> Result<Self, Error> {
+    #[inline(always)]
+    fn deserialize(de: Deserializer<'de>) -> Result<Self, DeserializeError> {
         de.into_unsized_iter::<F, T>()?.collect()
     }
 
-    #[inline(never)]
-    fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), Error> {
+    #[inline(always)]
+    fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), DeserializeError> {
         self.clear();
         deserialize_extend_iter::<F, T, Self>(self, de)
     }
 }
 
 impl Serialize<Bytes> for Vec<u8> {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -146,14 +146,14 @@ impl Serialize<Bytes> for Vec<u8> {
         Serialize::<Bytes>::serialize(&*self, ser)
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         Some(self.len())
     }
 }
 
 impl Serialize<Bytes> for &Vec<u8> {
-    #[inline(never)]
+    #[inline(always)]
     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -163,22 +163,22 @@ impl Serialize<Bytes> for &Vec<u8> {
         ser.finish()
     }
 
-    #[inline(never)]
+    #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
         Some(self.len())
     }
 }
 
 impl<'de> Deserialize<'de, Bytes> for Vec<u8> {
-    #[inline(never)]
-    fn deserialize(de: Deserializer) -> Result<Self, Error> {
+    #[inline(always)]
+    fn deserialize(de: Deserializer) -> Result<Self, DeserializeError> {
         let mut vec = Vec::new();
         vec.extend_from_slice(de.read_all_bytes());
         Ok(vec)
     }
 
-    #[inline(never)]
-    fn deserialize_in_place(&mut self, de: Deserializer) -> Result<(), Error> {
+    #[inline(always)]
+    fn deserialize_in_place(&mut self, de: Deserializer) -> Result<(), DeserializeError> {
         self.clear();
         self.extend_from_slice(de.read_all_bytes());
         Ok(())

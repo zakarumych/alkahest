@@ -42,7 +42,7 @@ impl<'de, T> Deserialize<'de, Bincode> for T
 where
     T: serde::Deserialize<'de>,
 {
-    fn deserialize(de: Deserializer<'de>) -> Result<Self, crate::Error>
+    fn deserialize(de: Deserializer<'de>) -> Result<Self, crate::DeserializeError>
     where
         Self: Sized,
     {
@@ -55,7 +55,10 @@ where
         }
     }
 
-    fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), crate::Error> {
+    fn deserialize_in_place(
+        &mut self,
+        de: Deserializer<'de>,
+    ) -> Result<(), crate::DeserializeError> {
         let options = bincode::config::DefaultOptions::new();
         let mut de = bincode::de::Deserializer::from_slice(de.read_all_bytes(), options);
 
@@ -101,7 +104,7 @@ impl<'de, T> Deserialize<'de, Bincoded<T>> for T
 where
     T: serde::Deserialize<'de>,
 {
-    fn deserialize(de: Deserializer<'de>) -> Result<Self, crate::Error>
+    fn deserialize(de: Deserializer<'de>) -> Result<Self, crate::DeserializeError>
     where
         Self: Sized,
     {
@@ -114,7 +117,10 @@ where
         }
     }
 
-    fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), crate::Error> {
+    fn deserialize_in_place(
+        &mut self,
+        de: Deserializer<'de>,
+    ) -> Result<(), crate::DeserializeError> {
         let options = bincode::config::DefaultOptions::new();
         let mut de = bincode::de::Deserializer::from_slice(de.read_all_bytes(), options);
 
