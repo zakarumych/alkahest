@@ -2,7 +2,7 @@ use crate::{
     bytes::Bytes,
     deserialize::{deserialize, deserialize_in_place, value_size, Deserialize},
     formula::Formula,
-    lazy::LazySlice,
+    lazy::Lazy,
     r#as::As,
     reference::Ref,
     serialize::{
@@ -133,8 +133,8 @@ fn test_array() {
 fn test_slice() {
     macro_rules! test_primitive {
         ($buffer:expr, $t:ty = $v:expr) => {
-            test_type::<[$t], [$t], LazySlice<$t>>(&[$v; 3], &mut $buffer, |x, y| {
-                y.iter().zip(x.iter()).all(|(x, y)| x.unwrap() == *y)
+            test_type::<[$t], [$t], Lazy<[$t]>>(&[$v; 3], &mut $buffer, |x, y| {
+                y.iter::<$t>().zip(x.iter()).all(|(x, y)| x.unwrap() == *y)
             });
         };
     }

@@ -7,6 +7,28 @@ use crate::{
 };
 
 /// Formula type that mirrors specified formula `F`.
+/// It can be used to turn unsized field type into sized one,
+/// keeping the same formula.
+///
+/// # Example
+///
+/// ```compile_fail
+/// # use alkahest::*;
+/// type MyFormula = [str]; // Slice element type must be sized. `str` is unsized.
+///
+/// let mut buffer = [0u8; 22];
+/// serialize::<MyFormula, _>(["qwe", "rty"], &mut buffer).unwrap();
+/// ```
+///
+/// // Wrap usized type into `As`
+///
+/// ```
+/// # use alkahest::*;
+/// type MyFormula = [As<str>]; // `As` is always size.
+///
+/// let mut buffer = [0u8; 22];
+/// serialize::<MyFormula, _>(["qwe", "rty"], &mut buffer).unwrap();
+/// ```
 pub struct As<F: ?Sized> {
     marker: PhantomData<fn(&F) -> &F>,
 }

@@ -622,7 +622,7 @@ where
     A: Deserialize<'de, F>,
     T: FromIterator<A>,
 {
-    let mut iter = de.into_iter::<F, A>()?;
+    let mut iter = de.into_unsized_iter::<F, A>();
     let mut err = None;
     let value = T::from_iter(core::iter::from_fn(|| match iter.next() {
         None => None,
@@ -648,7 +648,7 @@ where
     A: Deserialize<'de, F>,
     T: Extend<A>,
 {
-    let mut iter = de.into_iter::<F, A>()?;
+    let mut iter = de.into_unsized_iter::<F, A>();
     let mut err = None;
     value.extend(core::iter::from_fn(|| match iter.next() {
         None => None,

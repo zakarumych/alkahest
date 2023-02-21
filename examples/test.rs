@@ -3,7 +3,6 @@
 use alkahest::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Formula, Serialize, Deserialize)]
-// #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Formula, Serialize, Deserialize)]
 struct X;
 
 #[derive(Debug, Formula)]

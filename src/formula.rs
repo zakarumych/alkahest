@@ -135,6 +135,7 @@ where
 pub trait BareFormula: Formula {}
 
 #[inline(always)]
+#[track_caller]
 pub const fn unwrap_size(a: Option<usize>) -> usize {
     let (arr, idx) = match a {
         None => ([0], 1), // DeserializeError in both runtime and compile time.

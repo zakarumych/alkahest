@@ -4,6 +4,7 @@ use crate::{
 };
 
 /// No-op deserializer for any formula.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Skip;
 
 impl<'de, F> Deserialize<'de, F> for Skip

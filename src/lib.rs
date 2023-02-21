@@ -50,7 +50,7 @@ pub use crate::{
     },
     formula::{max_size, BareFormula, Formula},
     iter::{deserialize_from_iter, SerIter},
-    lazy::{Lazy, LazySeq, LazySlice},
+    lazy::Lazy,
     r#as::As,
     reference::Ref,
     serialize::{

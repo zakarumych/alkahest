@@ -110,7 +110,7 @@ where
 {
     #[inline(always)]
     fn deserialize(de: Deserializer<'de>) -> Result<Self, DeserializeError> {
-        de.into_unsized_iter::<F, T>()?.collect()
+        de.into_unsized_iter::<F, T>().collect()
     }
 
     #[inline(always)]
@@ -127,7 +127,7 @@ where
 {
     #[inline(always)]
     fn deserialize(de: Deserializer<'de>) -> Result<Self, DeserializeError> {
-        de.into_unsized_iter::<F, T>()?.collect()
+        de.into_unsized_iter::<F, T>().collect()
     }
 
     #[inline(always)]

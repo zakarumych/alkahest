@@ -196,29 +196,29 @@ impl<'de> Deserializer<'de> {
     }
 
     #[inline(always)]
-    pub fn into_iter<F, T>(self) -> Result<DeIter<'de, F, T>, DeserializeError>
+    pub fn into_sized_iter<F, T>(self, max_stack: usize) -> SizedDeIter<'de, F, T>
     where
         F: Formula + ?Sized,
         T: Deserialize<'de, F>,
     {
-        debug_assert!(F::MAX_STACK_SIZE.is_some());
+        debug_assert_eq!(F::MAX_STACK_SIZE, Some(max_stack));
 
-        Ok(DeIter {
+        DeIter {
             de: self,
             marker: PhantomData,
-        })
+        }
     }
 
     #[inline(always)]
-    pub fn into_unsized_iter<F, T>(self) -> Result<UnsizedDeIter<'de, F, T>, DeserializeError>
+    pub fn into_unsized_iter<F, T>(self) -> DeIter<'de, F, T>
     where
         F: Formula + ?Sized,
         T: Deserialize<'de, F>,
     {
-        Ok(DeIter {
+        DeIter {
             de: self,
             marker: PhantomData,
-        })
+        }
     }
 
     #[inline(always)]
@@ -232,11 +232,11 @@ impl<'de> Deserializer<'de> {
 }
 
 pub struct IterSized;
-pub struct IterUnsized;
+pub struct IterMaybeUnsized;
 
-pub type UnsizedDeIter<'de, F, T> = DeIter<'de, F, T, IterUnsized>;
+pub type SizedDeIter<'de, F, T> = DeIter<'de, F, T, IterSized>;
 
-pub struct DeIter<'de, F: ?Sized, T, M = IterSized> {
+pub struct DeIter<'de, F: ?Sized, T, M = IterMaybeUnsized> {
     de: Deserializer<'de>,
     marker: PhantomData<fn(&F, M) -> T>,
 }
