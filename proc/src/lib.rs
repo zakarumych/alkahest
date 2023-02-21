@@ -132,3 +132,60 @@ fn is_generic_ty<'a>(
         _ => false,
     }
 }
+
+fn struct_field_order_checks(
+    data: &syn::DataStruct,
+    variant: Option<&syn::Ident>,
+    this: &syn::Ident,
+    formula: &syn::Path,
+) -> proc_macro2::TokenStream {
+    let no_named_fields = syn::punctuated::Punctuated::<syn::Field, syn::Token![,]>::new();
+
+    match &data.fields {
+        syn::Fields::Named(fields) => fields.named.iter(),
+        _ => no_named_fields.iter(),
+    }.enumerate()
+    .map(|(idx, field)| {
+        let order = match variant {
+            None => quote::format_ident!(
+                "__ALKAHEST_FORMULA_FIELD_{}_IDX",
+                field.ident.as_ref().unwrap(),
+            ),
+            Some(v) => quote::format_ident!(
+                "__ALKAHEST_FORMULA_VARIANT_{}_FIELD_{}_IDX",
+                v,
+                field.ident.as_ref().unwrap(),
+            ),
+        };
+        let f = field.ident.as_ref().unwrap();
+        let error = format!("Field `{}.{}` is out of order with formula's", this, f);
+        quote::quote_spanned!(f.span() => ::alkahest::private::debug_assert_eq!(#idx, #formula::#order, #error);)
+    })
+    .collect()
+}
+
+fn enum_field_order_checks(
+    data: &syn::DataEnum,
+    this: &syn::Ident,
+    formula: &syn::Path,
+) -> proc_macro2::TokenStream {
+    let no_named_fields = syn::punctuated::Punctuated::<syn::Field, syn::Token![,]>::new();
+
+    data.variants.iter().flat_map(|v| {
+        match &v.fields {
+            syn::Fields::Named(fields) => fields.named.iter(),
+            _ => no_named_fields.iter(),
+        }
+        .enumerate()
+        .map(move |(idx, field)| {
+            let f = field.ident.as_ref().unwrap();
+            let order = quote::format_ident!(
+                "__ALKAHEST_FORMULA_VARIANT_{}_FIELD_{}_IDX",
+                v.ident,
+                field.ident.as_ref().unwrap(),
+            );
+            let error = format!("Field `{}.{}` is out of order with formula's", this, f);
+            quote::quote_spanned!(f.span() => ::alkahest::private::debug_assert_eq!(#idx, #formula::#order, #error);)
+        })
+    }).collect()
+}

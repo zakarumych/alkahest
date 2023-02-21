@@ -55,9 +55,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 where_clause.predicates.extend(predicates);
             }
 
-            let field_count = data.fields.len();
-
-            let field_names_order_checks = match &data.fields {
+            let field_names_order = match &data.fields {
                 syn::Fields::Named(fields) => fields
                     .named
                     .iter()
@@ -71,23 +69,10 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 _ => Vec::new(),
             };
 
-            let field_check_ids = match &data.fields {
-                syn::Fields::Named(fields) => (0..fields.named.len()).collect(),
-                _ => Vec::new(),
-            };
-
-            let (impl_generics, type_generics, where_clause) = input.generics.split_for_impl();
+            let field_ids: Vec<_> = (0..data.fields.len()).collect();
 
             let (formula_impl_generics, formula_type_generics, formula_where_clause) =
                 formula_generics.split_for_impl();
-
-            // let expand_size = if non_exhaustive {
-            //     quote::quote! {
-            //         max_size = ::alkahest::private::Option::None;
-            //     }
-            // } else {
-            //     quote::quote! {}
-            // };
 
             let touch_fields = match &data.fields {
                 syn::Fields::Unit => quote::quote! {},
@@ -103,22 +88,19 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         let ident = &field.ident;
                         quote::quote! { #ident }
                     });
-                    quote::quote! { { #(#fields),* } }
+                    quote::quote_spanned! { data.fields.span() => { #(#fields),* } }
                 }
             };
 
             let tokens = quote::quote! {
-                impl #impl_generics #ident #type_generics #where_clause {
+                impl #formula_impl_generics #ident #formula_type_generics #formula_where_clause {
                     #(
                         #[doc(hidden)]
-                        #[inline(always)]
                         #[allow(non_upper_case_globals)]
-                        pub const #field_names_order_checks: [(); #field_check_ids] = [(); #field_check_ids];
+                        pub const #field_names_order: ::alkahest::private::usize = #field_ids;
                     )*
 
-                    #[doc(hidden)]
-                    #[inline(always)]
-                    pub const __ALKAHEST_FORMULA_FIELD_COUNT: [(); #field_count] = [(); #field_count];
+                    // #(#with_fields)*
 
                     #[doc(hidden)]
                     #[allow(dead_code, unused_variables)]
@@ -178,7 +160,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 where_clause.predicates.extend(predicates);
             }
 
-            let field_names_order_checks: Vec<Vec<syn::Ident>> = data
+            let field_names_order: Vec<Vec<syn::Ident>> = data
                 .variants
                 .iter()
                 .map(|variant| match &variant.fields {
@@ -197,41 +179,19 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 })
                 .collect();
 
-            let field_check_ids: Vec<Vec<usize>> = data
+            let field_ids: Vec<Vec<usize>> = data
                 .variants
                 .iter()
-                .map(|variant| match &variant.fields {
-                    syn::Fields::Named(fields) => (0..fields.named.len()).collect(),
-                    _ => Vec::new(),
-                })
+                .map(|v| (0..v.fields.len()).collect())
                 .collect();
 
-            let field_count: Vec<usize> = data
+            let variant_name_ids: Vec<syn::Ident> = data
                 .variants
                 .iter()
-                .map(|variant| variant.fields.len())
+                .map(|v| quote::format_ident!("__ALKAHEST_FORMULA_VARIANT_{}_IDX", v.ident))
                 .collect();
 
-            let field_variant_name_ids: Vec<syn::Ident> = data
-                .variants
-                .iter()
-                .map(|variant| {
-                    quote::format_ident!("__ALKAHEST_FORMULA_VARIANT_{}_IDX", variant.ident,)
-                })
-                .collect();
-
-            let field_variant_ids: Vec<_> = (0..data.variants.len() as u32).collect();
-
-            let field_count_checks: Vec<syn::Ident> =
-                data.variants
-                    .iter()
-                    .map(|variant| {
-                        quote::format_ident!(
-                            "__ALKAHEST_FORMULA_VARIANT_{}_FIELD_COUNT",
-                            variant.ident,
-                        )
-                    })
-                    .collect();
+            let variant_ids: Vec<_> = (0..data.variants.len() as u32).collect();
 
             let (impl_generics, type_generics, where_clause) = input.generics.split_for_impl();
 
@@ -245,8 +205,6 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
             // } else {
             //     quote::quote! {}
             // };
-
-            let variant_count = data.variants.len();
 
             let touch_variants = data
                 .variants
@@ -304,28 +262,15 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 impl #impl_generics #ident #type_generics #where_clause {
                     #(#(
                         #[doc(hidden)]
-                        #[inline(always)]
                         #[allow(non_upper_case_globals)]
-                        pub const #field_names_order_checks: [(); #field_check_ids] = [(); #field_check_ids];
+                        pub const #field_names_order: ::alkahest::private::usize = #field_ids;
                     )*)*
 
                     #(
                         #[doc(hidden)]
-                        #[inline(always)]
                         #[allow(non_upper_case_globals)]
-                        pub const #field_count_checks: [(); #field_count] = [(); #field_count];
+                        pub const #variant_name_ids: u32 = #variant_ids;
                     )*
-
-                    #(
-                        #[doc(hidden)]
-                        #[inline(always)]
-                        #[allow(non_upper_case_globals)]
-                        pub const #field_variant_name_ids: u32 = #field_variant_ids;
-                    )*
-
-                    #[doc(hidden)]
-                    #[inline(always)]
-                    pub const __ALKAHEST_FORMULA_VARIANT_COUNT: [(); #variant_count] = [(); #variant_count];
 
                     #[doc(hidden)]
                     #[allow(dead_code, unused_variables)]
@@ -364,6 +309,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         ::alkahest::private::sum_size(::alkahest::private::VARIANT_SIZE_OPT, max_size)
                     };
 
+                    #[allow(unused_assignments)]
                     const EXACT_SIZE: ::alkahest::private::bool = true && {
                         let mut exact = true;
                         let mut common_size = None;

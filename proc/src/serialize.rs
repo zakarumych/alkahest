@@ -2,7 +2,10 @@ use std::collections::HashSet;
 
 use proc_macro2::TokenStream;
 
-use crate::{attrs::{parse_attributes, path_make_expr_style, Args, Formula}, is_generic_ty, filter_type_param};
+use crate::{
+    attrs::{parse_attributes, path_make_expr_style, Args, Formula},
+    enum_field_order_checks, filter_type_param, is_generic_ty, struct_field_order_checks,
+};
 
 struct Config {
     reference: Option<Formula>,
@@ -68,9 +71,11 @@ impl Config {
                     where_clause: None,
                 };
 
-                let mut all_generic_field_types: HashSet<_> = data.fields.iter().map(|f| &f.ty).collect();
-                all_generic_field_types.retain(|ty| is_generic_ty(ty, filter_type_param(params.iter())));
-                
+                let mut all_generic_field_types: HashSet<_> =
+                    data.fields.iter().map(|f| &f.ty).collect();
+                all_generic_field_types
+                    .retain(|ty| is_generic_ty(ty, filter_type_param(params.iter())));
+
                 if !all_generic_field_types.is_empty() {
                     let predicates = all_generic_field_types.iter().map(|ty| -> syn::WherePredicate {
                         syn::parse_quote! { #ty: ::alkahest::private::Formula }
@@ -123,9 +128,11 @@ impl Config {
                     gt_token: None,
                     where_clause: None,
                 };
-                
-                let mut all_generic_field_types: HashSet<_> = data.fields.iter().map(|f| &f.ty).collect();
-                all_generic_field_types.retain(|ty| is_generic_ty(ty, filter_type_param(generics.params.iter())));
+
+                let mut all_generic_field_types: HashSet<_> =
+                    data.fields.iter().map(|f| &f.ty).collect();
+                all_generic_field_types
+                    .retain(|ty| is_generic_ty(ty, filter_type_param(generics.params.iter())));
 
                 if !all_generic_field_types.is_empty() {
                     let predicates = all_generic_field_types.iter().map(|ty| -> syn::WherePredicate {
@@ -222,8 +229,9 @@ impl Config {
                 };
 
                 let mut all_generic_field_types: HashSet<_> = all_fields.map(|f| &f.ty).collect();
-                all_generic_field_types.retain(|ty| is_generic_ty(ty, filter_type_param(generics.params.iter())));
-                
+                all_generic_field_types
+                    .retain(|ty| is_generic_ty(ty, filter_type_param(generics.params.iter())));
+
                 if !all_generic_field_types.is_empty() {
                     let predicates = all_generic_field_types.iter().map(|ty| -> syn::WherePredicate {
                         syn::parse_quote! { #ty: ::alkahest::private::Formula }
@@ -238,7 +246,6 @@ impl Config {
                     generics,
                 };
 
-                
                 let mut generics = syn::Generics {
                     lt_token: None,
                     params: Default::default(),
@@ -340,31 +347,20 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
         syn::Data::Struct(data) => {
             let cfg = Config::for_struct(args, &data, ident, generics);
 
+            let field_checks = if cfg.check_fields {
+                struct_field_order_checks(
+                    &data,
+                    cfg.variant.as_ref(),
+                    &input.ident,
+                    &cfg.owned.path,
+                )
+            } else {
+                TokenStream::new()
+            };
+
             let field_count = data.fields.len();
 
-            let field_names_order_check = match (cfg.check_fields, &data.fields) {
-                (true, syn::Fields::Named(_)) => data
-                    .fields
-                    .iter()
-                    .map(|field| match &cfg.variant {
-                        None => quote::format_ident!(
-                            "__ALKAHEST_FORMULA_FIELD_{}_IDX",
-                            field.ident.as_ref().unwrap(),
-                        ),
-                        Some(v) => quote::format_ident!(
-                            "__ALKAHEST_FORMULA_VARIANT_{}_FIELD_{}_IDX",
-                            v,
-                            field.ident.as_ref().unwrap(),
-                        ),
-                    })
-                    .collect(),
-                _ => Vec::new(),
-            };
-
-            let field_ids_check = match (cfg.check_fields, &data.fields) {
-                (true, syn::Fields::Named(_)) => (0..data.fields.len()).collect(),
-                _ => Vec::new(),
-            };
+            let field_ids: Vec<_> = (0..data.fields.len()).collect();
 
             let bound_names = data
                 .fields
@@ -439,20 +435,6 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
             let mut tokens = TokenStream::new();
             {
                 let formula_path = &cfg.owned.path;
-                let field_count_check = match (cfg.check_fields, &cfg.variant) {
-                    (false, None) => quote::quote! {},
-                    (false, Some(_)) => unreachable!(),
-                    (true, None) => quote::quote! {
-                        let _: [(); #field_count] = #formula_path::__ALKAHEST_FORMULA_FIELD_COUNT;
-                    },
-                    (true, Some(v)) => {
-                        let ident =
-                            quote::format_ident!("__ALKAHEST_FORMULA_VARIANT_{}_FIELD_COUNT", v);
-                        quote::quote! {
-                            let _: [(); #field_count] = #formula_path::#ident;
-                        }
-                    }
-                };
 
                 let write_variant = match &cfg.variant {
                     None => quote::quote! {},
@@ -487,26 +469,20 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         where
                             S: ::alkahest::private::Serializer
                         {
-                            // Checks compilation of code in the block.
-                            #[allow(unused)]
-                            {
-                                #(let _: [(); #field_ids_check] = #formula_path::#field_names_order_check;)*
-                                #field_count_check
-                            }
+                            #![allow(unused_mut)]
+                            #field_checks
 
                             let #ident #bind_names = self;
 
                             let mut ser = ser.into();
                             #write_variant
 
-                            let mut field_idx = 0;
                             #(
-                                field_idx += 1;
                                 let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
                                     #formula_path #with_variant #bind_ref_names => #bound_names,
                                     _ => unreachable!(),
                                 });
-                                if #field_count == field_idx {
+                                if #field_count == 1 + #field_ids {
                                     return with_formula.write_last_value(ser, #bound_names);
                                 }
                                 with_formula.write_value(&mut ser, #bound_names)?;
@@ -516,20 +492,19 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
 
                         #[inline(always)]
                         fn size_hint(&self) -> ::alkahest::private::Option<::alkahest::private::usize> {
+                            #![allow(unused_mut)]
+                            #field_checks
                             if let ::alkahest::private::Option::Some(size) = ::alkahest::private::formula_fast_sizes::<#formula_path>() {
                                 return Some(size);
                             }
-
                             let #ident #bind_ref_names = *self;
                             let mut __size = #start_stack_size;
-                            let mut field_idx = 0;
                             #(
-                                field_idx += 1;
                                 let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
                                     #formula_path #with_variant #bind_ref_names => #bound_names,
                                     _ => unreachable!(),
                                 });
-                                __size += with_formula.size_hint(#bound_names, #field_count == field_idx)?;
+                                __size += with_formula.size_hint(#bound_names, #field_count == 1 + #field_ids)?;
                             )*
                             Some(__size)
                         }
@@ -572,20 +547,18 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         where
                             S: ::alkahest::private::Serializer
                         {
+                            #![allow(unused_mut)]
+                            #field_checks
                             let #ident #bind_ref_names = *self;
-
                             let mut ser = ser.into();
                             #write_variant
-
-                            let mut field_idx = 0;
                             #(
-                                field_idx += 1;
                                 let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
                                     #formula_path #with_variant #bind_ref_names => #bound_names,
                                     _ => unreachable!(),
                                 });
 
-                                if #field_count == field_idx {
+                                if #field_count == 1 + #field_ids {
                                     return with_formula.write_last_value(ser, #bound_names);
                                 }
                                 with_formula.write_value(&mut ser, #bound_names)?;
@@ -595,20 +568,19 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
 
                         #[inline(always)]
                         fn size_hint(&self) -> ::alkahest::private::Option<::alkahest::private::usize> {
+                            #![allow(unused_mut)]
+                            #field_checks
                             if let ::alkahest::private::Option::Some(size) = ::alkahest::private::formula_fast_sizes::<#formula_path>() {
                                 return Some(size);
                             }
-                            
                             let #ident #bind_ref_names = **self;
                             let mut __size = #start_stack_size;
-                            let mut field_idx = 0;
                             #(
-                                field_idx += 1;
                                 let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
                                     #formula_path #with_variant #bind_ref_names => #bound_names,
                                     _ => unreachable!(),
                                 });
-                                __size += with_formula.size_hint(&#bound_names, #field_count == field_idx)?;
+                                __size += with_formula.size_hint(&#bound_names, #field_count == 1 + #field_ids)?;
                             )*
                             Some(__size)
                         }
@@ -621,6 +593,12 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
         syn::Data::Enum(data) => {
             let cfg = Config::for_enum(args, &data, ident, generics);
 
+            let field_checks = if cfg.check_fields {
+                enum_field_order_checks(&data, &input.ident, &cfg.owned.path)
+            } else {
+                TokenStream::new()
+            };
+
             if let Some(variant) = &cfg.variant {
                 return Err(syn::Error::new_spanned(
                     variant,
@@ -628,44 +606,11 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 ));
             }
 
-            let field_names_order_checks: Vec<_> = data
+            let field_ids: Vec<Vec<_>> = data
                 .variants
                 .iter()
-                .flat_map(|v| match (cfg.check_fields, &v.fields) {
-                    (true, syn::Fields::Named(_)) => v
-                        .fields
-                        .iter()
-                        .map(|field| {
-                            quote::format_ident!(
-                                "__ALKAHEST_FORMULA_VARIANT_{}_FIELD_{}_IDX",
-                                v.ident,
-                                field.ident.as_ref().unwrap(),
-                            )
-                        })
-                        .collect(),
-                    _ => Vec::new(),
-                })
+                .map(|v| (0..v.fields.len()).collect())
                 .collect();
-
-            let field_ids_checks: Vec<_> = data
-                .variants
-                .iter()
-                .flat_map(|v| match (cfg.check_fields, &v.fields) {
-                    (true, syn::Fields::Named(_)) => (0..v.fields.len()).collect(),
-                    _ => Vec::new(),
-                })
-                .collect();
-
-            let field_count_checks: Vec<syn::Ident> =
-                data.variants
-                    .iter()
-                    .map(|variant| {
-                        quote::format_ident!(
-                            "__ALKAHEST_FORMULA_VARIANT_{}_FIELD_COUNT",
-                            variant.ident,
-                        )
-                    })
-                    .collect();
 
             let variant_names = data.variants.iter().map(|v| &v.ident).collect::<Vec<_>>();
 
@@ -755,13 +700,6 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
             let mut tokens = TokenStream::new();
             {
                 let formula_path = &cfg.owned.path;
-                let field_count_check = if cfg.check_fields {
-                    quote::quote! {
-                        #(let _: [(); #field_counts] = #formula_path::#field_count_checks;)*
-                    }
-                } else {
-                    quote::quote! {}
-                };
 
                 let mut generics = input.generics.clone();
 
@@ -787,28 +725,19 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         where
                             S: ::alkahest::private::Serializer
                         {
-                            // Checks compilation of code in the block.
-                            #[allow(unused)]
-                            {
-                                #(let _: [(); #field_ids_checks] = #formula_path::#field_names_order_checks;)*
-                                #field_count_check
-                            }
-
+                            #![allow(unused_mut, unused_variables)]
+                            #field_checks
                             match self {
                                 #(
                                     #ident::#variant_names #bind_names => {
                                         let mut ser = ser.into();
                                         ser.write_value::<u32, u32>(#formula_path::#variant_name_ids)?;
-                                        let mut field_idx = 0;
                                         #(
-                                            field_idx += 1;
                                             let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
-                                                #[allow(unused_variables)]
                                                 #formula_path::#variant_names #bind_ref_names => #bound_names,
                                                 _ => unreachable!(),
                                             });
-                                            
-                                            if #field_counts == field_idx {
+                                            if #field_counts == 1 + #field_ids {
                                                 return with_formula.write_last_value(ser, #bound_names);
                                             }
                                             with_formula.write_value(&mut ser, #bound_names)?;
@@ -821,29 +750,26 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
 
                         #[inline(always)]
                         fn size_hint(&self) -> ::alkahest::private::Option<::alkahest::private::usize> {
+                            #![allow(unused_mut, unused_variables)]
+                            #field_checks
                             if let ::alkahest::private::Option::Some(size) = ::alkahest::private::formula_fast_sizes::<#formula_path>() {
                                 return Some(size);
                             }
-
-                            let mut __size = ::alkahest::private::VARIANT_SIZE;
-
                             match *self {
                                 #(
                                     #ident::#variant_names #bind_ref_names => {
-                                        let mut field_idx = 0;
+                                        let mut __size = ::alkahest::private::VARIANT_SIZE;
                                         #(
-                                            field_idx += 1;
                                             let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
-                                                #[allow(unused_variables)]
                                                 #formula_path::#variant_names #bind_ref_names => #bound_names,
                                                 _ => unreachable!(),
                                             });
-                                            __size += with_formula.size_hint(#bound_names, #field_counts == field_idx)?;
+                                            __size += with_formula.size_hint(#bound_names, #field_counts == 1 + #field_ids)?;
                                         )*
+                                        Some(__size)
                                     }
                                 )*
                             }
-                            Some(__size)
                         }
                     }
                 });
@@ -875,21 +801,19 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         where
                             S: ::alkahest::private::Serializer
                         {
+                            #![allow(unused_mut, unused_variables)]
+                            #field_checks
                             match *self {
                                 #(
                                     #ident::#variant_names #bind_ref_names => {
                                         let mut ser = ser.into();
                                         ser.write_value::<u32, u32>(#formula_path::#variant_name_ids)?;
-                                        let mut field_idx = 0;
                                         #(
-                                            field_idx += 1;
                                             let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
-                                                #[allow(unused_variables)]
                                                 #formula_path::#variant_names #bind_ref_names => #bound_names,
                                                 _ => unreachable!(),
                                             });
-
-                                            if #field_counts == field_idx {
+                                            if #field_counts == 1 + #field_ids {
                                                 return with_formula.write_last_value(ser, #bound_names);
                                             }
                                             with_formula.write_value(&mut ser, #bound_names)?;
@@ -902,29 +826,26 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
 
                         #[inline(always)]
                         fn size_hint(&self) -> ::alkahest::private::Option<::alkahest::private::usize> {
+                            #![allow(unused_mut, unused_variables)]
+                            #field_checks
                             if let ::alkahest::private::Option::Some(size) = ::alkahest::private::formula_fast_sizes::<#formula_path>() {
                                 return Some(size);
                             }
-                            
-                            let mut __size = ::alkahest::private::VARIANT_SIZE;
-
                             match **self {
                                 #(
                                     #ident::#variant_names #bind_ref_names => {
-                                        let mut field_idx = 0;
+                                        let mut __size = ::alkahest::private::VARIANT_SIZE;
                                         #(
-                                            field_idx += 1;
                                             let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
-                                                #[allow(unused_variables)]
                                                 #formula_path::#variant_names #bind_ref_names => #bound_names,
                                                 _ => unreachable!(),
                                             });
-                                            __size += with_formula.size_hint(&#bound_names, #field_counts == field_idx)?;
+                                            __size += with_formula.size_hint(&#bound_names, #field_counts == 1 + #field_ids)?;
                                         )*
+                                        Some(__size)
                                     }
                                 )*
                             }
-                            Some(__size)
                         }
                     }
                 });

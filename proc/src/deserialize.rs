@@ -1,6 +1,32 @@
 use proc_macro2::TokenStream;
 
-use crate::attrs::{parse_attributes, Args, Formula};
+use crate::{
+    attrs::{parse_attributes, Args, Formula},
+    enum_field_order_checks, struct_field_order_checks,
+};
+
+fn default_de_lifetime() -> syn::Lifetime {
+    syn::Lifetime::new("'__de", proc_macro2::Span::call_site())
+}
+
+fn de_lifetime(formula: &mut Formula, generics: &syn::Generics) -> syn::Lifetime {
+    match formula.generics.lifetimes().next() {
+        None => {
+            let lifetime = default_de_lifetime();
+            let bounds: syn::punctuated::Punctuated<_, syn::Token![+]> =
+                generics.lifetimes().map(|lt| lt.lifetime.clone()).collect();
+            let de = syn::LifetimeDef {
+                attrs: Vec::new(),
+                lifetime: lifetime.clone(),
+                colon_token: (!bounds.is_empty()).then(Default::default),
+                bounds,
+            };
+            formula.generics.params.push(de.into());
+            lifetime
+        }
+        Some(first) => first.lifetime.clone(),
+    }
+}
 
 struct Config {
     formula: Formula,
@@ -17,133 +43,105 @@ struct Config {
 }
 
 impl Config {
-    fn for_struct(args: Args, data: &syn::DataStruct) -> syn::Result<Self> {
+    fn for_struct(
+        args: Args,
+        data: &syn::DataStruct,
+        generics: &syn::Generics,
+    ) -> syn::Result<Self> {
         // let non_exhaustive = args.non_exhaustive.is_some();
         match args.deserialize.or(args.common) {
             None => {
-                let de: syn::LifetimeDef = syn::parse_quote!('de);
+                let mut formula = Formula {
+                    path: syn::parse_quote!(Self),
+                    generics: syn::Generics {
+                        lt_token: Some(Default::default()),
+                        params: Default::default(),
+                        gt_token: Some(Default::default()),
+                        where_clause: None,
+                    },
+                };
+
+                let de = de_lifetime(&mut formula, generics);
 
                 // Add predicates that fields implement
-                // `Formula + Deserialize<'de, #field_type>`
+                // `Formula + Deserialize<'__de, #field_type>`
                 // Except that last one if `non_exhaustive` is not set.
                 let predicates = data.fields.iter().map(|field| -> syn::WherePredicate {
                         let ty = &field.ty;
-                        syn::parse_quote! { #ty: ::alkahest::private::Formula + ::alkahest::private::Deserialize<'de, #ty> }
-                    }).collect();
+                        syn::parse_quote! { #ty: ::alkahest::private::Formula + ::alkahest::private::Deserialize<#de, #ty> }
+                    });
 
-                // Add `'de` generic parameter
-                let generics = syn::Generics {
-                    lt_token: Some(Default::default()),
-                    params: std::iter::once(syn::GenericParam::Lifetime(de.clone())).collect(),
-                    gt_token: Some(Default::default()),
-                    where_clause: Some(syn::WhereClause {
-                        where_token: Default::default(),
-                        predicates,
-                    }),
-                };
+                formula
+                    .generics
+                    .make_where_clause()
+                    .predicates
+                    .extend(predicates);
 
                 Ok(Config {
-                    formula: Formula {
-                        path: syn::parse_quote!(Self),
-                        generics,
-                    },
+                    formula,
                     check_fields: false,
                     // non_exhaustive,
-                    de: de.lifetime,
+                    de,
                 })
             }
             Some(mut formula) => {
-                let de: syn::LifetimeDef;
-
-                // If no parameters specified, add `'de` parameter
-                if formula.generics.params.is_empty() {
-                    de = syn::parse_quote!('de);
-                    formula.generics.params.push(de.clone().into());
-                } else {
-                    let first = formula.generics.params.first().unwrap().clone();
-
-                    de = match first {
-                        syn::GenericParam::Lifetime(lt) => lt,
-                        param => {
-                            return Err(syn::Error::new_spanned(
-                                param,
-                                "First parameter must be deserializer's lifetime",
-                            ));
-                        }
-                    };
-                }
+                let de = de_lifetime(&mut formula, generics);
 
                 Ok(Config {
                     formula,
                     check_fields: true,
                     // non_exhaustive,
-                    de: de.lifetime,
+                    de,
                 })
             }
         }
     }
 
-    fn for_enum(args: Args, data: &syn::DataEnum) -> syn::Result<Self> {
+    fn for_enum(args: Args, data: &syn::DataEnum, generics: &syn::Generics) -> syn::Result<Self> {
         // let non_exhaustive = args.non_exhaustive.is_some();
         match args.deserialize.or(args.common) {
             None => {
-                let de: syn::LifetimeDef = syn::parse_quote!('de);
+                let mut formula = Formula {
+                    path: syn::parse_quote!(Self),
+                    generics: syn::Generics {
+                        lt_token: Some(Default::default()),
+                        params: Default::default(),
+                        gt_token: Some(Default::default()),
+                        where_clause: None,
+                    },
+                };
+
+                let de = de_lifetime(&mut formula, generics);
 
                 // Add predicates that fields implement
-                // `Formula + Deserialize<'de, #field_type>`
+                // `Formula + Deserialize<'__de, #field_type>`
                 // Except that last one if `non_exhaustive` is not set.
                 let predicates = data.variants.iter().flat_map(|v| v.fields.iter().map(|field| -> syn::WherePredicate {
                         let ty = &field.ty;
-                        syn::parse_quote! { #ty: ::alkahest::private::Formula + ::alkahest::private::Deserialize<'de, #ty> }
-                    })).collect();
+                        syn::parse_quote! { #ty: ::alkahest::private::Formula + ::alkahest::private::Deserialize<#de, #ty> }
+                    }));
 
-                // Add `'de` generic parameter
-                let generics = syn::Generics {
-                    lt_token: Some(Default::default()),
-                    params: std::iter::once(syn::GenericParam::Lifetime(de.clone())).collect(),
-                    gt_token: Some(Default::default()),
-                    where_clause: Some(syn::WhereClause {
-                        where_token: Default::default(),
-                        predicates,
-                    }),
-                };
+                formula
+                    .generics
+                    .make_where_clause()
+                    .predicates
+                    .extend(predicates);
 
                 Ok(Config {
-                    formula: Formula {
-                        path: syn::parse_quote!(Self),
-                        generics,
-                    },
+                    formula,
                     check_fields: false,
                     // non_exhaustive,
-                    de: de.lifetime,
+                    de,
                 })
             }
             Some(mut formula) => {
-                let de: syn::LifetimeDef;
-
-                // If no parameters specified, add `'de` parameter
-                if formula.generics.params.is_empty() {
-                    de = syn::parse_quote!('de);
-                    formula.generics.params.push(de.clone().into());
-                } else {
-                    let first = formula.generics.params.first().unwrap().clone();
-
-                    de = match first {
-                        syn::GenericParam::Lifetime(lt) => lt,
-                        param => {
-                            return Err(syn::Error::new_spanned(
-                                param,
-                                "First parameter must be deserializer's lifetime",
-                            ));
-                        }
-                    };
-                }
+                let de = de_lifetime(&mut formula, generics);
 
                 Ok(Config {
                     formula,
                     check_fields: true,
                     // non_exhaustive,
-                    de: de.lifetime,
+                    de,
                 })
             }
         }
@@ -151,8 +149,6 @@ impl Config {
 }
 
 pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
-    let no_named_fields = syn::punctuated::Punctuated::<syn::Field, syn::Token![,]>::new();
-
     let input = syn::parse::<syn::DeriveInput>(input)?;
     let args = parse_attributes(&input.attrs)?;
 
@@ -164,50 +160,38 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
             "Deserialize cannot be derived for unions",
         )),
         syn::Data::Struct(data) => {
-            let Config {
-                formula,
-                check_fields,
-                // non_exhaustive,
-                de,
-            } = Config::for_struct(args, &data)?;
+            let cfg = Config::for_struct(args, &data, &input.generics)?;
 
-            let formula_path = &formula.path;
+            let field_checks = if cfg.check_fields {
+                struct_field_order_checks(&data, None, &input.ident, &cfg.formula.path)
+            } else {
+                TokenStream::new()
+            };
+
+            let formula_path = &cfg.formula.path;
+
+            let de = cfg.de;
 
             let mut deserialize_generics = input.generics.clone();
 
-            deserialize_generics.lt_token =
-                deserialize_generics.lt_token.or(formula.generics.lt_token);
-            deserialize_generics.gt_token =
-                deserialize_generics.gt_token.or(formula.generics.gt_token);
+            deserialize_generics.lt_token = deserialize_generics
+                .lt_token
+                .or(cfg.formula.generics.lt_token);
+            deserialize_generics.gt_token = deserialize_generics
+                .gt_token
+                .or(cfg.formula.generics.gt_token);
             deserialize_generics
                 .params
-                .extend(formula.generics.params.into_iter());
+                .extend(cfg.formula.generics.params.into_iter());
 
-            if let Some(where_clause) = formula.generics.where_clause {
+            if let Some(where_clause) = cfg.formula.generics.where_clause {
                 deserialize_generics
                     .make_where_clause()
                     .predicates
                     .extend(where_clause.predicates);
             }
 
-            let field_names_order_checks = match (check_fields, &data.fields) {
-                (true, syn::Fields::Named(fields)) => fields
-                    .named
-                    .iter()
-                    .map(|field| {
-                        quote::format_ident!(
-                            "__ALKAHEST_FORMULA_FIELD_{}_IDX",
-                            field.ident.as_ref().unwrap(),
-                        )
-                    })
-                    .collect(),
-                _ => Vec::new(),
-            };
-
-            let field_ids_checks = match (check_fields, &data.fields) {
-                (true, syn::Fields::Named(_)) => (0..data.fields.len()).collect(),
-                _ => Vec::new(),
-            };
+            let field_ids: Vec<_> = (0..data.fields.len()).collect();
 
             let bound_names = data
                 .fields
@@ -295,13 +279,6 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
             };
 
             let field_count = data.fields.len();
-            let field_count_check = if check_fields {
-                quote::quote! {
-                    let _: [(); #field_count] = #formula_path::__ALKAHEST_FORMULA_FIELD_COUNT;
-                }
-            } else {
-                quote::quote! {}
-            };
 
             let (_impl_generics, type_generics, _where_clause) = input.generics.split_for_impl();
             let (impl_deserialize_generics, _type_deserialize_generics, where_serialize_clause) =
@@ -310,21 +287,14 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 impl #impl_deserialize_generics ::alkahest::private::Deserialize<#de, #formula_path> for #ident #type_generics #where_serialize_clause {
                     #[inline(always)]
                     fn deserialize(mut de: ::alkahest::private::Deserializer<#de>) -> ::alkahest::private::Result<Self, ::alkahest::private::DeserializeError> {
-                        // Checks compilation of code in the block.
-                        #[allow(unused)]
-                        {
-                            #(let _: [(); #field_ids_checks] = #formula_path::#field_names_order_checks;)*
-                            #field_count_check
-                        }
+                        #field_checks
 
-                        let mut field_idx = 0;
                         #(
-                            field_idx += 1;
                             let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
                                 #formula_path #bind_ref_names => #bound_names,
                                 _ => unreachable!(),
                             });
-                            let #bound_names = with_formula.read_value(&mut de, #field_count == field_idx)?;
+                            let #bound_names = with_formula.read_value(&mut de, #field_count == 1 + #field_ids)?;
                         )*
                         // #consume_tail
                         de.finish()?;
@@ -335,16 +305,16 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
 
                     #[inline(always)]
                     fn deserialize_in_place(&mut self, mut de: ::alkahest::private::Deserializer<#de>) -> Result<(), ::alkahest::private::DeserializeError> {
+                        #field_checks
+
                         let #ident #bind_ref_mut_names = *self;
 
-                        let mut field_idx = 0;
                         #(
-                            field_idx += 1;
                             let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
                                 #formula_path #bind_ref_names => #bound_names,
                                 _ => unreachable!(),
                             });
-                            with_formula.read_in_place(#bound_names, &mut de, #field_count == field_idx)?;
+                            with_formula.read_in_place(#bound_names, &mut de, #field_count == 1 + #field_ids)?;
                         )*
                         // #consume_tail
                         de.finish()
@@ -353,74 +323,44 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
             })
         }
         syn::Data::Enum(data) => {
-            let Config {
-                formula,
-                check_fields,
-                // non_exhaustive,
-                de,
-            } = Config::for_enum(args, &data)?;
-            let formula_path = &formula.path;
+            let cfg = Config::for_enum(args, &data, &input.generics)?;
+
+            let field_checks = if cfg.check_fields {
+                enum_field_order_checks(&data, &input.ident, &cfg.formula.path)
+            } else {
+                TokenStream::new()
+            };
+
+            let formula_path = &cfg.formula.path;
+
+            let de = cfg.de;
 
             let mut deserialize_generics = input.generics.clone();
 
-            deserialize_generics.lt_token =
-                deserialize_generics.lt_token.or(formula.generics.lt_token);
-            deserialize_generics.gt_token =
-                deserialize_generics.gt_token.or(formula.generics.gt_token);
+            deserialize_generics.lt_token = deserialize_generics
+                .lt_token
+                .or(cfg.formula.generics.lt_token);
+            deserialize_generics.gt_token = deserialize_generics
+                .gt_token
+                .or(cfg.formula.generics.gt_token);
             deserialize_generics
                 .params
-                .extend(formula.generics.params.into_iter());
+                .extend(cfg.formula.generics.params.into_iter());
 
-            if let Some(where_clause) = formula.generics.where_clause {
+            if let Some(where_clause) = cfg.formula.generics.where_clause {
                 deserialize_generics
                     .make_where_clause()
                     .predicates
                     .extend(where_clause.predicates);
             }
 
-            let field_names_order_checks = match check_fields {
-                false => Vec::new(),
-                true => data
-                    .variants
-                    .iter()
-                    .flat_map(|v| {
-                        match &v.fields {
-                            syn::Fields::Named(fields) => fields.named.iter(),
-                            _ => no_named_fields.iter(),
-                        }
-                        .map(move |field| {
-                            quote::format_ident!(
-                                "__ALKAHEST_FORMULA_VARIANT_{}_FIELD_{}_IDX",
-                                v.ident,
-                                field.ident.as_ref().unwrap(),
-                            )
-                        })
-                    })
-                    .collect(),
-            };
+            let field_ids: Vec<Vec<_>> = data
+                .variants
+                .iter()
+                .map(|v| (0..v.fields.len()).collect())
+                .collect();
 
-            let field_ids_checks = match check_fields {
-                false => Vec::new(),
-                true => data
-                    .variants
-                    .iter()
-                    .flat_map(|v| match &v.fields {
-                        syn::Fields::Named(fields) => 0..fields.named.len(),
-                        _ => 0..0,
-                    })
-                    .collect(),
-            };
-
-            let field_count_checks: Vec<syn::Ident> =
-                data.variants
-                    .iter()
-                    .map(|variant| {
-                        quote::format_ident!(
-                            "__ALKAHEST_FORMULA_VARIANT_{}_FIELD_COUNT",
-                            variant.ident,
-                        )
-                    })
-                    .collect();
+            let field_counts: Vec<_> = data.variants.iter().map(|v| v.fields.len()).collect();
 
             let variant_names = data.variants.iter().map(|v| &v.ident).collect::<Vec<_>>();
 
@@ -534,33 +474,6 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 })
                 .collect();
 
-            // let consume_tail;
-
-            // if non_exhaustive {
-            //     consume_tail = quote::quote! {
-            //         des.read_all_bytes();
-            //     };
-            // } else {
-            //     consume_tail = quote::quote! {};
-            // }
-
-            let variant_count = data.variants.len();
-            let variant_count_check = match check_fields {
-                false => quote::quote! {},
-                true => quote::quote! {
-                    let _: [(); #variant_count] = #formula_path::__ALKAHEST_FORMULA_VARIANT_COUNT;
-                },
-            };
-
-            let field_counts: Vec<_> = data.variants.iter().map(|v| v.fields.len()).collect();
-            let field_count_check = if check_fields {
-                quote::quote! {
-                    #(let _: [(); #field_counts] = #formula_path::#field_count_checks;)*
-                }
-            } else {
-                quote::quote! {}
-            };
-
             let (_impl_generics, type_generics, _where_clause) = input.generics.split_for_impl();
             let (impl_deserialize_generics, _type_deserialize_generics, where_serialize_clause) =
                 deserialize_generics.split_for_impl();
@@ -568,27 +481,19 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 impl #impl_deserialize_generics ::alkahest::private::Deserialize<#de, #formula_path> for #ident #type_generics #where_serialize_clause {
                     #[inline(always)]
                     fn deserialize(mut de: ::alkahest::private::Deserializer<#de>) -> ::alkahest::private::Result<Self, ::alkahest::private::DeserializeError> {
-                        // Checks compilation of code in the block.
-                        #[allow(unused)]
-                        {
-                            #(let _: [(); #field_ids_checks] = #formula_path::#field_names_order_checks;)*
-                            #field_count_check
-                            #variant_count_check
-                        }
+                        #field_checks
 
                         let variant_idx = de.read_value::<::alkahest::private::u32, _>(false)?;
                         match variant_idx {
                             #(
                                 #formula_path::#variant_name_ids => {
-                                    let mut field_idx = 0;
                                     #(
-                                        field_idx += 1;
                                         let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
                                             #[allow(unused_variables)]
                                             #formula_path::#variant_names #bind_ref_names => #bound_names,
                                             _ => unreachable!(),
                                         });
-                                        let #bound_names = with_formula.read_value(&mut de, #field_counts == field_idx)?;
+                                        let #bound_names = with_formula.read_value(&mut de, #field_counts == 1 + #field_ids)?;
                                     )*
                                     // #consume_tail
                                     de.finish()?;
@@ -601,26 +506,19 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
 
                     #[inline(always)]
                     fn deserialize_in_place(&mut self, mut de: ::alkahest::private::Deserializer<#de>) -> Result<(), ::alkahest::private::DeserializeError> {
-                        // Checks compilation of code in the block.
-                        #[allow(unused)]
-                        let _ = || {
-                            #(let _: [(); #field_ids_checks] = #formula_path::#field_names_order_checks;)*
-                        };
-                        #field_count_check
+                        #field_checks
 
                         let variant_idx = de.read_value::<::alkahest::private::u32, _>(false)?;
                         match (variant_idx, self) {
                             #(
                                 (#formula_path::#variant_name_ids, #ident::#variant_names #bind_ref_mut_names) => {
-                                    let mut field_idx = 0;
                                     #(
-                                        field_idx += 1;
                                         let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
                                             #[allow(unused_variables)]
                                             #formula_path::#variant_names #bind_ref_names => #bound_names,
                                             _ => unreachable!(),
                                         });
-                                        with_formula.read_in_place(#bound_names, &mut de, #field_counts == field_idx)?;
+                                        with_formula.read_in_place(#bound_names, &mut de, #field_counts == 1 + #field_ids)?;
                                     )*
                                     // #consume_tail
                                     de.finish()?;
@@ -629,15 +527,13 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                             )*
                             #(
                                 (#formula_path::#variant_name_ids, me) => {
-                                    let mut field_idx = 0;
                                     #(
-                                        field_idx += 1;
                                         let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
                                             #[allow(unused_variables)]
                                             #formula_path::#variant_names #bind_ref_names => #bound_names,
                                             _ => unreachable!(),
                                         });
-                                        let #bound_names = with_formula.read_value(&mut de, #field_counts == field_idx)?;
+                                        let #bound_names = with_formula.read_value(&mut de, #field_counts == 1 + #field_ids)?;
                                     )*
                                     // #consume_tail
                                     de.finish()?;

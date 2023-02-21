@@ -68,7 +68,11 @@ pub use alkahest_proc::{Deserialize, Formula, Serialize};
 #[cfg(feature = "derive")]
 #[doc(hidden)]
 pub mod private {
-    pub use {bool, u32, u8, usize, Into, Option, Result};
+    pub use {
+        bool,
+        core::{convert::Into, debug_assert_eq, option::Option, result::Result},
+        u32, u8, usize,
+    };
 
     use crate::FixedUsize;
     pub use crate::{
