@@ -740,39 +740,6 @@ impl<'ser> ExactSizeSerializer<'ser> {
         }
     }
 
-    // #[inline(always)]
-    // fn sub_value<F, T>(&mut self, value: T) -> (usize, usize)
-    // where
-    //     F: Formula + ?Sized,
-    //     T: Serialize<F>,
-    // {
-    //     match &mut self.output {
-    //         None => {
-    //             cold();
-    //             match <T as Serialize<F>>::serialize::<DrySerializer>(value, IntoDrySerializer) {
-    //                 Err(never) => match never {},
-    //                 Ok((heap, stack)) => (heap, stack),
-    //             }
-    //         }
-    //         Some(output) => {
-    //             let at = output.len() - self.stack;
-    //             match <T as Serialize<F>>::serialize::<ExactSizeSerializer>(
-    //                 value,
-    //                 IntoSerializer {
-    //                     output: &mut output[..at],
-    //                     heap: self.heap,
-    //                 },
-    //             ) {
-    //                 Err(sizes) => {
-    //                     self.output = None;
-    //                     sizes
-    //                 }
-    //                 Ok(sizes) => sizes,
-    //             }
-    //         }
-    //     }
-    // }
-
     #[inline(always)]
     fn sub_value<F, T>(&mut self, value: T) -> (usize, usize)
     where
