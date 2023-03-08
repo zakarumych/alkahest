@@ -328,15 +328,15 @@ fn test_packet() {
     alkahest::serialize::<NetPacket<GameMessage>, _>(
         NetPacket {
             game_messages: vec![
-                // GameMessage::Client(ClientMessage::ClientData {
-                //     nickname: "qwe".into(),
-                //     clan: "rty".into(),
-                // }),
-                // GameMessage::Client(ClientMessage::Chat("zxc".into())),
-                // GameMessage::Server(ServerMessage::ClientChat {
-                //     client_id: 1,
-                //     message: "asd".into(),
-                // }),
+                GameMessage::Client(ClientMessage::ClientData {
+                    nickname: "qwe".into(),
+                    clan: "rty".into(),
+                }),
+                GameMessage::Client(ClientMessage::Chat("zxc".into())),
+                GameMessage::Server(ServerMessage::ClientChat {
+                    client_id: 1,
+                    message: "asd".into(),
+                }),
                 GameMessage::Server(ServerMessage::ServerData),
             ],
         },
