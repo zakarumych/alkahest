@@ -31,4 +31,4 @@ jobs:
       uses: actions-rs/cargo@v1
       with:
         command: test
-        args: --all --features=${{ matrix.fixed }}${{ matrix.alloc }}${{ matrix.derive }}
+        args: --all --no-default-features --features=${{ matrix.fixed }}${{ matrix.alloc }}${{ matrix.derive }}
