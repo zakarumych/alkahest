@@ -28,9 +28,6 @@ pub trait Buffer {
         stack: usize,
         len: usize,
     ) -> Result<Option<FixedBuffer<'_>>, Self::Error>;
-
-    /// Finalizes the buffer and returns the result.
-    fn finish(self, heap: usize, stack: usize) -> Result<(), Self::Error>;
 }
 
 #[derive(Clone, Copy, Default)]
@@ -66,11 +63,6 @@ impl Buffer for DryBuffer {
         _len: usize,
     ) -> Result<Option<FixedBuffer<'_>>, Infallible> {
         Ok(None)
-    }
-
-    #[inline(always)]
-    fn finish(self, _heap: usize, _stack: usize) -> Result<(), Infallible> {
-        Ok(())
     }
 }
 
@@ -153,11 +145,6 @@ impl<'a> Buffer for FixedBuffer<'a> {
             buf: &mut self.buf[..end],
         }))
     }
-
-    #[inline(always)]
-    fn finish(self, _heap: usize, _stack: usize) -> Result<(), BufferExhausted> {
-        Ok(())
-    }
 }
 
 pub struct UncheckedFixedBuffer<'a> {
@@ -213,21 +200,16 @@ impl<'a> Buffer for UncheckedFixedBuffer<'a> {
             buf: &mut self.buf[..end],
         }))
     }
-
-    #[inline(always)]
-    fn finish(self, _heap: usize, _stack: usize) -> Result<(), Infallible> {
-        Ok(())
-    }
 }
 
-#[derive(Default)]
 pub struct MaybeFixedBuffer<'a> {
-    buf: Option<&'a mut [u8]>,
+    buf: &'a mut [u8],
+    exhausted: &'a mut bool,
 }
 
 impl<'a> MaybeFixedBuffer<'a> {
-    pub fn new(buf: &'a mut [u8]) -> Self {
-        MaybeFixedBuffer { buf: Some(buf) }
+    pub fn new(buf: &'a mut [u8], exhausted: &'a mut bool) -> Self {
+        MaybeFixedBuffer { buf, exhausted }
     }
 }
 
@@ -254,10 +236,11 @@ impl<'a> Buffer for MaybeFixedBuffer<'a> {
 
     #[inline(always)]
     fn sub(&mut self, stack: usize) -> Option<MaybeFixedBuffer<'_>> {
-        if let Some(buf) = &mut self.buf {
-            let at = buf.len() - stack;
+        if !*self.exhausted {
+            let at = self.buf.len() - stack;
             Some(MaybeFixedBuffer {
-                buf: Some(&mut buf[..at]),
+                buf: &mut self.buf[..at],
+                exhausted: &mut *self.exhausted,
             })
         } else {
             None
@@ -271,16 +254,16 @@ impl<'a> Buffer for MaybeFixedBuffer<'a> {
         stack: usize,
         bytes: &[u8],
     ) -> Result<(), BufferSizeRequired> {
-        if let Some(buf) = &self.buf {
-            debug_assert!(heap + stack <= buf.len());
-            if buf.len() - heap - stack < bytes.len() {
-                self.buf = None;
+        if !*self.exhausted {
+            debug_assert!(heap + stack <= self.buf.len());
+            if self.buf.len() - heap - stack < bytes.len() {
+                *self.exhausted = true;
             }
         }
 
-        if let Some(buf) = &mut self.buf {
-            let at = buf.len() - stack - bytes.len();
-            buf[at..][..bytes.len()].copy_from_slice(bytes);
+        if !*self.exhausted {
+            let at = self.buf.len() - stack - bytes.len();
+            self.buf[at..][..bytes.len()].copy_from_slice(bytes);
         }
         Ok(())
     }
@@ -288,11 +271,11 @@ impl<'a> Buffer for MaybeFixedBuffer<'a> {
     #[inline(always)]
     fn move_to_heap(&mut self, heap: usize, stack: usize, count: usize) {
         debug_assert!(stack >= count);
-        if let Some(buf) = &mut self.buf {
-            debug_assert!(heap + stack <= buf.len());
-            let start = buf.len() - stack;
+        if !*self.exhausted {
+            debug_assert!(heap + stack <= self.buf.len());
+            let start = self.buf.len() - stack;
             let end = start + count;
-            buf.copy_within(start..end, heap);
+            self.buf.copy_within(start..end, heap);
         }
     }
 
@@ -303,31 +286,21 @@ impl<'a> Buffer for MaybeFixedBuffer<'a> {
         stack: usize,
         len: usize,
     ) -> Result<Option<FixedBuffer<'_>>, BufferSizeRequired> {
-        if let Some(ref buf) = self.buf {
-            debug_assert!(heap + stack <= buf.len());
-            if buf.len() - heap - stack < len {
-                self.buf = None;
+        if !*self.exhausted {
+            debug_assert!(heap + stack <= self.buf.len());
+            if self.buf.len() - heap - stack < len {
+                *self.exhausted = true;
             }
         }
 
-        match self.buf {
-            None => Ok(None),
-            Some(ref mut buf) => {
+        match *self.exhausted {
+            true => Ok(None),
+            false => {
                 let end = heap + len;
                 Ok(Some(FixedBuffer {
-                    buf: &mut buf[..end],
+                    buf: &mut self.buf[..end],
                 }))
             }
-        }
-    }
-
-    #[inline(always)]
-    fn finish(self, heap: usize, stack: usize) -> Result<(), BufferSizeRequired> {
-        match self.buf {
-            None => Err(BufferSizeRequired {
-                required: heap + stack,
-            }),
-            Some(_) => Ok(()),
         }
     }
 }
@@ -404,10 +377,5 @@ impl<'a> Buffer for VecBuffer<'a> {
         self.reserve(heap, stack, len);
         let sub_buf = &mut self.buf[..heap + len];
         Ok(Some(FixedBuffer { buf: sub_buf }))
-    }
-
-    #[inline(always)]
-    fn finish(self, _heap: usize, _stack: usize) -> Result<(), Infallible> {
-        Ok(())
     }
 }

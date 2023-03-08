@@ -294,3 +294,53 @@ fn test_size() {
 
     serialize::<[As<str>], _>(["qwe", "rty"], &mut buffer).unwrap();
 }
+
+#[cfg(all(feature = "derive", feature = "alloc"))]
+#[test]
+fn test_packet() {
+    use alkahest_proc::{Deserialize, Formula, Serialize};
+    use alloc::{string::String, vec, vec::Vec};
+
+    #[derive(Debug, Clone, Formula, Serialize, Deserialize)]
+    pub enum GameMessage {
+        Client(ClientMessage),
+        Server(ServerMessage),
+    }
+
+    #[derive(Debug, Clone, Formula, Serialize, Deserialize)]
+    pub enum ClientMessage {
+        ClientData { nickname: String, clan: String },
+        Chat(String),
+    }
+
+    #[derive(Debug, Clone, Formula, Serialize, Deserialize)]
+    pub enum ServerMessage {
+        ServerData,
+        ClientChat { client_id: u64, message: String },
+    }
+
+    #[derive(Debug, Formula, Serialize, Deserialize)]
+    pub struct NetPacket<G> {
+        pub game_messages: Vec<G>,
+    }
+
+    let mut buffer = [0u8; 1024];
+    alkahest::serialize::<NetPacket<GameMessage>, _>(
+        NetPacket {
+            game_messages: vec![
+                // GameMessage::Client(ClientMessage::ClientData {
+                //     nickname: "qwe".into(),
+                //     clan: "rty".into(),
+                // }),
+                // GameMessage::Client(ClientMessage::Chat("zxc".into())),
+                // GameMessage::Server(ServerMessage::ClientChat {
+                //     client_id: 1,
+                //     message: "asd".into(),
+                // }),
+                GameMessage::Server(ServerMessage::ServerData),
+            ],
+        },
+        &mut buffer,
+    )
+    .unwrap();
+}

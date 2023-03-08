@@ -298,7 +298,6 @@ where
         write_reference::<F, _>(actual_stack, actual_heap + actual_stack, 0, 0, &mut sub).unwrap();
     }
 
-    buffer.finish(actual_heap, actual_stack)?;
     Ok(actual_heap + actual_stack)
 }
 
@@ -308,7 +307,13 @@ where
     F: Formula + ?Sized,
     T: Serialize<F>,
 {
-    serialize_into::<F, T, _>(value, MaybeFixedBuffer::new(output))
+    let mut exhausted = false;
+    let size = serialize_into::<F, T, _>(value, MaybeFixedBuffer::new(output, &mut exhausted))?;
+    if exhausted {
+        Err(BufferSizeRequired { required: size })
+    } else {
+        Ok(size)
+    }
 }
 
 #[inline(always)]
@@ -631,7 +636,7 @@ where
 
     #[inline(always)]
     fn finish(self) -> Result<(usize, usize), B::Error> {
-        self.buffer.finish(self.heap, self.stack)?;
+        // self.buffer.finish(self.heap, self.stack)?;
         Ok((self.heap, self.stack))
     }
 }
