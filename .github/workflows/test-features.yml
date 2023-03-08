@@ -20,6 +20,7 @@ jobs:
         fixed: ["fixed8", "fixed16", "fixed32", "fixed64"]
         alloc: [",alloc", ""]
         derive: [",derive", ""]
+        serde-bincode: [",serde-bincode", ""]
     steps:
     - uses: actions/checkout@v2
     - name: Install stable toolchain
@@ -31,4 +32,4 @@ jobs:
       uses: actions-rs/cargo@v1
       with:
         command: test
-        args: --all --no-default-features --features=${{ matrix.fixed }}${{ matrix.alloc }}${{ matrix.derive }}
+        args: --all --no-default-features --features=${{ matrix.fixed }}${{ matrix.alloc }}${{ matrix.derive }}${{ matrix.serde-bincode }}
