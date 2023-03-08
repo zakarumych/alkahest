@@ -6,8 +6,8 @@ use core::marker::PhantomData;
 
 use crate::{
     deserialize::{Deserialize, DeserializeError, Deserializer},
-    formula::{reference_size, BareFormula, Formula},
-    serialize::{Serialize, Serializer},
+    formula::{BareFormula, Formula},
+    serialize::{reference_size, Serialize, Serializer},
 };
 
 /// `Ref` is a formula wrapper.

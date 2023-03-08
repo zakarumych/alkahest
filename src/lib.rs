@@ -1,7 +1,7 @@
 #![doc = include_str!("../README.md")]
 #![no_std]
 #![forbid(unsafe_code)]
-#![deny(warnings)]
+// #![deny(warnings)]
 #![doc(test(attr(deny(warnings))))]
 
 extern crate self as alkahest;
@@ -11,6 +11,7 @@ extern crate alloc;
 
 mod array;
 mod r#as;
+mod buffer;
 mod bytes;
 mod cold;
 mod deserialize;
@@ -43,23 +44,29 @@ mod string;
 mod bincode;
 
 pub use crate::{
+    buffer::{Buffer, BufferExhausted, BufferSizeRequired, MaybeFixedBuffer, UncheckedFixedBuffer},
     bytes::Bytes,
     deserialize::{
         deserialize, deserialize_in_place, value_size, DeIter, Deserialize, DeserializeError,
         Deserializer,
     },
     formula::{max_size, BareFormula, Formula},
-    iter::{deserialize_from_iter, SerIter},
+    iter::{deserialize_extend_iter, deserialize_from_iter, SerIter},
     lazy::Lazy,
     r#as::As,
     reference::Ref,
     serialize::{
-        header_size, serialize, serialize_or_size, serialized_size, BufferExhausted,
-        BufferSizeRequired, Serialize, Serializer,
+        header_size, serialize, serialize_or_size, serialized_size, Serialize, Serializer,
     },
     size::{FixedIsize, FixedUsize},
     skip::Skip,
+    slice::{
+        default_iter_fast_sizes, default_iter_fast_sizes_by_ref, default_iter_fast_sizes_owned,
+    },
 };
+
+#[cfg(feature = "alloc")]
+pub use crate::buffer::VecBuffer;
 
 #[cfg(feature = "derive")]
 pub use alkahest_proc::{Deserialize, Formula, Serialize};

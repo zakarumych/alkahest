@@ -1,17 +1,19 @@
 use core::{mem::size_of, num::TryFromIntError};
 
 use crate::{
-    cold::err,
     deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::{BareFormula, Formula},
     serialize::{Serialize, Serializer},
 };
 
+#[cfg(debug_assertions)]
+use crate::cold::err;
+
 #[cfg(feature = "fixed8")]
-pub type FixedUsizeType = u32;
+pub type FixedUsizeType = u8;
 
 #[cfg(feature = "fixed16")]
-pub type FixedUsizeType = u64;
+pub type FixedUsizeType = u16;
 
 #[cfg(feature = "fixed32")]
 pub type FixedUsizeType = u32;
@@ -20,10 +22,10 @@ pub type FixedUsizeType = u32;
 pub type FixedUsizeType = u64;
 
 #[cfg(feature = "fixed8")]
-pub type FixedIsizeType = i32;
+pub type FixedIsizeType = i8;
 
 #[cfg(feature = "fixed16")]
-pub type FixedIsizeType = i64;
+pub type FixedIsizeType = i16;
 
 #[cfg(feature = "fixed32")]
 pub type FixedIsizeType = i32;

@@ -2,7 +2,8 @@ use core::{iter::FusedIterator, marker::PhantomData, mem::size_of, str::Utf8Erro
 
 use crate::{
     cold::{cold, err},
-    formula::{reference_size, unwrap_size, Formula},
+    formula::{unwrap_size, Formula},
+    serialize::reference_size,
     size::{FixedIsizeType, FixedUsize, FixedUsizeType},
 };
 
@@ -116,7 +117,6 @@ impl<'de> Deserializer<'de> {
     }
 
     #[inline(always)]
-    #[track_caller]
     pub fn read_value<F, T>(&mut self, last: bool) -> Result<T, DeserializeError>
     where
         F: Formula + ?Sized,
@@ -236,6 +236,8 @@ pub struct IterMaybeUnsized;
 
 pub type SizedDeIter<'de, F, T> = DeIter<'de, F, T, IterSized>;
 
+#[must_use]
+#[repr(transparent)]
 pub struct DeIter<'de, F: ?Sized, T, M = IterMaybeUnsized> {
     de: Deserializer<'de>,
     marker: PhantomData<fn(&F, M) -> T>,
@@ -511,17 +513,17 @@ where
     let reference_size = reference_size::<F>();
     debug_assert!(reference_size <= input.len());
 
-    match F::MAX_STACK_SIZE {
-        Some(0) => {
+    match (F::MAX_STACK_SIZE, F::EXACT_SIZE) {
+        (Some(0), _) => {
             // do nothing
             (0, 0)
         }
-        Some(max_stack) => {
+        (Some(max_stack), true) => {
             let mut de = Deserializer::new(reference_size, &input[..reference_size]).unwrap();
             let Ok(address) = de.read_value::<FixedUsize, usize>(true) else { unreachable!(); };
             (address, max_stack.min(len))
         }
-        None => {
+        _ => {
             let mut de = Deserializer::new(reference_size, &input[..reference_size]).unwrap();
             let Ok([size, address]) = de.read_value::<[FixedUsize; 2], [usize; 2]>(true) else { unreachable!(); };
             (address, size)

@@ -1,7 +1,3 @@
-use core::mem::size_of;
-
-use crate::size::FixedUsize;
-
 /// Trait for data formulas.
 /// Types that implement this trait are used as markers
 /// to guide serialization and deserialization process.
@@ -71,12 +67,13 @@ When "derive" feature is enabled, `derive(Formula)` is also available.
 struct UnitFormula;
 
 
+# #[cfg(feature = "alloc")]
 /// Formula for serializing tuple structures with fields
 /// that are serializable with `u8` and `String` formulas.
 #[derive(Formula)]
 struct TupleFormula(u8, String);
 
-
+# #[cfg(feature = "alloc")]
 /// Formula for serializing structures with fields
 /// that are serializable with `TupleFormula` and `Vec<usize>` formulas.
 #[derive(Formula)]
@@ -86,6 +83,7 @@ struct StructFormula {
 }
 
 
+# #[cfg(feature = "alloc")]
 /// Formula for serializing enums.
 #[derive(Formula)]
 enum EnumFormula {
@@ -107,18 +105,6 @@ pub trait Formula {
 
     /// Signals that heap is not used for serialzation.
     const HEAPLESS: bool;
-}
-
-#[inline(always)]
-pub const fn reference_size<F>() -> usize
-where
-    F: Formula + ?Sized,
-{
-    match F::MAX_STACK_SIZE {
-        Some(0) => 0,
-        Some(_) => size_of::<FixedUsize>(),
-        None => size_of::<[FixedUsize; 2]>(),
-    }
 }
 
 /// Ad-hoc negative trait.

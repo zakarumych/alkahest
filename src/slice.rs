@@ -48,15 +48,6 @@ where
     I: Iterator,
     I::Item: Serialize<F>,
 {
-    default_iter_fast_sizes_unchecked::<F, I>(iter)
-}
-
-#[inline(always)]
-pub fn default_iter_fast_sizes_unchecked<F, I>(iter: &I) -> Option<usize>
-where
-    F: Formula,
-    I: Iterator,
-{
     match (F::EXACT_SIZE, F::HEAPLESS, F::MAX_STACK_SIZE) {
         (true, true, Some(max_stack_size)) => {
             let (lower, upper) = iter.size_hint();
@@ -77,35 +68,10 @@ where
 pub fn default_iter_fast_sizes_owned<F, T, I>(iter: I) -> Option<usize>
 where
     F: Formula,
-    I: Iterator<Item = T> + Clone,
+    I: Iterator<Item = T>,
     T: Serialize<F>,
 {
-    match (F::EXACT_SIZE, F::HEAPLESS, F::MAX_STACK_SIZE) {
-        (true, true, Some(max_stack_size)) => {
-            let (lower, upper) = iter.size_hint();
-            match upper {
-                Some(upper) if upper == lower => {
-                    // Expect this to be the truth.
-                    // If not, serialization will fail or produce incorrect results.
-                    Some(lower * max_stack_size)
-                }
-                _ => None,
-            }
-        }
-        _ => {
-            let (_, upper) = iter.size_hint();
-            match upper {
-                Some(upper) if upper <= 4 => {
-                    let mut size = 0;
-                    for elem in iter {
-                        size += <T as Serialize<F>>::size_hint(&elem)?;
-                    }
-                    Some(size)
-                }
-                _ => None,
-            }
-        }
-    }
+    default_iter_fast_sizes_impl::<F, I>(iter, |e| <T as Serialize<F>>::size_hint(&e))
 }
 
 #[inline(always)]
@@ -115,6 +81,18 @@ where
     I: Iterator<Item = &'a T>,
     T: Serialize<F> + 'a,
 {
+    default_iter_fast_sizes_impl::<F, I>(iter, <T as Serialize<F>>::size_hint)
+}
+
+#[inline(always)]
+pub fn default_iter_fast_sizes_impl<'a, F, I>(
+    iter: I,
+    size_hint: impl Fn(I::Item) -> Option<usize>,
+) -> Option<usize>
+where
+    F: Formula,
+    I: Iterator,
+{
     match (F::EXACT_SIZE, F::HEAPLESS, F::MAX_STACK_SIZE) {
         (true, true, Some(max_stack_size)) => {
             let (lower, upper) = iter.size_hint();
@@ -133,7 +111,10 @@ where
                 Some(upper) if upper <= 4 => {
                     let mut size = 0;
                     for elem in iter {
-                        size += <T as Serialize<F>>::size_hint(elem)?;
+                        if F::MAX_STACK_SIZE.is_none() {
+                            size += size_of::<FixedUsize>();
+                        }
+                        size += size_hint(elem)?;
                     }
                     Some(size)
                 }

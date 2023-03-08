@@ -4,7 +4,10 @@ extern crate criterion;
 #[cfg(feature = "rkyv")]
 extern crate bytecheck;
 
-use alkahest::{Deserialize, Formula, LazySlice, Ref, Serialize};
+#[cfg(feature = "rkyv")]
+extern crate rkyv;
+
+use alkahest::{Deserialize, Formula, Lazy, Ref, Serialize};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 #[cfg(feature = "rkyv")]
@@ -18,8 +21,8 @@ enum TestFormula {
 
 #[derive(Serialize, Deserialize)]
 #[alkahest(TestFormula)]
-#[cfg_attr(feature = "serde", serde::Serialize, serde::Deserialize)]
-#[cfg_attr(feature = "rkyv", rkyv::Archive, rkyv::Serialize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "rkyv", derive(rkyv::Archive, rkyv::Serialize))]
 #[cfg_attr(feature = "rkyv", archive_attr(derive(CheckBytes)))]
 enum TestData {
     Foo { a: u32, b: u32 },
@@ -34,8 +37,8 @@ enum TestDataLazy<'a> {
         b: u32,
     },
     Bar {
-        c: LazySlice<'a, u32>,
-        d: LazySlice<'a, Vec<u32>, LazySlice<'a, u32>>,
+        c: Lazy<'a, [u32]>,
+        d: Lazy<'a, [Vec<u32>]>,
     },
 }
 
@@ -55,12 +58,14 @@ fn ser_bincode(bytes: &mut [u8], data: &TestData) -> usize {
 
 #[cfg(feature = "rkyv")]
 fn ser_rkyv(bytes: &mut [u8], data: &TestData) -> usize {
+    use rkyv::ser::Serializer;
+
     let mut ser = rkyv::ser::serializers::CompositeSerializer::new(
         rkyv::ser::serializers::BufferSerializer::new(bytes),
         rkyv::ser::serializers::HeapScratch::<1024>::new(),
         rkyv::ser::serializers::SharedSerializeMap::new(),
     );
-    rkyv::Serialize::serialize(data, &mut ser).unwrap();
+    ser.serialize_value(data).unwrap()
 }
 
 fn de_alkahest(bytes: &[u8]) {
@@ -73,11 +78,11 @@ fn de_alkahest(bytes: &[u8]) {
             black_box(b);
         }
         TestDataLazy::Bar { c, d } => {
-            c.iter().for_each(|c| {
+            c.iter::<u32>().for_each(|c| {
                 black_box(c.unwrap());
             });
-            d.iter().for_each(|d| {
-                d.unwrap().into_iter().for_each(|d| {
+            d.iter::<Lazy<[u32]>>().for_each(|d| {
+                d.unwrap().iter::<u32>().for_each(|d| {
                     black_box(d.unwrap());
                 })
             });

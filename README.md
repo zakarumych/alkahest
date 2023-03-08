@@ -212,6 +212,8 @@ formula, naturally it will be serialized using `bincode` crate.
 # Usage example
 
 ```rust
+#[cfg(all(feature = "derive", feature = "alloc"))]
+fn main() {
 use alkahest::{Formula, Serialize, Deserialize, serialize, serialized_size, deserialize};
 
 // Define simple formula. Make it self-serializable.
@@ -247,6 +249,9 @@ assert_eq!(actual_size, size, "thought so");
 let (deserialized, deserialized_size) = deserialize::<MyDataType, MyDataType>(&buffer).unwrap();
 assert_eq!(deserialized_size, size);
 assert_eq!(deserialized, value);
+}
+
+#[cfg(not(all(feature = "derive", feature = "alloc")))] fn main() {}
 ```
 
 # Benchmarking

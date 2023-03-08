@@ -26,7 +26,14 @@ use crate::{
 /// # use alkahest::*;
 /// type MyFormula = [As<str>]; // `As` is always size.
 ///
+/// # #[cfg(feature = "fixed16")]
+/// let mut buffer = [0u8; 14];
+///
+/// # #[cfg(feature = "fixed32")]
 /// let mut buffer = [0u8; 22];
+///
+/// # #[cfg(feature = "fixed64")]
+/// # let mut buffer = [0u8; 38];
 /// serialize::<MyFormula, _>(["qwe", "rty"], &mut buffer).unwrap();
 /// ```
 pub struct As<F: ?Sized> {

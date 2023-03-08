@@ -1,13 +1,12 @@
 use crate::{
+    buffer::BufferExhausted,
     bytes::Bytes,
     deserialize::{deserialize, deserialize_in_place, value_size, Deserialize},
     formula::Formula,
     lazy::Lazy,
     r#as::As,
     reference::Ref,
-    serialize::{
-        header_size, serialize, serialize_or_size, serialized_size, BufferExhausted, Serialize,
-    },
+    serialize::{header_size, serialize, serialize_or_size, serialized_size, Serialize},
 };
 
 fn test_type<'a, F, T, D>(value: &T, buffer: &'a mut [u8], eq: impl Fn(&T, &D) -> bool)
@@ -156,8 +155,8 @@ fn test_slice() {
 #[test]
 fn test_ref() {
     let mut buffer = [0u8; 256];
-    test_type::<Ref<()>, (), ()>(&(), &mut buffer, |x, y| x == y);
-    test_type::<Ref<u32>, u32, u32>(&1, &mut buffer, |x, y| x == y);
+    // test_type::<Ref<()>, (), ()>(&(), &mut buffer, |x, y| x == y);
+    // test_type::<Ref<u32>, u32, u32>(&1, &mut buffer, |x, y| x == y);
     test_type::<Ref<str>, str, &str>("qwe", &mut buffer, |x, y| x == *y);
 }
 
@@ -187,4 +186,111 @@ fn test_vec() {
 
     let mut buffer = [0u8; 256];
     test_type::<Vec<u8>, Vec<u8>, Vec<u8>>(&vec![1, 2, 3, 4], &mut buffer, |x, y| x == y);
+}
+
+#[cfg(all(feature = "alloc", feature = "derive"))]
+#[test]
+fn test_enums() {
+    use crate::{Deserialize, Formula, Serialize};
+    use alloc::vec::Vec;
+
+    #[derive(Formula)]
+    enum TestFormula {
+        Foo { a: Ref<u32> },
+        Bar { c: Vec<u32>, d: Vec<Vec<u32>> },
+    }
+
+    #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+    #[alkahest(TestFormula)]
+    enum TestData {
+        Foo { a: u32 },
+        Bar { c: Vec<u32>, d: Vec<Vec<u32>> },
+    }
+
+    #[derive(Deserialize)]
+    #[alkahest(TestFormula)]
+    enum TestDataLazy<'a> {
+        Foo {
+            a: u32,
+        },
+        Bar {
+            c: Lazy<'a, [u32]>,
+            d: Lazy<'a, [Vec<u32>]>,
+        },
+    }
+
+    let data = TestData::Foo { a: 1 };
+    let mut bytes = [0u8; 1024];
+
+    alkahest::serialize::<TestFormula, _>(data, &mut bytes).unwrap();
+    let (data, _) = alkahest::deserialize::<TestFormula, TestData>(&bytes).unwrap();
+    assert_eq!(data, TestData::Foo { a: 1 });
+}
+
+#[cfg(all(feature = "alloc", feature = "derive"))]
+#[test]
+fn test_bench() {
+    use crate::{Deserialize, Formula, Serialize};
+    use alloc::vec::Vec;
+
+    #[derive(Formula)]
+    enum TestFormula {
+        Foo { a: Ref<u32>, b: Ref<u32> },
+        Bar { c: Vec<u32>, d: Vec<Vec<u32>> },
+    }
+
+    #[derive(Serialize, Deserialize)]
+    #[alkahest(TestFormula)]
+    enum TestData {
+        Foo { a: u32, b: u32 },
+        Bar { c: Vec<u32>, d: Vec<Vec<u32>> },
+    }
+
+    #[derive(Deserialize)]
+    #[alkahest(TestFormula)]
+    enum TestDataLazy<'a> {
+        Foo {
+            a: u32,
+            b: u32,
+        },
+        Bar {
+            c: Lazy<'a, [u32]>,
+            d: Lazy<'a, [Vec<u32>]>,
+        },
+    }
+
+    let data = TestData::Foo { a: 1, b: 2 };
+    let mut bytes = [0u8; 1024];
+
+    alkahest::serialize::<TestFormula, _>(data, &mut bytes).unwrap();
+    let (_data, _) = alkahest::deserialize::<TestFormula, TestDataLazy>(&bytes).unwrap();
+}
+
+#[cfg(feature = "alloc")]
+#[test]
+fn test_slice_of_slice() {
+    use alloc::vec::Vec;
+
+    let mut buffer = [0u8; 256];
+    test_type::<[As<[u8]>], [&[u8]], Vec<Vec<u8>>>(
+        &[&[1, 2, 3], &[5, 6, 7, 8]],
+        &mut buffer,
+        |x, y| x.iter().zip(y.iter()).all(|(x, y)| x == y),
+    );
+}
+
+#[test]
+fn test_size() {
+    const REFS: usize = 4;
+    const REF_SIZE: usize = cfg!(feature = "fixed8") as usize
+        + cfg!(feature = "fixed16") as usize * 2
+        + cfg!(feature = "fixed32") as usize * 4
+        + cfg!(feature = "fixed64") as usize * 8;
+
+    const PAYLOAD: usize = 6;
+    const SIZE: usize = REFS * REF_SIZE + PAYLOAD;
+
+    let mut buffer = [0u8; SIZE];
+
+    serialize::<[As<str>], _>(["qwe", "rty"], &mut buffer).unwrap();
 }

@@ -3,7 +3,7 @@ use crate::{
     formula::Formula,
     serialize::{Serialize, Serializer},
     size::FixedUsize,
-    slice::{default_iter_fast_sizes, default_iter_fast_sizes_unchecked},
+    slice::default_iter_fast_sizes,
 };
 
 macro_rules! serialize_iter_to_slice {
@@ -57,7 +57,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes_unchecked::<F, _>(self)
+        default_iter_fast_sizes::<F, _>(self)
     }
 }
 
@@ -77,7 +77,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes_unchecked::<F, _>(self)
+        default_iter_fast_sizes::<F, _>(self)
     }
 }
 
@@ -179,7 +179,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes_unchecked::<(FixedUsize, F), _>(self)
+        default_iter_fast_sizes::<(FixedUsize, F), _>(self)
     }
 }
 
