@@ -2,7 +2,7 @@ name: Test features
 
 on:
   pull_request:
-    types: [ opened, edited ]
+    types: [ labeled ]
     branches: [ main ]
     paths: 
       - '**.rs'
