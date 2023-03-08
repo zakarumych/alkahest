@@ -60,9 +60,7 @@ pub use crate::{
     },
     size::{FixedIsize, FixedUsize},
     skip::Skip,
-    slice::{
-        default_iter_fast_sizes, default_iter_fast_sizes_by_ref, default_iter_fast_sizes_owned,
-    },
+    slice::default_iter_fast_sizes,
 };
 
 #[cfg(feature = "alloc")]

@@ -10,7 +10,7 @@ use crate::{
     reference::Ref,
     serialize::{Serialize, Serializer},
     size::FixedUsize,
-    slice::{default_iter_fast_sizes_by_ref, default_iter_fast_sizes_owned},
+    slice::default_iter_fast_sizes,
 };
 
 impl<F> Formula for VecDeque<F>
@@ -78,7 +78,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes_by_ref::<F, T, _>(self.iter())
+        default_iter_fast_sizes::<F, _>(&self.iter())
     }
 }
 
@@ -99,7 +99,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes_owned::<F, &'ser T, _>(self.iter())
+        default_iter_fast_sizes::<F, _>(&self.iter())
     }
 }
 
