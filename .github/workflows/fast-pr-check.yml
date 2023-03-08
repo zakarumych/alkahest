@@ -3,7 +3,7 @@ name: Fast PR check
 on:
   pull_request:
     types: [ opened, edited ]
-    branches: [ master ]
+    branches: [ main ]
     paths: 
       - '**.rs'
       - '**/Cargo.toml'

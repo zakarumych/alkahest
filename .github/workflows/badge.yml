@@ -2,7 +2,7 @@ name: badge
 
 on:
   push:
-    branches: [ master ]
+    branches: [ main ]
 
 env:
   CARGO_TERM_COLOR: always
