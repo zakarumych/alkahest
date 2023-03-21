@@ -57,8 +57,26 @@ impl Deserialize<'_, ()> for () {
     }
 }
 
-macro_rules! impl_for_tuple {
-    ([$at:ident $(,$a:ident)* $(,)?] [$bt:ident $(,$b:ident)* $(,)?]) => {
+macro_rules! for_tuple_2 {
+    ($macro:ident) => {
+        for_tuple_2!($macro for
+            AA AB AC AD AE AF AG AH AI AJ AK AL AM AN AO AP,
+            BA BB BC BD BE BF BG BH BI BJ BK BL BM BN BO BP
+        );
+    };
+    ($macro:ident for ,) => {
+        $macro!(,);
+    };
+    ($macro:ident for $a_head:ident $($a_tail:ident)*, $b_head:ident $($b_tail:ident)*) => {
+        for_tuple_2!($macro for $($a_tail)*, $($b_tail)*);
+
+        $macro!($a_head $($a_tail)*, $b_head $($b_tail)*);
+    };
+}
+
+macro_rules! formula_serialize {
+    (,) => {};
+    ($at:ident $($a:ident)* , $bt:ident $($b:ident)*) => {
         impl<$($a,)* $at> Formula for ($($a,)* $at,)
         where
             $($a: Formula,)*
@@ -200,11 +218,4 @@ macro_rules! impl_for_tuple {
     };
 }
 
-impl_for_tuple!([A][B]);
-impl_for_tuple!([A, B][C, D]);
-impl_for_tuple!([A, B, C][D, E, F]);
-impl_for_tuple!([A, B, C, D][E, F, G, H]);
-impl_for_tuple!([A, B, C, D, E][F, G, H, I, J]);
-impl_for_tuple!([A, B, C, D, E, F][G, H, I, J, K, L]);
-impl_for_tuple!([A, B, C, D, E, F, G][H, I, J, K, L, M, N]);
-impl_for_tuple!([A, B, C, D, E, F, G, H][I, J, K, L, M, N, O, P]);
+for_tuple_2!(formula_serialize);
