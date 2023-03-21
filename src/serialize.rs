@@ -1,10 +1,6 @@
-use core::{any::type_name, mem::size_of};
+use core::{any::type_name, marker::PhantomData, mem::size_of};
 
-use crate::{
-    buffer::*,
-    formula::{BareFormula, Formula},
-    size::FixedUsize,
-};
+use crate::{buffer::*, formula::Formula, size::FixedUsize, BareFormula};
 
 /// Trait for types that can be serialized
 /// into raw bytes with specified `F: `[`Formula`].
@@ -169,6 +165,43 @@ where
     }
 }
 
+/// Wrapper for serializing elements of the slice formula.
+pub struct SliceWriter<'a, F: Formula + ?Sized, S: Serializer + ?Sized> {
+    serializer: &'a mut S,
+    count: usize,
+    marker: PhantomData<fn(&F)>,
+}
+
+impl<'a, F, S> SliceWriter<'a, F, S>
+where
+    F: Formula + ?Sized,
+    S: Serializer + ?Sized,
+{
+    /// Serialize next element into the slice.
+    pub fn write_elem<T>(&mut self, value: T) -> Result<(), S::Error>
+    where
+        T: Serialize<F>,
+    {
+        if let Some(0) = <F as Formula>::MAX_STACK_SIZE {
+            debug_assert!(<F as Formula>::HEAPLESS);
+            debug_assert!(serialize::<F, T>(value, &mut []).is_ok());
+            self.count += 1;
+            Ok(())
+        } else {
+            self.serializer.write_value::<F, _>(value)
+        }
+    }
+
+    /// Finishes the slice serialization.
+    pub fn finish(self) -> Result<(), S::Error> {
+        if let Some(0) = <F as Formula>::MAX_STACK_SIZE {
+            debug_assert!(<F as Formula>::HEAPLESS);
+            self.serializer.write_value::<FixedUsize, _>(self.count)?;
+        }
+        Ok(())
+    }
+}
+
 /// Instances of this trait are provided to `Serialize::serialize` method.
 /// It should be used to perform the serialization process.
 /// Primitives use `Serializer::write_bytes` to store bytes representation
@@ -193,7 +226,7 @@ pub trait Serializer {
         F: Formula + ?Sized,
         T: Serialize<F>;
 
-    /// Writes a value with specific formula into serializer.
+    /// Writes the last value with specific formula into serializer.
     fn write_last_value<F, T>(self, value: T) -> Result<Self::Ok, Self::Error>
     where
         F: Formula + ?Sized,
@@ -222,17 +255,34 @@ pub trait Serializer {
     {
         if let Some(0) = <F as Formula>::MAX_STACK_SIZE {
             debug_assert!(<F as Formula>::HEAPLESS);
-            self.write_value::<FixedUsize, _>(iter.count())
+            let count = if cfg!(debug_assertions) {
+                iter.fold(0, |acc, item| {
+                    assert!(serialize::<F, T>(item, &mut []).is_ok());
+                    acc + 1
+                })
+            } else {
+                iter.count()
+            };
+            self.write_value::<FixedUsize, _>(count)
         } else {
             iter.try_for_each(|elem| self.write_value::<F, _>(elem))?;
             Ok(())
         }
     }
 
-    // /// Writes padding bytes into serializer.
-    // /// Padding it automatically calculated.
-    // /// Only array serialization should use this method.
-    // fn write_pad(&mut self) -> Result<(), Self::Error>;
+    /// Returns a writer for slice formula.
+    /// It can be used to serialize elements one by one.
+    /// `SliceWriter::finish` must be called to finish the serialization.
+    fn slice_writer<F>(&mut self) -> SliceWriter<'_, F, Self>
+    where
+        F: Formula + ?Sized,
+    {
+        SliceWriter {
+            serializer: self,
+            count: 0,
+            marker: PhantomData,
+        }
+    }
 
     /// Finish serialization.
     fn finish(self) -> Result<Self::Ok, Self::Error>;
@@ -323,6 +373,19 @@ where
     T: Serialize<F>,
 {
     serialize_into::<F, T, _>(value, FixedBuffer::new(output))
+}
+
+#[cfg(feature = "alloc")]
+#[inline(always)]
+pub fn serialize_to_vec<F, T>(value: T, output: &mut alloc::vec::Vec<u8>) -> usize
+where
+    F: Formula + ?Sized,
+    T: Serialize<F>,
+{
+    match serialize_into::<F, T, _>(value, VecBuffer::new(output)) {
+        Ok(size) => size,
+        Err(never) => match never {},
+    }
 }
 
 #[inline(always)]

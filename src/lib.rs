@@ -57,6 +57,7 @@ pub use crate::{
     reference::Ref,
     serialize::{
         header_size, serialize, serialize_or_size, serialized_size, Serialize, Serializer,
+        SliceWriter,
     },
     size::{FixedIsize, FixedUsize},
     skip::Skip,
@@ -64,7 +65,7 @@ pub use crate::{
 };
 
 #[cfg(feature = "alloc")]
-pub use crate::buffer::VecBuffer;
+pub use crate::{buffer::VecBuffer, serialize::serialize_to_vec};
 
 #[cfg(feature = "derive")]
 pub use alkahest_proc::{Deserialize, Formula, Serialize};
