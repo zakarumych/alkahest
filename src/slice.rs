@@ -48,6 +48,7 @@ where
     I: Iterator,
 {
     match (F::EXACT_SIZE, F::HEAPLESS, F::MAX_STACK_SIZE) {
+        (_, true, Some(0)) => Some(size_of::<FixedUsize>()),
         (_, true, Some(max_stack_size)) => {
             let (lower, upper) = iter.size_hint();
             match upper {

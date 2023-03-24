@@ -344,3 +344,13 @@ fn test_packet() {
     )
     .unwrap();
 }
+
+#[cfg(feature = "alloc")]
+#[test]
+fn test_zst_slice() {
+    use alloc::{vec, vec::Vec};
+
+    let mut buffer = [0u8; 256];
+    test_type::<[()], [()], Vec<()>>(&[(), (), ()], &mut buffer, |x, y| x == y);
+    test_type::<[()], Vec<()>, Vec<()>>(&vec![()], &mut buffer, |x, y| x == y);
+}
