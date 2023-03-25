@@ -329,7 +329,7 @@ impl VecBuffer<'_> {
             self.buf.reserve(additional - free);
             self.buf.resize(self.buf.capacity(), 0);
             let new_len = self.buf.len();
-            let total_stack = stack - self.stack_ext;
+            let total_stack = stack + self.stack_ext;
             self.buf
                 .copy_within(old_len - total_stack..old_len, new_len - total_stack);
         }
