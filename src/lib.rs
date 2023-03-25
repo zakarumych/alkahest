@@ -71,7 +71,6 @@ pub use crate::{buffer::VecBuffer, serialize::serialize_to_vec};
 pub use alkahest_proc::{Deserialize, Formula, Serialize};
 
 /// Private module for macros to use.
-#[cfg(feature = "derive")]
 #[doc(hidden)]
 pub mod private {
     pub use {
