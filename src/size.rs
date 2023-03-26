@@ -109,8 +109,8 @@ impl Serialize<FixedUsize> for FixedUsize {
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        Some(size_of::<FixedUsizeType>())
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, size_of::<FixedUsizeType>()))
     }
 }
 
@@ -124,8 +124,8 @@ impl Serialize<FixedUsize> for &FixedUsize {
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        Some(size_of::<FixedUsizeType>())
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, size_of::<FixedUsizeType>()))
     }
 }
 
@@ -139,8 +139,8 @@ impl Serialize<FixedUsize> for usize {
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        Some(size_of::<FixedUsizeType>())
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, size_of::<FixedUsizeType>()))
     }
 }
 
@@ -154,8 +154,8 @@ impl Serialize<FixedUsize> for &usize {
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        Some(size_of::<FixedUsizeType>())
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, size_of::<FixedUsizeType>()))
     }
 }
 
@@ -274,8 +274,8 @@ impl Serialize<FixedIsize> for FixedIsize {
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        <FixedIsizeType as Serialize<FixedIsizeType>>::size_hint(&self.0)
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, size_of::<FixedIsizeType>()))
     }
 }
 
@@ -289,8 +289,8 @@ impl Serialize<FixedIsize> for &FixedIsize {
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        <FixedIsizeType as Serialize<FixedIsizeType>>::size_hint(&self.0)
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, size_of::<FixedIsizeType>()))
     }
 }
 
@@ -304,8 +304,8 @@ impl Serialize<FixedIsize> for isize {
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        Some(size_of::<FixedIsizeType>())
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, size_of::<FixedIsizeType>()))
     }
 }
 
@@ -319,8 +319,8 @@ impl Serialize<FixedIsize> for &isize {
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        Some(size_of::<FixedIsizeType>())
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, size_of::<FixedIsizeType>()))
     }
 }
 

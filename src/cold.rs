@@ -3,7 +3,7 @@
 pub const fn cold() {}
 
 #[cold]
-#[inline(always)]
+#[inline(never)]
 pub fn err<T, E>(err: E) -> Result<T, E> {
     Err(err)
 }

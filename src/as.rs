@@ -67,7 +67,7 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<(usize, usize)> {
         <T as Serialize<F>>::size_hint(self)
     }
 }

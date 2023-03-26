@@ -36,8 +36,8 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes::<F, I>(&self.0)
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, default_iter_fast_sizes::<F, I>(&self.0)?))
     }
 }
 
@@ -56,8 +56,8 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes::<F, _>(self)
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, default_iter_fast_sizes::<F, _>(self)?))
     }
 }
 
@@ -76,8 +76,8 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes::<F, _>(self)
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, default_iter_fast_sizes::<F, _>(self)?))
     }
 }
 
@@ -97,8 +97,8 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes::<F, _>(self)
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, default_iter_fast_sizes::<F, _>(self)?))
     }
 }
 
@@ -117,8 +117,8 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes::<F, _>(self)
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, default_iter_fast_sizes::<F, _>(self)?))
     }
 }
 
@@ -137,8 +137,8 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes::<F, _>(self)
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, default_iter_fast_sizes::<F, _>(self)?))
     }
 }
 
@@ -156,8 +156,8 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        Some(0)
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, 0))
     }
 }
 
@@ -178,8 +178,8 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes::<(FixedUsize, F), _>(self)
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, default_iter_fast_sizes::<(FixedUsize, F), _>(self)?))
     }
 }
 
@@ -199,8 +199,8 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes::<F, _>(self)
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, default_iter_fast_sizes::<F, _>(self)?))
     }
 }
 
@@ -220,8 +220,8 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes::<F, _>(self)
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, default_iter_fast_sizes::<F, _>(self)?))
     }
 }
 
@@ -242,8 +242,8 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes::<F, _>(self)
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, default_iter_fast_sizes::<F, _>(self)?))
     }
 }
 
@@ -263,8 +263,8 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes::<F, _>(self)
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, default_iter_fast_sizes::<F, _>(self)?))
     }
 }
 
@@ -283,8 +283,8 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes::<F, _>(self)
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, default_iter_fast_sizes::<F, _>(self)?))
     }
 }
 
@@ -303,8 +303,8 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes::<F, _>(self)
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, default_iter_fast_sizes::<F, _>(self)?))
     }
 }
 
@@ -324,8 +324,8 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes::<F, _>(self)
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, default_iter_fast_sizes::<F, _>(self)?))
     }
 }
 
@@ -345,8 +345,8 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes::<F, _>(self)
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, default_iter_fast_sizes::<F, _>(self)?))
     }
 }
 
@@ -366,8 +366,8 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes::<F, _>(self)
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, default_iter_fast_sizes::<F, _>(self)?))
     }
 }
 
@@ -385,8 +385,8 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes::<F, _>(self)
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, default_iter_fast_sizes::<F, _>(self)?))
     }
 }
 
@@ -405,8 +405,8 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes::<F, _>(self)
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, default_iter_fast_sizes::<F, _>(self)?))
     }
 }
 
@@ -425,8 +425,8 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes::<F, _>(self)
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, default_iter_fast_sizes::<F, _>(self)?))
     }
 }
 
@@ -445,8 +445,8 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes::<F, _>(self)
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, default_iter_fast_sizes::<F, _>(self)?))
     }
 }
 
@@ -466,8 +466,8 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes::<F, _>(self)
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, default_iter_fast_sizes::<F, _>(self)?))
     }
 }
 
@@ -486,8 +486,8 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes::<F, _>(self)
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, default_iter_fast_sizes::<F, _>(self)?))
     }
 }
 
@@ -507,8 +507,8 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes::<F, _>(self)
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, default_iter_fast_sizes::<F, _>(self)?))
     }
 }
 
@@ -527,8 +527,8 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes::<F, _>(self)
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, default_iter_fast_sizes::<F, _>(self)?))
     }
 }
 
@@ -547,8 +547,8 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes::<F, _>(self)
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, default_iter_fast_sizes::<F, _>(self)?))
     }
 }
 
@@ -567,8 +567,8 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes::<F, _>(self)
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, default_iter_fast_sizes::<F, _>(self)?))
     }
 }
 
@@ -588,8 +588,8 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes::<F, _>(self)
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, default_iter_fast_sizes::<F, _>(self)?))
     }
 }
 
@@ -611,8 +611,8 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes::<(FA, FB), _>(self)
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, default_iter_fast_sizes::<(FA, FB), _>(self)?))
     }
 }
 

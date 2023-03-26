@@ -25,8 +25,8 @@ impl Serialize<str> for &str {
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        Some(self.len())
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, self.len()))
     }
 }
 

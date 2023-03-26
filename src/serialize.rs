@@ -36,8 +36,8 @@ use crate::{buffer::*, formula::Formula, size::FixedUsize, BareFormula};
 ///         ser.finish()
 ///     }
 ///
-///     fn size_hint(&self) -> Option<usize> {
-///         Some(3)
+///     fn size_hint(&self) -> Option<(usize, usize)> {
+///         Some((0, 3))
 ///     }
 /// }
 /// ```
@@ -144,7 +144,7 @@ pub trait Serialize<F: Formula + ?Sized> {
     /// Returning incorrect sizes may cause panic during implementation
     /// or broken data.
     // #[inline(always)]
-    fn size_hint(&self) -> Option<usize>;
+    fn size_hint(&self) -> Option<(usize, usize)>;
 }
 
 impl<'ser, F, T: ?Sized> Serialize<F> for &&'ser T
@@ -160,7 +160,7 @@ where
         <&'ser T as Serialize<F>>::serialize(self, serializer)
     }
 
-    fn size_hint(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<(usize, usize)> {
         <&'ser T as Serialize<F>>::size_hint(self)
     }
 }
@@ -317,7 +317,7 @@ where
                 },
             )?,
         },
-        Some(size) => match buffer.reserve_heap(reference_size, 0, size)? {
+        Some((heap, stack)) => match buffer.reserve_heap(reference_size, 0, heap + stack)? {
             None => {
                 let (heap, stack) = serialized_sizes(value);
                 (heap + reference_size, stack)
@@ -336,8 +336,9 @@ where
 
     match promised {
         None => buffer.move_to_heap(actual_heap, actual_stack, actual_stack),
-        Some(size) => debug_assert!(
-            reference_size + size >= actual_heap + actual_stack,
+        Some((heap, stack)) => debug_assert_eq!(
+            reference_size + heap + stack,
+            actual_heap + actual_stack,
             "<{} as Serialize<{}>>::size_hint() result is incorrect",
             type_name::<T>(),
             type_name::<F>()
@@ -670,24 +671,31 @@ where
 
         let stack = match promised {
             None => self.write_ref_slow(value)?,
-            Some(size) => match self.buffer.reserve_heap(self.heap, self.stack, size)? {
-                None => self.write_ref_slow(value)?,
-                Some(reserved) => {
-                    let sub = IntoBufferedSerializer {
-                        buffer: reserved,
-                        heap: self.heap,
-                    };
+            Some((heap, stack)) => {
+                match self
+                    .buffer
+                    .reserve_heap(self.heap, self.stack, heap + stack)?
+                {
+                    None => self.write_ref_slow(value)?,
+                    Some(reserved) => {
+                        let sub = IntoBufferedSerializer {
+                            buffer: reserved,
+                            heap: self.heap,
+                        };
 
-                    let Ok((heap, stack)) =
+                        let Ok((actual_heap, actual_stack)) =
                             <T as Serialize<F>>::serialize::<BufferedSerializer<_>>(value, sub) else {
                                 panic!("Failed to serialize a value into promised size");
                             };
 
-                    self.heap += size;
-                    assert_eq!(self.heap, heap + stack);
-                    stack
+                        debug_assert_eq!(self.heap + heap, actual_heap);
+                        debug_assert_eq!(stack, actual_stack);
+
+                        self.heap = actual_heap + actual_stack;
+                        stack
+                    }
                 }
-            },
+            }
         };
 
         // let stack = self.write_ref_slow(value)?;
@@ -701,5 +709,24 @@ where
     fn finish(self) -> Result<(usize, usize), B::Error> {
         // self.buffer.finish(self.heap, self.stack)?;
         Ok((self.heap, self.stack))
+    }
+}
+
+#[inline(always)]
+pub fn field_size_hint<F: Formula + ?Sized>(
+    value: &impl Serialize<F>,
+    last: bool,
+) -> Option<(usize, usize)> {
+    match (last, F::MAX_STACK_SIZE) {
+        (false, None) => None,
+        (true, _) => {
+            let (heap, stack) = value.size_hint()?;
+            Some((heap, stack))
+        }
+        (false, Some(max_stack)) => {
+            let (heap, stack) = value.size_hint()?;
+            debug_assert!(stack <= max_stack);
+            Some((heap, max_stack))
+        }
     }
 }

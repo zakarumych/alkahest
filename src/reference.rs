@@ -7,7 +7,7 @@ use core::marker::PhantomData;
 use crate::{
     deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::{BareFormula, Formula},
-    serialize::{reference_size, Serialize, Serializer},
+    serialize::{field_size_hint, reference_size, Serialize, Serializer},
 };
 
 /// `Ref` is a formula wrapper.
@@ -44,9 +44,9 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        let size = <T as Serialize<F>>::size_hint(self)?;
-        Some(size + reference_size::<F>())
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        let (heap, stack) = field_size_hint::<F>(self, true)?;
+        Some((heap + stack, reference_size::<F>()))
     }
 }
 

@@ -491,22 +491,25 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         }
 
                         #[inline(always)]
-                        fn size_hint(&self) -> ::alkahest::private::Option<::alkahest::private::usize> {
+                        fn size_hint(&self) -> ::alkahest::private::Option<(::alkahest::private::usize, ::alkahest::private::usize)> {
                             #![allow(unused_mut)]
                             #field_checks
                             if let ::alkahest::private::Option::Some(size) = ::alkahest::private::formula_fast_sizes::<#formula_path>() {
                                 return Some(size);
                             }
                             let #ident #bind_ref_names = *self;
-                            let mut __size = #start_stack_size;
+                            let mut __total_heap = 0;
+                            let mut __total_stack = #start_stack_size;
                             #(
                                 let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
                                     #formula_path #with_variant #bind_ref_names => #bound_names,
                                     _ => unreachable!(),
                                 });
-                                __size += with_formula.size_hint(#bound_names, #field_count == 1 + #field_ids)?;
+                                let (__heap, __stack) = with_formula.size_hint(#bound_names, #field_count == 1 + #field_ids)?;
+                                __total_heap += __heap;
+                                __total_stack += __stack;
                             )*
-                            Some(__size)
+                            Some((__total_heap, __total_stack))
                         }
                     }
                 });
@@ -567,22 +570,25 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         }
 
                         #[inline(always)]
-                        fn size_hint(&self) -> ::alkahest::private::Option<::alkahest::private::usize> {
+                        fn size_hint(&self) -> ::alkahest::private::Option<(::alkahest::private::usize, ::alkahest::private::usize)> {
                             #![allow(unused_mut)]
                             #field_checks
                             if let ::alkahest::private::Option::Some(size) = ::alkahest::private::formula_fast_sizes::<#formula_path>() {
                                 return Some(size);
                             }
-                            let #ident #bind_ref_names = **self;
-                            let mut __size = #start_stack_size;
+                            let #ident #bind_ref_names = *self;
+                            let mut __total_heap = 0;
+                            let mut __total_stack = #start_stack_size;
                             #(
                                 let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
                                     #formula_path #with_variant #bind_ref_names => #bound_names,
                                     _ => unreachable!(),
                                 });
-                                __size += with_formula.size_hint(&#bound_names, #field_count == 1 + #field_ids)?;
+                                let (__heap, __stack) = with_formula.size_hint(&#bound_names, #field_count == 1 + #field_ids)?;
+                                __total_heap += __heap;
+                                __total_stack += __stack;
                             )*
-                            Some(__size)
+                            Some((__total_heap, __total_stack))
                         }
                     }
                 });
@@ -749,7 +755,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         }
 
                         #[inline(always)]
-                        fn size_hint(&self) -> ::alkahest::private::Option<::alkahest::private::usize> {
+                        fn size_hint(&self) -> ::alkahest::private::Option<(::alkahest::private::usize, ::alkahest::private::usize)> {
                             #![allow(unused_mut, unused_variables)]
                             #field_checks
                             if let ::alkahest::private::Option::Some(size) = ::alkahest::private::formula_fast_sizes::<#formula_path>() {
@@ -758,15 +764,18 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                             match *self {
                                 #(
                                     #ident::#variant_names #bind_ref_names => {
-                                        let mut __size = ::alkahest::private::VARIANT_SIZE;
+                                        let mut __total_heap = 0;
+                                        let mut __total_stack = ::alkahest::private::VARIANT_SIZE;
                                         #(
                                             let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
                                                 #formula_path::#variant_names #bind_ref_names => #bound_names,
                                                 _ => unreachable!(),
                                             });
-                                            __size += with_formula.size_hint(#bound_names, #field_counts == 1 + #field_ids)?;
+                                            let (__heap, __stack) = with_formula.size_hint(#bound_names, #field_counts == 1 + #field_ids)?;
+                                            __total_heap += __heap;
+                                            __total_stack += __stack;
                                         )*
-                                        Some(__size)
+                                        Some((__total_heap, __total_stack))
                                     }
                                 )*
                             }
@@ -825,7 +834,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         }
 
                         #[inline(always)]
-                        fn size_hint(&self) -> ::alkahest::private::Option<::alkahest::private::usize> {
+                        fn size_hint(&self) -> ::alkahest::private::Option<(::alkahest::private::usize, ::alkahest::private::usize)> {
                             #![allow(unused_mut, unused_variables)]
                             #field_checks
                             if let ::alkahest::private::Option::Some(size) = ::alkahest::private::formula_fast_sizes::<#formula_path>() {
@@ -834,15 +843,18 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                             match **self {
                                 #(
                                     #ident::#variant_names #bind_ref_names => {
-                                        let mut __size = ::alkahest::private::VARIANT_SIZE;
+                                        let mut __total_heap = 0;
+                                        let mut __total_stack = ::alkahest::private::VARIANT_SIZE;
                                         #(
                                             let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
                                                 #formula_path::#variant_names #bind_ref_names => #bound_names,
                                                 _ => unreachable!(),
                                             });
-                                            __size += with_formula.size_hint(&#bound_names, #field_counts == 1 + #field_ids)?;
+                                            let (__heap, __stack) = with_formula.size_hint(&#bound_names, #field_counts == 1 + #field_ids)?;
+                                            __total_heap += __heap;
+                                            __total_stack += __stack;
                                         )*
-                                        Some(__size)
+                                        Some((__total_heap, __total_stack))
                                     }
                                 )*
                             }

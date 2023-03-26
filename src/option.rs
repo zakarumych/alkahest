@@ -1,7 +1,7 @@
 use crate::{
     deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::{sum_size, BareFormula, Formula},
-    serialize::{Serialize, Serializer},
+    serialize::{field_size_hint, Serialize, Serializer},
 };
 
 impl<F> Formula for Option<F>
@@ -39,10 +39,16 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<(usize, usize)> {
         match self {
-            None => Some(1),
-            Some(value) => Some(value.size_hint()? + 1),
+            None => {
+                let stack = <Option<F>>::MAX_STACK_SIZE?;
+                Some((0, stack))
+            }
+            Some(value) => {
+                let (heap, stack) = field_size_hint::<F>(value, true)?;
+                Some((heap, stack + 1))
+            }
         }
     }
 }
@@ -71,10 +77,16 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        match self {
-            None => Some(1),
-            Some(value) => Some((&value).size_hint()? + 1),
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        match *self {
+            None => {
+                let stack = <Option<F>>::MAX_STACK_SIZE?;
+                Some((0, stack))
+            }
+            Some(value) => {
+                let (heap, stack) = field_size_hint::<F>(&value, true)?;
+                Some((heap, stack + 1))
+            }
         }
     }
 }

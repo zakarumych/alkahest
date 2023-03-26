@@ -3,7 +3,7 @@ use core::mem::size_of;
 use crate::{
     deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::{sum_size, BareFormula, Formula},
-    serialize::{Serialize, Serializer},
+    serialize::{field_size_hint, Serialize, Serializer},
     size::FixedUsize,
 };
 
@@ -25,8 +25,8 @@ impl Serialize<()> for () {
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        Some(0)
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, 0))
     }
 }
 
@@ -40,8 +40,8 @@ impl Serialize<()> for &'_ () {
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        Some(0)
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, 0))
     }
 }
 
@@ -125,17 +125,25 @@ macro_rules! formula_serialize {
             }
 
             #[inline(always)]
-            fn size_hint(&self) -> Option<usize> {
+            fn size_hint(&self) -> Option<(usize, usize)> {
                 #![allow(non_snake_case, unused_mut)]
-                let mut size = 0;
+                let mut total_heap = 0;
+                let mut total_stack = 0;
                 let ($($b,)* $bt,) = self;
                 $(
                     if $a::MAX_STACK_SIZE.is_none() {
-                        size += size_of::<FixedUsize>();
+                        total_stack += size_of::<FixedUsize>();
                     }
-                    size += <$b as Serialize<$a>>::size_hint($b)?;
+                    let (heap, stack) = field_size_hint::<$a>($b, false)?;
+                    total_heap += heap;
+                    total_stack += stack;
                 )*
-                Some(size + $bt.size_hint()?)
+
+                let (heap, stack) = field_size_hint::<$at>($bt, true)?;
+                total_heap += heap;
+                total_stack += stack;
+
+                Some((total_heap, total_stack))
             }
         }
 
@@ -164,17 +172,25 @@ macro_rules! formula_serialize {
             }
 
             #[inline(always)]
-            fn size_hint(&self) -> Option<usize> {
+            fn size_hint(&self) -> Option<(usize, usize)> {
                 #![allow(non_snake_case, unused_mut)]
-                let mut size = 0;
+                let mut total_heap = 0;
+                let mut total_stack = 0;
                 let ($($b,)* $bt,) = self;
                 $(
                     if $a::MAX_STACK_SIZE.is_none() {
-                        size += size_of::<FixedUsize>();
+                        total_stack += size_of::<FixedUsize>();
                     }
-                    size += <&'ser $b as Serialize<$a>>::size_hint(&$b)?;
+                    let (heap, stack) = field_size_hint::<$a>(&$b, false)?;
+                    total_heap += heap;
+                    total_stack += stack;
                 )*
-                Some(size + $bt.size_hint()?)
+
+                let (heap, stack) = field_size_hint::<$at>(&$bt, true)?;
+                total_heap += heap;
+                total_stack += stack;
+
+                Some((total_heap, total_stack))
             }
         }
 

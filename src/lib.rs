@@ -79,7 +79,6 @@ pub mod private {
         u32, u8, usize,
     };
 
-    use crate::FixedUsize;
     pub use crate::{
         cold::{cold, err},
         deserialize::{Deserialize, DeserializeError, Deserializer},
@@ -87,7 +86,7 @@ pub mod private {
         serialize::{Serialize, Serializer},
     };
 
-    use core::{marker::PhantomData, mem::size_of};
+    use core::marker::PhantomData;
 
     pub const VARIANT_SIZE: usize = core::mem::size_of::<u32>();
     pub const VARIANT_SIZE_OPT: Option<usize> = Some(VARIANT_SIZE);
@@ -146,16 +145,11 @@ pub mod private {
         }
 
         #[inline(always)]
-        pub fn size_hint<T>(self, value: &T, last: bool) -> Option<usize>
+        pub fn size_hint<T>(self, value: &T, last: bool) -> Option<(usize, usize)>
         where
             T: Serialize<F>,
         {
-            let size = <T as Serialize<F>>::size_hint(value)?;
-            if last || F::MAX_STACK_SIZE.is_some() {
-                Some(size)
-            } else {
-                Some(size + size_of::<FixedUsize>())
-            }
+            crate::serialize::field_size_hint::<F>(value, last)
         }
     }
 

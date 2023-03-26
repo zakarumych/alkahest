@@ -1,7 +1,7 @@
 use core::{iter::FusedIterator, marker::PhantomData, mem::size_of, str::Utf8Error};
 
 use crate::{
-    cold::{cold, err},
+    cold::err,
     formula::{unwrap_size, Formula},
     serialize::reference_size,
     size::{FixedIsizeType, FixedUsize, FixedUsizeType},
@@ -179,9 +179,9 @@ impl<'de> Deserializer<'de> {
         if self.stack < reference_size {
             return err(DeserializeError::OutOfBounds);
         }
-        if self.stack != reference_size {
-            return err(DeserializeError::WrongLength);
-        }
+        // if self.stack != reference_size {
+        //     return err(DeserializeError::WrongLength);
+        // }
 
         let (head, tail) = self.input.split_at(self.input.len() - reference_size);
         let (address, size) = read_reference::<F>(tail, head.len());
@@ -203,9 +203,19 @@ impl<'de> Deserializer<'de> {
     {
         debug_assert_eq!(F::MAX_STACK_SIZE, Some(max_stack));
 
+        let upper = match F::MAX_STACK_SIZE {
+            None => unreachable!(),
+            Some(0) => self
+                .clone()
+                .read_value::<FixedUsize, usize>(true)
+                .unwrap_or(0),
+            Some(max_stack) => (self.stack - 1) / max_stack + 1,
+        };
+
         DeIter {
             de: self,
             marker: PhantomData,
+            upper,
         }
     }
 
@@ -215,9 +225,19 @@ impl<'de> Deserializer<'de> {
         F: Formula + ?Sized,
         T: Deserialize<'de, F>,
     {
+        let upper = match F::MAX_STACK_SIZE {
+            None => 1 + (self.stack - 1) / size_of::<FixedUsize>(),
+            Some(0) => self
+                .clone()
+                .read_value::<FixedUsize, usize>(true)
+                .unwrap_or(0),
+            Some(max_stack) => (self.stack - 1) / max_stack + 1,
+        };
+
         DeIter {
             de: self,
             marker: PhantomData,
+            upper,
         }
     }
 
@@ -237,10 +257,22 @@ pub struct IterMaybeUnsized;
 pub type SizedDeIter<'de, F, T> = DeIter<'de, F, T, IterSized>;
 
 #[must_use]
-#[repr(transparent)]
 pub struct DeIter<'de, F: ?Sized, T, M = IterMaybeUnsized> {
     de: Deserializer<'de>,
+    upper: usize,
     marker: PhantomData<fn(&F, M) -> T>,
+}
+
+impl<'de, F, T, M> DeIter<'de, F, T, M>
+where
+    F: Formula + ?Sized,
+    T: Deserialize<'de, F>,
+{
+    /// Returns true if no items remains in the iterator.
+    #[inline(always)]
+    pub fn is_empty(&self) -> bool {
+        self.upper == 0 || (F::MAX_STACK_SIZE.is_none() && self.de.stack == 0)
+    }
 }
 
 impl<'de, F, T, M> Clone for DeIter<'de, F, T, M>
@@ -252,6 +284,7 @@ where
         DeIter {
             de: self.de.clone(),
             marker: PhantomData,
+            upper: self.upper,
         }
     }
 
@@ -270,19 +303,12 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> (usize, Option<usize>) {
-        if self.de.stack == 0 {
+        if self.is_empty() {
             return (0, Some(0));
         }
         match F::MAX_STACK_SIZE {
-            None => (0, Some((self.de.stack - 1) / size_of::<FixedUsize>())),
-            Some(0) => {
-                let len = self
-                    .de
-                    .clone()
-                    .read_value::<FixedUsize, usize>(true)
-                    .unwrap_or(0);
-                (len, Some(len))
-            }
+            None => (0, Some(1 + (self.de.stack - 1) / size_of::<FixedUsize>())),
+            Some(0) => (self.upper, Some(self.upper)),
             Some(max_stack) => {
                 let count = (self.de.stack - 1) / max_stack + 1;
                 (count, Some(count))
@@ -292,30 +318,32 @@ where
 
     #[inline(always)]
     fn next(&mut self) -> Option<Result<T, DeserializeError>> {
-        if self.de.stack == 0 {
+        if self.is_empty() {
             return None;
         }
-
-        Some(self.de.read_value::<F, T>(false))
+        let item = self.de.read_value::<F, T>(false);
+        self.upper -= 1;
+        Some(item)
     }
 
     #[inline(always)]
     fn count(self) -> usize {
         match F::MAX_STACK_SIZE {
             None => self.fold(0, |acc, _| acc + 1),
-            Some(0) => self
-                .de
-                .clone()
-                .read_value::<FixedUsize, usize>(false)
-                .unwrap_or(0),
-            Some(max_stack) => (self.de.stack + max_stack - 1) / max_stack,
+            Some(0) => self.upper,
+            Some(_) => self.upper,
         }
     }
 
     #[inline(always)]
     fn nth(&mut self, n: usize) -> Option<Result<T, DeserializeError>> {
         if n > 0 {
+            if n >= self.upper {
+                self.upper = 0;
+                return None;
+            }
             if let Err(_) = self.de.skip_values::<F>(n) {
+                self.upper = 0;
                 return None;
             }
         }
@@ -329,15 +357,13 @@ where
     {
         let mut accum = init;
         loop {
+            if self.is_empty() {
+                return accum;
+            }
             let result = self.de.read_value::<F, T>(false);
             if let Err(DeserializeError::WrongLength) = result {
-                self.de.input = &[];
-                self.de.stack = 0;
-                if self.de.stack == 0 {
-                    return accum;
-                }
-                cold();
-                return f(accum, result);
+                self.upper = 0;
+                return accum;
             }
             accum = f(accum, result);
         }
@@ -359,7 +385,7 @@ where
 {
     #[inline(always)]
     fn next_back(&mut self) -> Option<Result<T, DeserializeError>> {
-        if self.de.stack < Self::ELEMENT_SIZE {
+        if self.upper == 0 || self.de.stack < Self::ELEMENT_SIZE {
             return None;
         }
 
@@ -375,6 +401,10 @@ where
     #[inline(always)]
     fn nth_back(&mut self, n: usize) -> Option<Result<T, DeserializeError>> {
         if n > 0 {
+            if self.de.stack < (n * Self::ELEMENT_SIZE) {
+                self.upper = 0;
+                return None;
+            }
             self.de.stack -= (n - 1) * Self::ELEMENT_SIZE;
         }
         self.next_back()
@@ -388,7 +418,7 @@ where
         let mut accum = init;
         let mut de = self.de;
         loop {
-            if de.stack < Self::ELEMENT_SIZE {
+            if self.upper == 0 || de.stack < Self::ELEMENT_SIZE {
                 return accum;
             }
 

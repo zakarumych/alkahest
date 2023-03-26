@@ -30,9 +30,10 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        let size = self.size_hint()?;
-        Some(size + size_of::<[FixedUsize; 2]>())
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        let (heap, stack) = self.size_hint()?;
+        debug_assert_eq!(heap, 0);
+        Some((stack, size_of::<[FixedUsize; 2]>()))
     }
 }
 
@@ -65,8 +66,8 @@ impl Serialize<str> for String {
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        Some(self.len())
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, self.len()))
     }
 }
 
@@ -82,8 +83,8 @@ impl Serialize<str> for &String {
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        Some(self.len())
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, self.len()))
     }
 }
 

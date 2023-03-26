@@ -15,8 +15,14 @@ where
         Some(_) => None,
         None => None,
     };
-    const EXACT_SIZE: bool = false;
-    const HEAPLESS: bool = F::HEAPLESS;
+    const EXACT_SIZE: bool = match F::MAX_STACK_SIZE {
+        Some(0) => true,
+        _ => false,
+    };
+    const HEAPLESS: bool = match F::MAX_STACK_SIZE {
+        Some(0) => true,
+        _ => false,
+    };
 }
 
 impl<F> BareFormula for [F] where F: Formula {}
@@ -36,8 +42,8 @@ where
         ser.finish()
     }
 
-    fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes::<F, _>(&self.iter())
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, default_iter_fast_sizes::<F, _>(&self.iter())?))
     }
 }
 

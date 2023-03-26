@@ -36,8 +36,8 @@ macro_rules! impl_primitive {
             }
 
             #[inline(always)]
-            fn size_hint(&self) -> Option<usize> {
-                Some(size_of::<$ty>())
+            fn size_hint(&self) -> Option<(usize, usize)> {
+                Some((0, size_of::<$ty>()))
             }
         }
 
@@ -53,8 +53,8 @@ macro_rules! impl_primitive {
             }
 
             #[inline(always)]
-            fn size_hint(&self) -> Option<usize> {
-                Some(size_of::<$ty>())
+            fn size_hint(&self) -> Option<(usize, usize)> {
+                Some((0, size_of::<$ty>()))
             }
         }
 
@@ -123,8 +123,8 @@ impl Serialize<bool> for bool {
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        Some(size_of::<u8>())
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, size_of::<u8>()))
     }
 }
 
@@ -138,8 +138,8 @@ impl Serialize<bool> for &bool {
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        Some(size_of::<u8>())
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, size_of::<u8>()))
     }
 }
 

@@ -166,12 +166,12 @@ pub const fn repeat_size(a: Option<usize>, n: usize) -> Option<usize> {
 }
 
 #[inline(always)]
-pub fn formula_fast_sizes<F>() -> Option<usize>
+pub fn formula_fast_sizes<F>() -> Option<(usize, usize)>
 where
     F: Formula + ?Sized,
 {
     match (F::EXACT_SIZE, F::HEAPLESS, F::MAX_STACK_SIZE) {
-        (true, true, Some(max_stack_size)) => Some(max_stack_size),
+        (true, true, Some(max_stack_size)) => Some((0, max_stack_size)),
         _ => None,
     }
 }

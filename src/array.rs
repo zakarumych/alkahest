@@ -1,10 +1,7 @@
-use core::mem::size_of;
-
 use crate::{
     deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::{formula_fast_sizes, repeat_size, BareFormula, Formula},
-    serialize::{Serialize, Serializer},
-    size::FixedUsize,
+    serialize::{field_size_hint, Serialize, Serializer},
 };
 
 impl<F, const N: usize> Formula for [F; N]
@@ -28,26 +25,12 @@ where
     where
         S: Serializer,
     {
-        let mut ser = ser.into();
-        self.into_iter()
-            .try_for_each(|elem: T| ser.write_value::<F, T>(elem))?;
-        ser.finish()
+        <Self as Serialize<[F]>>::serialize(self, ser)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        if let Some(size) = formula_fast_sizes::<[F; N]>() {
-            return Some(size);
-        }
-        if N <= 4 {
-            let mut size = 0;
-            for elem in self.iter() {
-                size += elem.size_hint()?;
-            }
-            Some(size)
-        } else {
-            None
-        }
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        <Self as Serialize<[F]>>::size_hint(self)
     }
 }
 
@@ -61,26 +44,12 @@ where
     where
         S: Serializer,
     {
-        let mut ser = ser.into();
-        self.iter()
-            .try_for_each(|elem: &T| ser.write_value::<F, &T>(elem))?;
-        ser.finish()
+        <Self as Serialize<[F]>>::serialize(self, ser)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        if let Some(size) = formula_fast_sizes::<[F; N]>() {
-            return Some(size);
-        }
-        if N <= 4 {
-            let mut size = 0;
-            for elem in self.iter() {
-                size += (&elem).size_hint()?;
-            }
-            Some(size)
-        } else {
-            None
-        }
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        <Self as Serialize<[F]>>::size_hint(self)
     }
 }
 
@@ -101,22 +70,21 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<(usize, usize)> {
         if let Some(size) = formula_fast_sizes::<[F]>() {
             return Some(size);
         }
         if N <= 4 {
-            let mut size = 0;
+            let mut total_heap = 0;
+            let mut total_stack = 0;
             for elem in self.iter() {
-                if F::MAX_STACK_SIZE.is_none() {
-                    size += size_of::<FixedUsize>();
-                }
-                size += elem.size_hint()?;
+                let (heap, stack) = field_size_hint::<F>(elem, false)?;
+                total_heap += heap;
+                total_stack += stack;
             }
-            Some(size)
-        } else {
-            None
+            return Some((total_heap, total_stack));
         }
+        None
     }
 }
 
@@ -137,22 +105,21 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
+    fn size_hint(&self) -> Option<(usize, usize)> {
         if let Some(size) = formula_fast_sizes::<[F]>() {
             return Some(size);
         }
         if N <= 4 {
-            let mut size = 0;
+            let mut total_heap = 0;
+            let mut total_stack = 0;
             for elem in self.iter() {
-                if F::MAX_STACK_SIZE.is_none() {
-                    size += size_of::<FixedUsize>();
-                }
-                size += (&elem).size_hint()?;
+                let (heap, stack) = field_size_hint::<F>(&elem, false)?;
+                total_heap += heap;
+                total_stack += stack;
             }
-            Some(size)
-        } else {
-            None
+            return Some((total_heap, total_stack));
         }
+        None
     }
 }
 

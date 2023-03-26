@@ -155,8 +155,8 @@ fn test_slice() {
 #[test]
 fn test_ref() {
     let mut buffer = [0u8; 256];
-    // test_type::<Ref<()>, (), ()>(&(), &mut buffer, |x, y| x == y);
-    // test_type::<Ref<u32>, u32, u32>(&1, &mut buffer, |x, y| x == y);
+    test_type::<Ref<()>, (), ()>(&(), &mut buffer, |x, y| x == y);
+    test_type::<Ref<u32>, u32, u32>(&1, &mut buffer, |x, y| x == y);
     test_type::<Ref<str>, str, &str>("qwe", &mut buffer, |x, y| x == *y);
 }
 
@@ -353,4 +353,29 @@ fn test_zst_slice() {
     let mut buffer = [0u8; 256];
     test_type::<[()], [()], Vec<()>>(&[(), (), ()], &mut buffer, |x, y| x == y);
     test_type::<[()], Vec<()>, Vec<()>>(&vec![()], &mut buffer, |x, y| x == y);
+}
+
+#[cfg(all(feature = "alloc", feature = "derive"))]
+#[test]
+fn test_ref_in_enum() {
+    use alloc::{
+        string::{String, ToString},
+        vec::Vec,
+    };
+
+    use alkahest_proc::{Deserialize, Formula, Serialize};
+
+    #[derive(Debug, PartialEq, Eq, Formula, Serialize, Deserialize)]
+    enum Test {
+        B([u64; 16]),
+        A(String),
+    }
+
+    let value = Test::A("qwerty".to_string());
+
+    let mut buffer = [0u8; 256];
+    let size = serialize::<[Test], _>([&value], &mut buffer).unwrap();
+    let (data, _) = deserialize::<[Test], Vec<Test>>(&buffer[..size]).unwrap();
+
+    assert_eq!(data, [value]);
 }

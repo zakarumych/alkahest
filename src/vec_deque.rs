@@ -1,5 +1,3 @@
-use core::mem::size_of;
-
 use alloc::collections::VecDeque;
 
 use crate::{
@@ -8,8 +6,7 @@ use crate::{
     formula::Formula,
     iter::deserialize_extend_iter,
     reference::Ref,
-    serialize::{Serialize, Serializer},
-    size::FixedUsize,
+    serialize::{reference_size, Serialize, Serializer},
     slice::default_iter_fast_sizes,
 };
 
@@ -37,9 +34,9 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        let size = self.size_hint()?;
-        Some(size + size_of::<[FixedUsize; 2]>())
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        let (heap, stack) = self.size_hint()?;
+        Some((heap + stack, reference_size::<[F]>()))
     }
 }
 
@@ -77,8 +74,8 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes::<F, _>(&self.iter())
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, default_iter_fast_sizes::<F, _>(&self.iter())?))
     }
 }
 
@@ -98,8 +95,8 @@ where
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        default_iter_fast_sizes::<F, _>(&self.iter())
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, default_iter_fast_sizes::<F, _>(&self.iter())?))
     }
 }
 
@@ -151,8 +148,8 @@ impl Serialize<Bytes> for VecDeque<u8> {
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        Some(self.len())
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, self.len()))
     }
 }
 
@@ -170,8 +167,8 @@ impl Serialize<Bytes> for &VecDeque<u8> {
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<usize> {
-        Some(self.len())
+    fn size_hint(&self) -> Option<(usize, usize)> {
+        Some((0, self.len()))
     }
 }
 
