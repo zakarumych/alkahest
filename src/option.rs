@@ -1,7 +1,8 @@
 use crate::{
+    buffer::Buffer,
     deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::{sum_size, BareFormula, Formula},
-    serialize::{field_size_hint, Serialize, Serializer},
+    serialize::{field_size_hint, write_bytes, write_field, Serialize, Sizes},
 };
 
 impl<F> Formula for Option<F>
@@ -21,33 +22,30 @@ where
     T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, mut buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        let mut ser = ser.into();
         match self {
-            None => {
-                ser.write_bytes(&[0u8])?;
-                ser.finish()
-            }
+            None => write_bytes(&[0u8], sizes, buffer),
             Some(value) => {
-                ser.write_bytes(&[1u8])?;
-                ser.write_last_value::<F, T>(value)
+                write_bytes(&[1u8], sizes, buffer.reborrow())?;
+                write_field::<F, T, _>(value, sizes, buffer, true)
             }
         }
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
+    fn size_hint(&self) -> Option<Sizes> {
         match self {
             None => {
                 let stack = <Option<F>>::MAX_STACK_SIZE?;
-                Some((0, stack))
+                Some(Sizes::with_stack(stack))
             }
             Some(value) => {
-                let (heap, stack) = field_size_hint::<F>(value, true)?;
-                Some((heap, stack + 1))
+                let mut sizes = field_size_hint::<F>(value, true)?;
+                sizes.add_stack(1);
+                Some(sizes)
             }
         }
     }
@@ -59,33 +57,30 @@ where
     &'ser T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, mut buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        let mut ser = ser.into();
         match self {
-            None => {
-                ser.write_bytes(&[0u8])?;
-                ser.finish()
-            }
+            None => write_bytes(&[0u8], sizes, buffer),
             Some(value) => {
-                ser.write_bytes(&[1u8])?;
-                ser.write_last_value::<F, &'ser T>(value)
+                write_bytes(&[1u8], sizes, buffer.reborrow())?;
+                write_field::<F, &T, _>(value, sizes, buffer, true)
             }
         }
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
+    fn size_hint(&self) -> Option<Sizes> {
         match *self {
             None => {
                 let stack = <Option<F>>::MAX_STACK_SIZE?;
-                Some((0, stack))
+                Some(Sizes::with_stack(stack))
             }
             Some(value) => {
-                let (heap, stack) = field_size_hint::<F>(&value, true)?;
-                Some((heap, stack + 1))
+                let mut sizes = field_size_hint::<F>(&value, true)?;
+                sizes.add_stack(1);
+                Some(sizes)
             }
         }
     }

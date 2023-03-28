@@ -1,9 +1,10 @@
 use core::mem::size_of;
 
 use crate::{
+    buffer::Buffer,
     deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::{sum_size, BareFormula, Formula},
-    serialize::{field_size_hint, Serialize, Serializer},
+    serialize::{field_size_hint, write_field, Serialize, Sizes},
     size::FixedUsize,
 };
 
@@ -17,31 +18,31 @@ impl BareFormula for () {}
 
 impl Serialize<()> for () {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, _sizes: &mut Sizes, _buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        ser.into().finish()
+        Ok(())
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, 0))
+    fn size_hint(&self) -> Option<Sizes> {
+        Some(Sizes::ZERO)
     }
 }
 
 impl Serialize<()> for &'_ () {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, _sizes: &mut Sizes, _buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        ser.into().finish()
+        Ok(())
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, 0))
+    fn size_hint(&self) -> Option<Sizes> {
+        Some(Sizes::ZERO)
     }
 }
 
@@ -111,39 +112,32 @@ macro_rules! formula_serialize {
             $bt: Serialize<$at>,
         {
             #[inline(always)]
-            fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+            fn serialize<B>(self, sizes: &mut Sizes, mut buffer: B) -> Result<(), B::Error>
             where
-                S: Serializer,
+                B: Buffer,
             {
                 #![allow(non_snake_case, unused_mut)]
-                let mut ser = ser.into();
+
                 let ($($b,)* $bt,) = self;
                 $(
-                    ser.write_value::<$a, $b>($b)?;
+                    write_field::<$a, $b, _>($b, sizes, buffer.reborrow(), false)?;
                 )*
-                ser.write_last_value::<$at, $bt>($bt)
+                write_field::<$at, $bt, _>($bt, sizes, buffer, true)
             }
 
             #[inline(always)]
-            fn size_hint(&self) -> Option<(usize, usize)> {
+            fn size_hint(&self) -> Option<Sizes> {
                 #![allow(non_snake_case, unused_mut)]
-                let mut total_heap = 0;
-                let mut total_stack = 0;
+                let mut sizes = Sizes::ZERO;
                 let ($($b,)* $bt,) = self;
                 $(
                     if $a::MAX_STACK_SIZE.is_none() {
-                        total_stack += size_of::<FixedUsize>();
+                        sizes.add_stack(size_of::<FixedUsize>());
                     }
-                    let (heap, stack) = field_size_hint::<$a>($b, false)?;
-                    total_heap += heap;
-                    total_stack += stack;
+                    sizes += field_size_hint::<$a>($b, false)?;
                 )*
-
-                let (heap, stack) = field_size_hint::<$at>($bt, true)?;
-                total_heap += heap;
-                total_stack += stack;
-
-                Some((total_heap, total_stack))
+                sizes += field_size_hint::<$at>($bt, true)?;
+                Some(sizes)
             }
         }
 
@@ -158,39 +152,33 @@ macro_rules! formula_serialize {
             $bt: ?Sized,
         {
             #[inline(always)]
-            fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+            fn serialize<B>(self, sizes: &mut Sizes, mut buffer: B) -> Result<(), B::Error>
             where
-                S: Serializer,
+                B: Buffer,
             {
                 #![allow(non_snake_case, unused_mut)]
-                let mut ser = ser.into();
                 let ($($b,)* $bt,) = self;
                 $(
-                    ser.write_value::<$a, &$b>($b)?;
+                    write_field::<$a, &$b, _>($b, sizes, buffer.reborrow(), false)?;
                 )*
-                ser.write_last_value::<$at, &$bt>($bt)
+                write_field::<$at, &$bt, _>($bt, sizes, buffer, true)
             }
 
             #[inline(always)]
-            fn size_hint(&self) -> Option<(usize, usize)> {
+            fn size_hint(&self) -> Option<Sizes> {
                 #![allow(non_snake_case, unused_mut)]
-                let mut total_heap = 0;
-                let mut total_stack = 0;
+                let mut sizes = Sizes::ZERO;
                 let ($($b,)* $bt,) = self;
                 $(
                     if $a::MAX_STACK_SIZE.is_none() {
-                        total_stack += size_of::<FixedUsize>();
+                        sizes.add_stack(size_of::<FixedUsize>());
                     }
-                    let (heap, stack) = field_size_hint::<$a>(&$b, false)?;
-                    total_heap += heap;
-                    total_stack += stack;
+                    sizes += field_size_hint::<$a>(&$b, false)?;
                 )*
 
-                let (heap, stack) = field_size_hint::<$at>(&$bt, true)?;
-                total_heap += heap;
-                total_stack += stack;
+                sizes += field_size_hint::<$at>(&$bt, true)?;
 
-                Some((total_heap, total_stack))
+                Some(sizes)
             }
         }
 

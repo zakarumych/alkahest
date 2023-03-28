@@ -1,8 +1,8 @@
 use crate::{
-    cold::err,
+    buffer::Buffer,
     deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::{BareFormula, Formula},
-    serialize::{Serialize, Serializer},
+    serialize::{write_bytes, Serialize, Sizes},
 };
 
 impl Formula for str {
@@ -15,18 +15,16 @@ impl BareFormula for str {}
 
 impl Serialize<str> for &str {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        let mut ser = ser.into();
-        ser.write_bytes(self.as_bytes())?;
-        ser.finish()
+        write_bytes(self.as_bytes(), sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, self.len()))
+    fn size_hint(&self) -> Option<Sizes> {
+        Some(Sizes::with_stack(self.len()))
     }
 }
 
@@ -39,7 +37,7 @@ impl<'de, 'fe: 'de> Deserialize<'fe, str> for &'de str {
         let bytes = deserializer.read_all_bytes();
         match core::str::from_utf8(bytes) {
             Ok(s) => Ok(s),
-            Err(error) => err(DeserializeError::NonUtf8(error)),
+            Err(error) => Err(DeserializeError::NonUtf8(error)),
         }
     }
 
@@ -54,7 +52,7 @@ impl<'de, 'fe: 'de> Deserialize<'fe, str> for &'de str {
                 *self = s;
                 Ok(())
             }
-            Err(error) => err(DeserializeError::NonUtf8(error)),
+            Err(error) => Err(DeserializeError::NonUtf8(error)),
         }
     }
 }

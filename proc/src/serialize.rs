@@ -441,7 +441,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                     Some(v) => {
                         let variant_name_idx =
                             quote::format_ident!("__ALKAHEST_FORMULA_VARIANT_{}_IDX", v);
-                        quote::quote! { ser.write_value::<u32, u32>(#formula_path::#variant_name_idx)?; }
+                        quote::quote! { ::alkahest::private::write_exact_size_field::<u32, u32, _>(#formula_path::#variant_name_idx, __sizes, __buffer.reborrow())?; }
                     }
                 };
 
@@ -465,51 +465,42 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 tokens.extend(quote::quote! {
                     impl #impl_generics ::alkahest::private::Serialize<#formula_path> for #ident #type_generics #where_clause {
                         #[inline(always)]
-                        fn serialize<S>(self, ser: impl ::alkahest::private::Into<S>) -> ::alkahest::private::Result<S::Ok, S::Error>
+                        fn serialize<B>(self, __sizes: &mut ::alkahest::private::Sizes, mut __buffer: B) -> ::alkahest::private::Result<(), B::Error>
                         where
-                            S: ::alkahest::private::Serializer
+                            B: ::alkahest::private::Buffer,
                         {
                             #![allow(unused_mut)]
                             #field_checks
 
                             let #ident #bind_names = self;
-
-                            let mut ser = ser.into();
                             #write_variant
-
                             #(
                                 let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
                                     #formula_path #with_variant #bind_ref_names => #bound_names,
                                     _ => unreachable!(),
                                 });
-                                if #field_count == 1 + #field_ids {
-                                    return with_formula.write_last_value(ser, #bound_names);
-                                }
-                                with_formula.write_value(&mut ser, #bound_names)?;
+                                with_formula.write_field(#bound_names, __sizes, __buffer.reborrow(), #field_count == 1 + #field_ids)?;
                             )*
-                            ser.finish()
+                            Ok(())
                         }
 
                         #[inline(always)]
-                        fn size_hint(&self) -> ::alkahest::private::Option<(::alkahest::private::usize, ::alkahest::private::usize)> {
+                        fn size_hint(&self) -> ::alkahest::private::Option<::alkahest::private::Sizes> {
                             #![allow(unused_mut)]
                             #field_checks
-                            if let ::alkahest::private::Option::Some(size) = ::alkahest::private::formula_fast_sizes::<#formula_path>() {
-                                return Some(size);
+                            if let ::alkahest::private::Option::Some(sizes) = ::alkahest::private::formula_fast_sizes::<#formula_path>() {
+                                return Some(sizes);
                             }
                             let #ident #bind_ref_names = *self;
-                            let mut __total_heap = 0;
-                            let mut __total_stack = #start_stack_size;
+                            let mut __total = ::alkahest::private::Sizes::with_stack(#start_stack_size);
                             #(
                                 let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
                                     #formula_path #with_variant #bind_ref_names => #bound_names,
                                     _ => unreachable!(),
                                 });
-                                let (__heap, __stack) = with_formula.size_hint(#bound_names, #field_count == 1 + #field_ids)?;
-                                __total_heap += __heap;
-                                __total_stack += __stack;
+                                __total += with_formula.size_hint(#bound_names, #field_count == 1 + #field_ids)?;
                             )*
-                            Some((__total_heap, __total_stack))
+                            Some(__total)
                         }
                     }
                 });
@@ -524,7 +515,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                     Some(v) => {
                         let variant_name_idx =
                             quote::format_ident!("__ALKAHEST_FORMULA_VARIANT_{}_IDX", v);
-                        quote::quote! { ser.write_value::<u32, u32>(#formula_path::#variant_name_idx)?; }
+                        quote::quote! { ::alkahest::private::write_exact_size_field::<u32, u32, _>(#formula_path::#variant_name_idx, __sizes, __buffer.reborrow())?; }
                     }
                 };
 
@@ -546,49 +537,42 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 tokens.extend(quote::quote! {
                     impl #impl_generics ::alkahest::private::Serialize<#formula_path> for &#ident #type_generics #where_clause {
                         #[inline(always)]
-                        fn serialize<S>(self, ser: impl ::alkahest::private::Into<S>) -> ::alkahest::private::Result<S::Ok, S::Error>
+                        fn serialize<B>(self, __sizes: &mut ::alkahest::private::Sizes, mut __buffer: B) -> ::alkahest::private::Result<(), B::Error>
                         where
-                            S: ::alkahest::private::Serializer
+                            B: ::alkahest::private::Buffer,
                         {
                             #![allow(unused_mut)]
                             #field_checks
+
                             let #ident #bind_ref_names = *self;
-                            let mut ser = ser.into();
                             #write_variant
                             #(
                                 let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
                                     #formula_path #with_variant #bind_ref_names => #bound_names,
                                     _ => unreachable!(),
                                 });
-
-                                if #field_count == 1 + #field_ids {
-                                    return with_formula.write_last_value(ser, #bound_names);
-                                }
-                                with_formula.write_value(&mut ser, #bound_names)?;
+                                with_formula.write_field(#bound_names, __sizes, __buffer.reborrow(), #field_count == 1 + #field_ids)?;
                             )*
-                            ser.finish()
+                            Ok(())
                         }
 
                         #[inline(always)]
-                        fn size_hint(&self) -> ::alkahest::private::Option<(::alkahest::private::usize, ::alkahest::private::usize)> {
+                        fn size_hint(&self) -> ::alkahest::private::Option<::alkahest::private::Sizes> {
                             #![allow(unused_mut)]
                             #field_checks
-                            if let ::alkahest::private::Option::Some(size) = ::alkahest::private::formula_fast_sizes::<#formula_path>() {
-                                return Some(size);
+                            if let ::alkahest::private::Option::Some(sizes) = ::alkahest::private::formula_fast_sizes::<#formula_path>() {
+                                return Some(sizes);
                             }
-                            let #ident #bind_ref_names = *self;
-                            let mut __total_heap = 0;
-                            let mut __total_stack = #start_stack_size;
+                            let #ident #bind_ref_names = **self;
+                            let mut __total = ::alkahest::private::Sizes::with_stack(#start_stack_size);
                             #(
                                 let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
                                     #formula_path #with_variant #bind_ref_names => #bound_names,
                                     _ => unreachable!(),
                                 });
-                                let (__heap, __stack) = with_formula.size_hint(&#bound_names, #field_count == 1 + #field_ids)?;
-                                __total_heap += __heap;
-                                __total_stack += __stack;
+                                __total += with_formula.size_hint(&#bound_names, #field_count == 1 + #field_ids)?;
                             )*
-                            Some((__total_heap, __total_stack))
+                            Some(__total)
                         }
                     }
                 });
@@ -727,35 +711,31 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 tokens.extend(quote::quote! {
                     impl #impl_generics ::alkahest::private::Serialize<#formula_path> for #ident #type_generics #where_clause {
                         #[inline(always)]
-                        fn serialize<S>(self, ser: impl ::alkahest::private::Into<S>) -> ::alkahest::private::Result<S::Ok, S::Error>
+                        fn serialize<B>(self, __sizes: &mut ::alkahest::private::Sizes, mut __buffer: B) -> ::alkahest::private::Result<(), B::Error>
                         where
-                            S: ::alkahest::private::Serializer
+                            B: ::alkahest::private::Buffer,
                         {
                             #![allow(unused_mut, unused_variables)]
                             #field_checks
                             match self {
                                 #(
                                     #ident::#variant_names #bind_names => {
-                                        let mut ser = ser.into();
-                                        ser.write_value::<u32, u32>(#formula_path::#variant_name_ids)?;
+                                        ::alkahest::private::write_exact_size_field::<u32, u32, _>(#formula_path::#variant_name_ids, __sizes, __buffer.reborrow())?;
                                         #(
                                             let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
                                                 #formula_path::#variant_names #bind_ref_names => #bound_names,
                                                 _ => unreachable!(),
                                             });
-                                            if #field_counts == 1 + #field_ids {
-                                                return with_formula.write_last_value(ser, #bound_names);
-                                            }
-                                            with_formula.write_value(&mut ser, #bound_names)?;
+                                            with_formula.write_field(#bound_names, __sizes, __buffer.reborrow(), #field_counts == 1 + #field_ids)?;
                                         )*
-                                        ser.finish()
+                                        Ok(())
                                     }
                                 )*
                             }
                         }
 
                         #[inline(always)]
-                        fn size_hint(&self) -> ::alkahest::private::Option<(::alkahest::private::usize, ::alkahest::private::usize)> {
+                        fn size_hint(&self) -> ::alkahest::private::Option<::alkahest::private::Sizes> {
                             #![allow(unused_mut, unused_variables)]
                             #field_checks
                             if let ::alkahest::private::Option::Some(size) = ::alkahest::private::formula_fast_sizes::<#formula_path>() {
@@ -764,18 +744,15 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                             match *self {
                                 #(
                                     #ident::#variant_names #bind_ref_names => {
-                                        let mut __total_heap = 0;
-                                        let mut __total_stack = ::alkahest::private::VARIANT_SIZE;
+                                        let mut __total = ::alkahest::private::Sizes::with_stack(::alkahest::private::VARIANT_SIZE);
                                         #(
                                             let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
                                                 #formula_path::#variant_names #bind_ref_names => #bound_names,
                                                 _ => unreachable!(),
                                             });
-                                            let (__heap, __stack) = with_formula.size_hint(#bound_names, #field_counts == 1 + #field_ids)?;
-                                            __total_heap += __heap;
-                                            __total_stack += __stack;
+                                            __total += with_formula.size_hint(#bound_names, #field_counts == 1 + #field_ids)?;
                                         )*
-                                        Some((__total_heap, __total_stack))
+                                        Some(__total)
                                     }
                                 )*
                             }
@@ -806,35 +783,31 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 tokens.extend(quote::quote! {
                     impl #impl_generics ::alkahest::private::Serialize<#formula_path> for &#ident #type_generics #where_clause {
                         #[inline(always)]
-                        fn serialize<S>(self, ser: impl ::alkahest::private::Into<S>) -> ::alkahest::private::Result<S::Ok, S::Error>
+                        fn serialize<B>(self, __sizes: &mut ::alkahest::private::Sizes, mut __buffer: B) -> ::alkahest::private::Result<(), B::Error>
                         where
-                            S: ::alkahest::private::Serializer
+                            B: ::alkahest::private::Buffer,
                         {
                             #![allow(unused_mut, unused_variables)]
                             #field_checks
                             match *self {
                                 #(
                                     #ident::#variant_names #bind_ref_names => {
-                                        let mut ser = ser.into();
-                                        ser.write_value::<u32, u32>(#formula_path::#variant_name_ids)?;
+                                        ::alkahest::private::write_exact_size_field::<u32, u32, _>(#formula_path::#variant_name_ids, __sizes, __buffer.reborrow())?;
                                         #(
                                             let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
                                                 #formula_path::#variant_names #bind_ref_names => #bound_names,
                                                 _ => unreachable!(),
                                             });
-                                            if #field_counts == 1 + #field_ids {
-                                                return with_formula.write_last_value(ser, #bound_names);
-                                            }
-                                            with_formula.write_value(&mut ser, #bound_names)?;
+                                            with_formula.write_field(#bound_names, __sizes, __buffer.reborrow(), #field_counts == 1 + #field_ids)?;
                                         )*
-                                        ser.finish()
+                                        Ok(())
                                     }
                                 )*
                             }
                         }
 
                         #[inline(always)]
-                        fn size_hint(&self) -> ::alkahest::private::Option<(::alkahest::private::usize, ::alkahest::private::usize)> {
+                        fn size_hint(&self) -> ::alkahest::private::Option<::alkahest::private::Sizes> {
                             #![allow(unused_mut, unused_variables)]
                             #field_checks
                             if let ::alkahest::private::Option::Some(size) = ::alkahest::private::formula_fast_sizes::<#formula_path>() {
@@ -843,18 +816,15 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                             match **self {
                                 #(
                                     #ident::#variant_names #bind_ref_names => {
-                                        let mut __total_heap = 0;
-                                        let mut __total_stack = ::alkahest::private::VARIANT_SIZE;
+                                        let mut __total = ::alkahest::private::Sizes::with_stack(::alkahest::private::VARIANT_SIZE);
                                         #(
                                             let with_formula = ::alkahest::private::with_formula(|s: &#formula_path| match *s {
                                                 #formula_path::#variant_names #bind_ref_names => #bound_names,
                                                 _ => unreachable!(),
                                             });
-                                            let (__heap, __stack) = with_formula.size_hint(&#bound_names, #field_counts == 1 + #field_ids)?;
-                                            __total_heap += __heap;
-                                            __total_stack += __stack;
+                                            __total += with_formula.size_hint(&#bound_names, #field_counts == 1 + #field_ids)?;
                                         )*
-                                        Some((__total_heap, __total_stack))
+                                        Some(__total)
                                     }
                                 )*
                             }

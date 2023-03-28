@@ -5,9 +5,10 @@
 use core::marker::PhantomData;
 
 use crate::{
+    buffer::Buffer,
     deserialize::{Deserialize, DeserializeError, Deserializer},
-    formula::{BareFormula, Formula},
-    serialize::{field_size_hint, reference_size, Serialize, Serializer},
+    formula::{reference_size, BareFormula, Formula},
+    serialize::{field_size_hint, write_ref, Serialize, Sizes},
 };
 
 /// `Ref` is a formula wrapper.
@@ -36,17 +37,19 @@ where
     T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        ser.into().write_ref::<F, T>(self)
+        write_ref::<F, T, _>(self, sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        let (heap, stack) = field_size_hint::<F>(self, true)?;
-        Some((heap + stack, reference_size::<F>()))
+    fn size_hint(&self) -> Option<Sizes> {
+        let mut sizes = field_size_hint::<F>(self, true)?;
+        sizes.to_heap(0);
+        sizes.add_stack(reference_size::<F>());
+        Some(sizes)
     }
 }
 

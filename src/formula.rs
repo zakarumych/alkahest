@@ -1,3 +1,7 @@
+use core::mem::size_of;
+
+use crate::size::FixedUsize;
+
 /// Trait for data formulas.
 /// Types that implement this trait are used as markers
 /// to guide serialization and deserialization process.
@@ -122,7 +126,7 @@ pub trait BareFormula: Formula {}
 
 #[inline(always)]
 #[track_caller]
-pub const fn unwrap_size(a: Option<usize>) -> usize {
+pub(crate) const fn unwrap_size(a: Option<usize>) -> usize {
     let (arr, idx) = match a {
         None => ([0], 1), // DeserializeError in both runtime and compile time.
         Some(a) => ([a], 0),
@@ -133,6 +137,7 @@ pub const fn unwrap_size(a: Option<usize>) -> usize {
 /// Function to combine sizes of formulas.
 /// If any of two is `None` then result is `None`.
 #[inline(always)]
+#[doc(hidden)]
 pub const fn sum_size(a: Option<usize>, b: Option<usize>) -> Option<usize> {
     match (a, b) {
         (None, _) | (_, None) => None,
@@ -145,6 +150,7 @@ pub const fn sum_size(a: Option<usize>, b: Option<usize>) -> Option<usize> {
 /// If any argument is `None` then result is `None`.
 /// If both arguments are `Some` then result is maximum of the two.
 #[inline(always)]
+#[doc(hidden)]
 pub const fn max_size(a: Option<usize>, b: Option<usize>) -> Option<usize> {
     match (a, b) {
         (None, _) => None,
@@ -158,20 +164,22 @@ pub const fn max_size(a: Option<usize>, b: Option<usize>) -> Option<usize> {
 /// First argument cannot be `None` and will cause an error.
 /// If first argument is `Some` then product of arguments is returned.
 #[inline(always)]
-pub const fn repeat_size(a: Option<usize>, n: usize) -> Option<usize> {
+pub(crate) const fn repeat_size(a: Option<usize>, n: usize) -> Option<usize> {
     match a {
         None => None,
         Some(a) => Some(a * n),
     }
 }
 
+/// Returns size of formula reference.
 #[inline(always)]
-pub fn formula_fast_sizes<F>() -> Option<(usize, usize)>
+pub const fn reference_size<F>() -> usize
 where
     F: Formula + ?Sized,
 {
-    match (F::EXACT_SIZE, F::HEAPLESS, F::MAX_STACK_SIZE) {
-        (true, true, Some(max_stack_size)) => Some((0, max_stack_size)),
-        _ => None,
+    match (F::MAX_STACK_SIZE, F::EXACT_SIZE) {
+        (Some(0), _) => 0,
+        (Some(_), true) => size_of::<FixedUsize>(),
+        _ => size_of::<[FixedUsize; 2]>(),
     }
 }

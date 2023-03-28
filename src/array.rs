@@ -1,7 +1,8 @@
 use crate::{
+    buffer::Buffer,
     deserialize::{Deserialize, DeserializeError, Deserializer},
-    formula::{formula_fast_sizes, repeat_size, BareFormula, Formula},
-    serialize::{field_size_hint, Serialize, Serializer},
+    formula::{repeat_size, BareFormula, Formula},
+    serialize::{field_size_hint, formula_fast_sizes, write_slice, Serialize, Sizes},
 };
 
 impl<F, const N: usize> Formula for [F; N]
@@ -21,15 +22,15 @@ where
     T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        <Self as Serialize<[F]>>::serialize(self, ser)
+        <Self as Serialize<[F]>>::serialize(self, sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
+    fn size_hint(&self) -> Option<Sizes> {
         <Self as Serialize<[F]>>::size_hint(self)
     }
 }
@@ -40,15 +41,15 @@ where
     &'ser T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        <Self as Serialize<[F]>>::serialize(self, ser)
+        <Self as Serialize<[F]>>::serialize(self, sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
+    fn size_hint(&self) -> Option<Sizes> {
         <Self as Serialize<[F]>>::size_hint(self)
     }
 }
@@ -59,30 +60,24 @@ where
     T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        let mut ser = ser.into();
-        self.into_iter()
-            .try_for_each(|elem: T| ser.write_value::<F, T>(elem))?;
-        ser.finish()
+        write_slice(self.into_iter(), sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        if let Some(size) = formula_fast_sizes::<[F]>() {
-            return Some(size);
+    fn size_hint(&self) -> Option<Sizes> {
+        if let Some(sizes) = formula_fast_sizes::<[F]>() {
+            return Some(sizes);
         }
         if N <= 4 {
-            let mut total_heap = 0;
-            let mut total_stack = 0;
+            let mut sizes = Sizes::ZERO;
             for elem in self.iter() {
-                let (heap, stack) = field_size_hint::<F>(elem, false)?;
-                total_heap += heap;
-                total_stack += stack;
+                sizes += field_size_hint::<F>(elem, false)?;
             }
-            return Some((total_heap, total_stack));
+            return Some(sizes);
         }
         None
     }
@@ -94,30 +89,24 @@ where
     &'ser T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        let mut ser = ser.into();
-        self.iter()
-            .try_for_each(|elem: &T| ser.write_value::<F, &T>(elem))?;
-        ser.finish()
+        write_slice(self.iter(), sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        if let Some(size) = formula_fast_sizes::<[F]>() {
-            return Some(size);
+    fn size_hint(&self) -> Option<Sizes> {
+        if let Some(sizes) = formula_fast_sizes::<[F]>() {
+            return Some(sizes);
         }
         if N <= 4 {
-            let mut total_heap = 0;
-            let mut total_stack = 0;
+            let mut sizes = Sizes::ZERO;
             for elem in self.iter() {
-                let (heap, stack) = field_size_hint::<F>(&elem, false)?;
-                total_heap += heap;
-                total_stack += stack;
+                sizes += field_size_hint::<F>(&elem, false)?;
             }
-            return Some((total_heap, total_stack));
+            return Some(sizes);
         }
         None
     }

@@ -1,6 +1,78 @@
-use core::{any::type_name, marker::PhantomData, mem::size_of};
+use core::{any::type_name, marker::PhantomData, mem::size_of, ops};
 
-use crate::{buffer::*, formula::Formula, size::FixedUsize, BareFormula};
+use crate::{
+    buffer::*,
+    formula::{reference_size, BareFormula, Formula},
+    size::FixedUsize,
+};
+
+/// Heap and stack sizes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Sizes {
+    /// Heap size.
+    pub heap: usize,
+
+    /// Stack size.
+    pub stack: usize,
+}
+
+impl Sizes {
+    /// Zero sizes.
+    pub const ZERO: Self = Sizes { heap: 0, stack: 0 };
+
+    /// Create new `Sizes` with specified heap size.
+    #[inline(always)]
+    pub const fn with_heap(heap: usize) -> Self {
+        Sizes { heap, stack: 0 }
+    }
+
+    /// Create new `Sizes` with specified stack size.
+    #[inline(always)]
+    pub const fn with_stack(stack: usize) -> Self {
+        Sizes { heap: 0, stack }
+    }
+
+    /// Adds to the heap size.
+    #[inline(always)]
+    pub fn add_heap(&mut self, heap: usize) {
+        self.heap += heap;
+    }
+
+    /// Adds to the stack size.
+    #[inline(always)]
+    pub fn add_stack(&mut self, stack: usize) {
+        self.stack += stack;
+    }
+
+    /// Moves stack size to heap size.
+    #[inline(always)]
+    pub fn to_heap(&mut self, until: usize) -> usize {
+        let len = self.stack - until;
+        self.heap += len;
+        self.stack = until;
+        len
+    }
+}
+
+impl ops::Add for Sizes {
+    type Output = Self;
+
+    #[inline(always)]
+    fn add(self, rhs: Self) -> Self {
+        Self {
+            heap: self.heap + rhs.heap,
+            stack: self.stack + rhs.stack,
+        }
+    }
+}
+
+impl ops::AddAssign for Sizes {
+    #[inline(always)]
+    fn add_assign(&mut self, rhs: Self) {
+        self.heap += rhs.heap;
+        self.stack += rhs.stack;
+    }
+}
 
 /// Trait for types that can be serialized
 /// into raw bytes with specified `F: `[`Formula`].
@@ -13,7 +85,7 @@ use crate::{buffer::*, formula::Formula, size::FixedUsize, BareFormula};
 /// # Examples
 ///
 /// ```
-/// # use alkahest::*;
+/// # use alkahest::advanced::*;
 ///
 /// struct ThreeBytes;
 ///
@@ -26,18 +98,16 @@ use crate::{buffer::*, formula::Formula, size::FixedUsize, BareFormula};
 /// struct Qwe;
 ///
 /// impl Serialize<ThreeBytes> for Qwe {
-///     fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+///     fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
 ///     where
 ///         Self: Sized,
-///         S: Serializer,
+///         B: Buffer,
 ///     {
-///         let mut ser = ser.into();
-///         ser.write_bytes(b"qwe")?;
-///         ser.finish()
+///         write_bytes(b"qwe", sizes, buffer)
 ///     }
 ///
-///     fn size_hint(&self) -> Option<(usize, usize)> {
-///         Some((0, 3))
+///     fn size_hint(&self) -> Option<Sizes> {
+///         Some(Sizes::with_stack(3))
 ///     }
 /// }
 /// ```
@@ -126,25 +196,21 @@ Names of the formula variants and fields are important for `Serialize` and `Dese
 "#
 )]
 pub trait Serialize<F: Formula + ?Sized> {
-    /// Serializes `self` into given serializer.
-    fn serialize<S>(self, serializer: impl Into<S>) -> Result<S::Ok, S::Error>
+    /// Serializes `self` into the given buffer.
+    /// `heap` specifies the size of the buffer's heap occupied prior to this call.
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
         Self: Sized,
-        S: Serializer;
+        B: Buffer;
 
     /// Returns heap and stack sizes required to serialize `self`.
-    /// This function may return `None` conservatively.
+    /// If some sizes are returned they must be exact.
     ///
-    /// When possible to do it fast implementations *should* override this method
-    /// and provide more accurate sizes.
+    /// This function may return none conservatively.
     ///
-    /// Implementations *should not* override this method
-    /// if going through `serialize` method is faster.
-    ///
-    /// Returning incorrect sizes may cause panic during implementation
+    /// Returning incorrect sizes may cause panics during implementation
     /// or broken data.
-    // #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)>;
+    fn size_hint(&self) -> Option<Sizes>;
 }
 
 impl<'ser, F, T: ?Sized> Serialize<F> for &&'ser T
@@ -152,140 +218,19 @@ where
     F: BareFormula + ?Sized,
     &'ser T: Serialize<F>,
 {
-    fn serialize<S>(self, serializer: impl Into<S>) -> Result<S::Ok, S::Error>
+    #[inline(always)]
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
         Self: Sized,
-        S: Serializer,
+        B: Buffer,
     {
-        <&'ser T as Serialize<F>>::serialize(self, serializer)
+        <&'ser T as Serialize<F>>::serialize(self, sizes, buffer)
     }
 
-    fn size_hint(&self) -> Option<(usize, usize)> {
+    #[inline(always)]
+    fn size_hint(&self) -> Option<Sizes> {
         <&'ser T as Serialize<F>>::size_hint(self)
     }
-}
-
-/// Wrapper for serializing elements of the slice formula.
-pub struct SliceWriter<'a, F: Formula + ?Sized, S: Serializer + ?Sized> {
-    serializer: &'a mut S,
-    count: usize,
-    marker: PhantomData<fn(&F)>,
-}
-
-impl<'a, F, S> SliceWriter<'a, F, S>
-where
-    F: Formula + ?Sized,
-    S: Serializer + ?Sized,
-{
-    /// Serialize next element into the slice.
-    pub fn write_elem<T>(&mut self, value: T) -> Result<(), S::Error>
-    where
-        T: Serialize<F>,
-    {
-        if let Some(0) = <F as Formula>::MAX_STACK_SIZE {
-            debug_assert!(<F as Formula>::HEAPLESS);
-            debug_assert!(serialize::<F, T>(value, &mut []).is_ok());
-            self.count += 1;
-            Ok(())
-        } else {
-            self.serializer.write_value::<F, _>(value)
-        }
-    }
-
-    /// Finishes the slice serialization.
-    pub fn finish(self) -> Result<(), S::Error> {
-        if let Some(0) = <F as Formula>::MAX_STACK_SIZE {
-            debug_assert!(<F as Formula>::HEAPLESS);
-            self.serializer.write_value::<FixedUsize, _>(self.count)?;
-        }
-        Ok(())
-    }
-}
-
-/// Instances of this trait are provided to `Serialize::serialize` method.
-/// It should be used to perform the serialization process.
-/// Primitives use `Serializer::write_bytes` to store bytes representation
-/// of the value.
-/// Arrays serialize each element using `Serializer::write_value`.
-/// Tuples serialize each element using `Serializer::write_value`.
-/// Structs *should* prefer to use `Serializer::write_value`
-/// for each field.
-/// Enums *should* serialize the discriminant
-/// and then serialize the variant fields using `Serializer::write_value`.
-/// `Ref` formula uses `Serializer::write_ref`.
-pub trait Serializer {
-    type Ok;
-    type Error;
-
-    /// Writes raw bytes into serializer.
-    fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), Self::Error>;
-
-    /// Writes a value with specific formula into serializer.
-    fn write_value<F, T>(&mut self, value: T) -> Result<(), Self::Error>
-    where
-        F: Formula + ?Sized,
-        T: Serialize<F>;
-
-    /// Writes the last value with specific formula into serializer.
-    fn write_last_value<F, T>(self, value: T) -> Result<Self::Ok, Self::Error>
-    where
-        F: Formula + ?Sized,
-        T: Serialize<F>;
-
-    /// Writes a value with specific formula into serializer.
-    /// It avoids padding the value with zeros to `F::MAX_STACK_SIZE`.
-    /// Instead creates indirection and consumes few bytes to store
-    /// address and size of serialized value.
-    ///
-    /// This method is used for any `Ref` formula.
-    ///
-    /// User should prefer wrapping their formulas with `Ref` instead
-    /// of using this method manually to avoid potential mismatch in
-    /// serialization and deserialization.
-    fn write_ref<F, T>(self, value: T) -> Result<Self::Ok, Self::Error>
-    where
-        F: Formula + ?Sized,
-        T: Serialize<F>;
-
-    /// Writes iterator into slice formula.
-    fn write_slice<F, T>(&mut self, mut iter: impl Iterator<Item = T>) -> Result<(), Self::Error>
-    where
-        F: Formula + ?Sized,
-        T: Serialize<F>,
-    {
-        if let Some(0) = <F as Formula>::MAX_STACK_SIZE {
-            debug_assert!(<F as Formula>::HEAPLESS);
-            let count = if cfg!(debug_assertions) {
-                iter.fold(0, |acc, item| {
-                    assert!(serialize::<F, T>(item, &mut []).is_ok());
-                    acc + 1
-                })
-            } else {
-                iter.count()
-            };
-            self.write_value::<FixedUsize, _>(count)
-        } else {
-            iter.try_for_each(|elem| self.write_value::<F, _>(elem))?;
-            Ok(())
-        }
-    }
-
-    /// Returns a writer for slice formula.
-    /// It can be used to serialize elements one by one.
-    /// `SliceWriter::finish` must be called to finish the serialization.
-    fn slice_writer<F>(&mut self) -> SliceWriter<'_, F, Self>
-    where
-        F: Formula + ?Sized,
-    {
-        SliceWriter {
-            serializer: self,
-            count: 0,
-            marker: PhantomData,
-        }
-    }
-
-    /// Finish serialization.
-    fn finish(self) -> Result<Self::Ok, Self::Error>;
 }
 
 /// Serialize value into buffer.
@@ -303,53 +248,74 @@ where
     // Can we get promised sizes?
     let promised = <T as Serialize<F>>::size_hint(&value);
 
-    let (actual_heap, actual_stack) = match promised {
-        None => match buffer.sub(0) {
-            None => {
-                let (heap, stack) = serialized_sizes(value);
-                (heap + reference_size, stack)
-            }
-            Some(sub) => <T as Serialize<F>>::serialize::<BufferedSerializer<_>>(
-                value,
-                IntoBufferedSerializer {
-                    buffer: sub,
-                    heap: reference_size,
-                },
-            )?,
-        },
-        Some((heap, stack)) => match buffer.reserve_heap(reference_size, 0, heap + stack)? {
-            None => {
-                let (heap, stack) = serialized_sizes(value);
-                (heap + reference_size, stack)
-            }
-            Some(sub) => <T as Serialize<F>>::serialize::<BufferedSerializer<_>>(
-                value,
-                IntoBufferedSerializer {
-                    buffer: sub,
-                    heap: reference_size,
-                },
-            )
-            .unwrap(),
-        },
+    let mut sizes = Sizes {
+        heap: reference_size,
+        stack: 0,
     };
-    check_stack::<F, T>(actual_stack);
 
     match promised {
-        None => buffer.move_to_heap(actual_heap, actual_stack, actual_stack),
-        Some((heap, stack)) => debug_assert_eq!(
-            reference_size + heap + stack,
-            actual_heap + actual_stack,
-            "<{} as Serialize<{}>>::size_hint() result is incorrect",
-            type_name::<T>(),
-            type_name::<F>()
-        ),
+        None => <T as Serialize<F>>::serialize(value, &mut sizes, buffer.reborrow())?,
+        Some(promised) => {
+            match buffer.reserve_heap(reference_size, 0, promised.heap + promised.stack)? {
+                None => {
+                    sizes += serialized_sizes(value);
+                }
+                Some(reserved) => {
+                    <T as Serialize<F>>::serialize(value, &mut sizes, reserved).unwrap();
+                    debug_assert_eq!(sizes.heap, promised.heap + reference_size);
+                    debug_assert_eq!(sizes.stack, promised.stack);
+                }
+            }
+        }
+    };
+    check_stack::<F, T>(sizes.stack);
+
+    match promised {
+        None => buffer.move_to_heap(sizes.heap, sizes.stack, sizes.stack),
+        Some(promised) => {
+            debug_assert_eq!(
+                reference_size + promised.heap,
+                sizes.heap,
+                "<{} as Serialize<{}>>::size_hint() result is incorrect",
+                type_name::<T>(),
+                type_name::<F>()
+            );
+            debug_assert_eq!(
+                promised.stack,
+                sizes.stack,
+                "<{} as Serialize<{}>>::size_hint() result is incorrect",
+                type_name::<T>(),
+                type_name::<F>()
+            );
+        }
     }
 
-    if let Some(mut sub) = buffer.reserve_heap(0, 0, reference_size)? {
-        write_reference::<F, _>(actual_stack, actual_heap + actual_stack, 0, 0, &mut sub).unwrap();
+    if let Some(reserved) = buffer.reserve_heap(0, 0, reference_size)? {
+        write_reference::<F, _>(sizes.stack, sizes.heap + sizes.stack, 0, 0, reserved).unwrap();
     }
 
-    Ok(actual_heap + actual_stack)
+    Ok(sizes.heap + sizes.stack)
+}
+
+#[inline(always)]
+pub fn serialize<F, T>(value: T, output: &mut [u8]) -> Result<usize, BufferExhausted>
+where
+    F: Formula + ?Sized,
+    T: Serialize<F>,
+{
+    serialize_into::<F, T, _>(value, CheckedFixedBuffer::new(output))
+}
+
+#[inline(always)]
+pub fn serialize_unchecked<F, T>(value: T, output: &mut [u8]) -> usize
+where
+    F: Formula + ?Sized,
+    T: Serialize<F>,
+{
+    match serialize_into::<F, T, _>(value, output) {
+        Ok(size) => size,
+        Err(never) => match never {},
+    }
 }
 
 #[inline(always)]
@@ -367,15 +333,6 @@ where
     }
 }
 
-#[inline(always)]
-pub fn serialize<F, T>(value: T, output: &mut [u8]) -> Result<usize, BufferExhausted>
-where
-    F: Formula + ?Sized,
-    T: Serialize<F>,
-{
-    serialize_into::<F, T, _>(value, FixedBuffer::new(output))
-}
-
 #[cfg(feature = "alloc")]
 #[inline(always)]
 pub fn serialize_to_vec<F, T>(value: T, output: &mut alloc::vec::Vec<u8>) -> usize
@@ -390,19 +347,14 @@ where
 }
 
 #[inline(always)]
-fn serialized_sizes<F, T>(value: T) -> (usize, usize)
+fn serialized_sizes<F, T>(value: T) -> Sizes
 where
     F: Formula + ?Sized,
     T: Serialize<F>,
 {
-    match Serialize::<F>::serialize::<BufferedSerializer<DryBuffer>>(
-        value,
-        IntoBufferedSerializer {
-            buffer: DryBuffer,
-            heap: 0,
-        },
-    ) {
-        Ok((heap, stack)) => (heap, stack),
+    let mut sizes = Sizes::ZERO;
+    match Serialize::<F>::serialize(value, &mut sizes, DryBuffer) {
+        Ok(()) => sizes,
         Err(never) => match never {},
     }
 }
@@ -414,8 +366,8 @@ where
     T: Serialize<F>,
 {
     let reference_size = reference_size::<F>();
-    let (heap, stack) = serialized_sizes::<F, T>(value);
-    heap + stack + reference_size
+    let sizes = serialized_sizes::<F, T>(value);
+    sizes.heap + sizes.stack + reference_size
 }
 
 #[inline(always)]
@@ -438,32 +390,34 @@ where
 }
 
 #[inline(always)]
-pub fn header_size<F>() -> usize
-where
-    F: Formula + ?Sized,
-{
-    reference_size::<F>()
-}
-
-#[inline(always)]
-pub const fn reference_size<F>() -> usize
-where
-    F: Formula + ?Sized,
-{
-    match (F::MAX_STACK_SIZE, F::EXACT_SIZE) {
-        (Some(0), _) => 0,
-        (Some(_), true) => size_of::<FixedUsize>(),
-        _ => size_of::<[FixedUsize; 2]>(),
+pub fn field_size_hint<F: Formula + ?Sized>(
+    value: &impl Serialize<F>,
+    last: bool,
+) -> Option<Sizes> {
+    match (last, F::MAX_STACK_SIZE) {
+        (false, None) => None,
+        (true, _) => {
+            let sizes = value.size_hint()?;
+            Some(sizes)
+        }
+        (false, Some(max_stack)) => {
+            let sizes = value.size_hint()?;
+            debug_assert!(sizes.stack <= max_stack);
+            Some(Sizes {
+                heap: sizes.heap,
+                stack: max_stack,
+            })
+        }
     }
 }
 
 #[inline(always)]
-fn write_reference<F, B>(
+pub fn write_reference<F, B>(
     size: usize,
     address: usize,
     heap: usize,
     stack: usize,
-    buffer: &mut B,
+    mut buffer: B,
 ) -> Result<(), B::Error>
 where
     F: Formula + ?Sized,
@@ -491,242 +445,224 @@ where
     Ok(())
 }
 
-struct IntoBufferedSerializer<B> {
-    buffer: B,
-    heap: usize,
-}
-
-impl<B> Into<BufferedSerializer<B>> for IntoBufferedSerializer<B> {
-    #[inline(always)]
-    fn into(self) -> BufferedSerializer<B> {
-        BufferedSerializer::new(self.heap, self.buffer)
+#[inline(always)]
+pub fn write_field<F, T, B>(
+    value: T,
+    sizes: &mut Sizes,
+    mut buffer: B,
+    last: bool,
+) -> Result<(), B::Error>
+where
+    F: Formula + ?Sized,
+    T: Serialize<F>,
+    B: Buffer,
+{
+    if !last && F::MAX_STACK_SIZE.is_none() {
+        buffer.write_stack(sizes.heap, sizes.stack, &[0; size_of::<FixedUsize>()])?;
+        sizes.stack += size_of::<FixedUsize>();
     }
-}
 
-/// Implementation of `Serializer` that uses
-/// `Buffer` to store serialized.
-/// `Buffer` provides failing and growing strategy.
-#[must_use]
-struct BufferedSerializer<B> {
-    /// Output buffer.
-    buffer: B,
+    let old_stack = sizes.stack;
+    <T as Serialize<F>>::serialize(value, sizes, buffer.reborrow())?;
 
-    // size of the heap
-    heap: usize,
-
-    // start of the stack
-    stack: usize,
-}
-
-type DrySerializer = BufferedSerializer<DryBuffer>;
-
-struct IntoDrySerializer;
-
-impl From<IntoDrySerializer> for DrySerializer {
-    fn from(_: IntoDrySerializer) -> Self {
-        DrySerializer::new(0, DryBuffer)
-    }
-}
-
-impl<B> BufferedSerializer<B> {
-    #[must_use]
-    #[inline(always)]
-    fn new(heap: usize, buffer: B) -> Self {
-        BufferedSerializer {
-            heap,
-            stack: 0,
-            buffer,
+    match (last, F::MAX_STACK_SIZE) {
+        (true, None) => {}
+        (true, Some(max_stack)) => {
+            debug_assert!(sizes.stack - old_stack <= max_stack);
+        }
+        (false, None) => {
+            let size = FixedUsize::truncate_unchecked(sizes.stack - old_stack);
+            let res = buffer.write_stack(
+                sizes.heap,
+                old_stack - size_of::<FixedUsize>(),
+                &size.to_le_bytes(),
+            );
+            if res.is_err() {
+                unreachable!("Successfully written before");
+            };
+        }
+        (false, Some(max_stack)) => {
+            debug_assert!(sizes.stack - old_stack <= max_stack);
+            sizes.stack = old_stack + max_stack;
         }
     }
+
+    Ok(())
 }
 
-impl<B> BufferedSerializer<B>
+/// Write a field with exact size.
+#[inline(always)]
+pub fn write_exact_size_field<F, T, B>(
+    value: T,
+    sizes: &mut Sizes,
+    mut buffer: B,
+) -> Result<(), B::Error>
+where
+    F: Formula + ?Sized,
+    T: Serialize<F>,
+    B: Buffer,
+{
+    debug_assert!(F::EXACT_SIZE);
+    let old_stack = sizes.stack;
+    <T as Serialize<F>>::serialize(value, sizes, buffer.reborrow())?;
+    debug_assert_eq!(old_stack + F::MAX_STACK_SIZE.unwrap(), sizes.stack);
+    Ok(())
+}
+
+/// Write bytes to the stack.
+#[inline(always)]
+pub fn write_bytes<B>(bytes: &[u8], sizes: &mut Sizes, mut buffer: B) -> Result<(), B::Error>
 where
     B: Buffer,
 {
-    #[inline(always)]
-    fn write_value<F, T>(&mut self, value: T, last: bool) -> Result<(), B::Error>
-    where
-        F: Formula + ?Sized,
-        T: Serialize<F>,
-    {
-        if !last && F::MAX_STACK_SIZE.is_none() {
-            self.buffer
-                .write_stack(self.heap, self.stack, &[0; size_of::<FixedUsize>()])?;
-            self.stack += size_of::<FixedUsize>();
-        }
-
-        let stack = match self.buffer.sub(self.stack) {
-            None => {
-                match <T as Serialize<F>>::serialize::<DrySerializer>(value, IntoDrySerializer) {
-                    Err(never) => match never {},
-                    Ok((heap, stack)) => {
-                        self.heap = heap;
-                        self.stack += stack;
-                    }
-                }
-                return Ok(());
-            }
-            Some(sub) => {
-                let sub = IntoBufferedSerializer {
-                    buffer: sub,
-                    heap: self.heap,
-                };
-
-                let (heap, stack) =
-                    <T as Serialize<F>>::serialize::<BufferedSerializer<_>>(value, sub)?;
-                self.heap = heap;
-                stack
-            }
-        };
-
-        match (last, F::MAX_STACK_SIZE) {
-            (true, None) => {
-                self.stack += stack;
-            }
-            (true, Some(max_stack)) => {
-                debug_assert!(stack <= max_stack);
-                self.stack += stack;
-            }
-            (false, None) => {
-                let size = FixedUsize::truncate_unchecked(stack);
-                let res = self.buffer.write_stack(
-                    self.heap,
-                    self.stack - size_of::<FixedUsize>(),
-                    &size.to_le_bytes(),
-                );
-                if res.is_err() {
-                    unreachable!();
-                };
-                self.stack += stack;
-            }
-            (false, Some(max_stack)) => {
-                debug_assert!(stack <= max_stack);
-                self.stack += max_stack;
-            }
-        }
-
-        Ok(())
-    }
-
-    #[inline(always)]
-    fn write_ref_slow<F, T>(&mut self, value: T) -> Result<usize, B::Error>
-    where
-        F: Formula + ?Sized,
-        T: Serialize<F>,
-    {
-        let old_stack = self.stack;
-        self.write_value(value, true)?;
-        let stack = self.stack - old_stack;
-        self.buffer.move_to_heap(self.heap, self.stack, stack);
-        self.heap += stack;
-        self.stack = old_stack;
-        Ok(stack)
-    }
-}
-
-impl<B> Serializer for BufferedSerializer<B>
-where
-    B: Buffer,
-{
-    type Ok = (usize, usize);
-    type Error = B::Error;
-
-    #[inline(always)]
-    fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), B::Error> {
-        self.buffer.write_stack(self.heap, self.stack, bytes)?;
-        self.stack += bytes.len();
-        Ok(())
-    }
-
-    #[inline(always)]
-    fn write_value<F, T>(&mut self, value: T) -> Result<(), B::Error>
-    where
-        F: Formula + ?Sized,
-        T: Serialize<F>,
-    {
-        self.write_value(value, false)
-    }
-
-    #[inline(always)]
-    fn write_last_value<F, T>(mut self, value: T) -> Result<(usize, usize), B::Error>
-    where
-        F: Formula + ?Sized,
-        T: Serialize<F>,
-    {
-        self.write_value(value, true)?;
-        self.finish()
-    }
-
-    #[inline(always)]
-    fn write_ref<F, T>(mut self, value: T) -> Result<(usize, usize), B::Error>
-    where
-        F: Formula + ?Sized,
-        T: Serialize<F>,
-    {
-        let reference_size = reference_size::<F>();
-
-        // Can we get promised sizes?
-        let promised = <T as Serialize<F>>::size_hint(&value);
-
-        let stack = match promised {
-            None => self.write_ref_slow(value)?,
-            Some((heap, stack)) => {
-                match self
-                    .buffer
-                    .reserve_heap(self.heap, self.stack, heap + stack)?
-                {
-                    None => self.write_ref_slow(value)?,
-                    Some(reserved) => {
-                        let sub = IntoBufferedSerializer {
-                            buffer: reserved,
-                            heap: self.heap,
-                        };
-
-                        let Ok((actual_heap, actual_stack)) =
-                            <T as Serialize<F>>::serialize::<BufferedSerializer<_>>(value, sub) else {
-                                panic!("Failed to serialize a value into promised size");
-                            };
-
-                        debug_assert_eq!(self.heap + heap, actual_heap);
-                        debug_assert_eq!(stack, actual_stack);
-
-                        self.heap = actual_heap + actual_stack;
-                        stack
-                    }
-                }
-            }
-        };
-
-        // let stack = self.write_ref_slow(value)?;
-        write_reference::<F, B>(stack, self.heap, self.heap, self.stack, &mut self.buffer)?;
-        self.stack += reference_size;
-
-        Ok((self.heap, self.stack))
-    }
-
-    #[inline(always)]
-    fn finish(self) -> Result<(usize, usize), B::Error> {
-        // self.buffer.finish(self.heap, self.stack)?;
-        Ok((self.heap, self.stack))
-    }
+    buffer.write_stack(sizes.heap, sizes.stack, bytes)?;
+    sizes.stack += bytes.len();
+    Ok(())
 }
 
 #[inline(always)]
-pub fn field_size_hint<F: Formula + ?Sized>(
-    value: &impl Serialize<F>,
-    last: bool,
-) -> Option<(usize, usize)> {
-    match (last, F::MAX_STACK_SIZE) {
-        (false, None) => None,
-        (true, _) => {
-            let (heap, stack) = value.size_hint()?;
-            Some((heap, stack))
+fn write_ref_slow<F, T, B>(value: T, sizes: &mut Sizes, mut buffer: B) -> Result<usize, B::Error>
+where
+    F: Formula + ?Sized,
+    T: Serialize<F>,
+    B: Buffer,
+{
+    let old_stack = sizes.stack;
+    write_field(value, sizes, buffer.reborrow(), true)?;
+    let len = sizes.to_heap(old_stack);
+    buffer.move_to_heap(sizes.heap - len, sizes.stack + len, len);
+    Ok(len)
+}
+
+/// Write to the heap and reference to the stack.
+#[inline(always)]
+pub fn write_ref<F, T, B>(value: T, sizes: &mut Sizes, mut buffer: B) -> Result<(), B::Error>
+where
+    F: Formula + ?Sized,
+    T: Serialize<F>,
+    B: Buffer,
+{
+    let reference_size = reference_size::<F>();
+
+    // Can we get promised sizes?
+    let promised = <T as Serialize<F>>::size_hint(&value);
+
+    let stack = match promised {
+        None => write_ref_slow(value, sizes, buffer.reborrow())?,
+        Some(promised) => {
+            match buffer.reserve_heap(sizes.heap, sizes.stack, promised.heap + promised.stack)? {
+                None => write_ref_slow(value, sizes, buffer.reborrow())?,
+                Some(reserved) => {
+                    let mut reserved_sizes = Sizes {
+                        heap: sizes.heap,
+                        stack: 0,
+                    };
+                    <T as Serialize<F>>::serialize(value, &mut reserved_sizes, reserved).unwrap();
+
+                    debug_assert_eq!(reserved_sizes.heap, sizes.heap + promised.heap);
+                    debug_assert_eq!(reserved_sizes.stack, promised.stack);
+
+                    sizes.heap = reserved_sizes.heap + reserved_sizes.stack;
+                    reserved_sizes.stack
+                }
+            }
         }
-        (false, Some(max_stack)) => {
-            let (heap, stack) = value.size_hint()?;
-            debug_assert!(stack <= max_stack);
-            Some((heap, max_stack))
+    };
+    write_reference::<F, B>(stack, sizes.heap, sizes.heap, sizes.stack, buffer)?;
+    sizes.stack += reference_size;
+    Ok(())
+}
+
+/// Writes slices of elements.
+pub struct SliceWriter<'a, F: Formula + ?Sized, B: Buffer + ?Sized> {
+    buffer: &'a mut B,
+    sizes: &'a mut Sizes,
+    count: usize,
+    marker: PhantomData<fn(&F)>,
+}
+
+impl<'a, F, B> SliceWriter<'a, F, B>
+where
+    F: Formula + ?Sized,
+    B: Buffer + ?Sized,
+{
+    /// Serialize next element into the slice.
+    pub fn write_elem<T>(&mut self, value: T) -> Result<(), B::Error>
+    where
+        T: Serialize<F>,
+    {
+        if let Some(0) = <F as Formula>::MAX_STACK_SIZE {
+            debug_assert!(<F as Formula>::HEAPLESS);
+            debug_assert!(serialize::<F, T>(value, &mut []).is_ok());
+            self.count += 1;
+            Ok(())
+        } else {
+            write_field::<F, _, _>(value, self.sizes, self.buffer.reborrow(), false)
         }
+    }
+
+    /// Finishes the slice serialization.
+    pub fn finish(self) -> Result<(), B::Error> {
+        if let Some(0) = <F as Formula>::MAX_STACK_SIZE {
+            debug_assert!(<F as Formula>::HEAPLESS);
+            write_field::<FixedUsize, _, _>(self.count, self.sizes, self.buffer.reborrow(), true)?;
+        }
+        Ok(())
+    }
+}
+
+/// Writes iterator into slice formula.
+pub fn write_slice<F, T, B>(
+    mut iter: impl Iterator<Item = T>,
+    sizes: &mut Sizes,
+    mut buffer: B,
+) -> Result<(), B::Error>
+where
+    F: Formula + ?Sized,
+    T: Serialize<F>,
+    B: Buffer,
+{
+    if let Some(0) = <F as Formula>::MAX_STACK_SIZE {
+        debug_assert!(<F as Formula>::HEAPLESS);
+        let count = if cfg!(debug_assertions) {
+            iter.fold(0, |acc, item| {
+                assert!(serialize::<F, T>(item, &mut []).is_ok());
+                acc + 1
+            })
+        } else {
+            iter.count()
+        };
+        write_field::<FixedUsize, _, _>(count, sizes, buffer, true)
+    } else {
+        iter.try_for_each(|elem| write_field::<F, _, _>(elem, sizes, buffer.reborrow(), false))?;
+        Ok(())
+    }
+}
+
+/// Returns a writer for slice formula.
+/// It can be used to serialize elements one by one.
+/// `SliceWriter::finish` must be called to finish the serialization.
+pub fn slice_writer<'a, F, B>(sizes: &'a mut Sizes, buffer: &'a mut B) -> SliceWriter<'a, F, B>
+where
+    F: Formula + ?Sized,
+    B: Buffer,
+{
+    SliceWriter {
+        buffer,
+        sizes,
+        count: 0,
+        marker: PhantomData,
+    }
+}
+
+/// Fast sizes for formula if it is known at compile time.
+#[inline(always)]
+pub const fn formula_fast_sizes<F>() -> Option<Sizes>
+where
+    F: Formula + ?Sized,
+{
+    match (F::EXACT_SIZE, F::HEAPLESS, F::MAX_STACK_SIZE) {
+        (true, true, Some(max_stack_size)) => Some(Sizes::with_stack(max_stack_size)),
+        _ => None,
     }
 }

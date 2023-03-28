@@ -1,13 +1,11 @@
 use core::{mem::size_of, num::TryFromIntError};
 
 use crate::{
+    buffer::Buffer,
     deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::{BareFormula, Formula},
-    serialize::{Serialize, Serializer},
+    serialize::{Serialize, Sizes},
 };
-
-#[cfg(debug_assertions)]
-use crate::cold::err;
 
 #[cfg(feature = "fixed8")]
 pub type FixedUsizeType = u8;
@@ -101,61 +99,69 @@ impl BareFormula for FixedUsize {}
 
 impl Serialize<FixedUsize> for FixedUsize {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        <FixedUsizeType as Serialize<FixedUsizeType>>::serialize(self.0, ser)
+        <FixedUsizeType as Serialize<FixedUsizeType>>::serialize(self.0, sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, size_of::<FixedUsizeType>()))
+    fn size_hint(&self) -> Option<Sizes> {
+        Some(Sizes::with_stack(size_of::<FixedUsizeType>()))
     }
 }
 
 impl Serialize<FixedUsize> for &FixedUsize {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        <FixedUsizeType as Serialize<FixedUsizeType>>::serialize(self.0, ser)
+        <FixedUsizeType as Serialize<FixedUsizeType>>::serialize(self.0, sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, size_of::<FixedUsizeType>()))
+    fn size_hint(&self) -> Option<Sizes> {
+        Some(Sizes::with_stack(size_of::<FixedUsizeType>()))
     }
 }
 
 impl Serialize<FixedUsize> for usize {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        Serialize::<FixedUsizeType>::serialize(FixedUsize::truncate_unchecked(self).0, ser)
+        Serialize::<FixedUsizeType>::serialize(
+            FixedUsize::truncate_unchecked(self).0,
+            sizes,
+            buffer,
+        )
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, size_of::<FixedUsizeType>()))
+    fn size_hint(&self) -> Option<Sizes> {
+        Some(Sizes::with_stack(size_of::<FixedUsizeType>()))
     }
 }
 
 impl Serialize<FixedUsize> for &usize {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        Serialize::<FixedUsizeType>::serialize(FixedUsize::truncate_unchecked(*self).0, ser)
+        Serialize::<FixedUsizeType>::serialize(
+            FixedUsize::truncate_unchecked(*self).0,
+            sizes,
+            buffer,
+        )
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, size_of::<FixedUsizeType>()))
+    fn size_hint(&self) -> Option<Sizes> {
+        Some(Sizes::with_stack(size_of::<FixedUsizeType>()))
     }
 }
 
@@ -166,7 +172,7 @@ impl Deserialize<'_, FixedUsize> for FixedUsize {
 
         #[cfg(debug_assertions)]
         if usize::try_from(value).is_err() {
-            return err(DeserializeError::InvalidUsize(value));
+            return Err(DeserializeError::InvalidUsize(value));
         }
 
         Ok(FixedUsize(value))
@@ -185,7 +191,7 @@ impl Deserialize<'_, FixedUsize> for usize {
 
         #[cfg(debug_assertions)]
         if usize::try_from(value).is_err() {
-            return err(DeserializeError::InvalidUsize(value));
+            return Err(DeserializeError::InvalidUsize(value));
         }
 
         Ok(value as usize)
@@ -266,61 +272,69 @@ impl BareFormula for FixedIsize {}
 
 impl Serialize<FixedIsize> for FixedIsize {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        <FixedIsizeType as Serialize<FixedIsizeType>>::serialize(self.0, ser)
+        <FixedIsizeType as Serialize<FixedIsizeType>>::serialize(self.0, sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, size_of::<FixedIsizeType>()))
+    fn size_hint(&self) -> Option<Sizes> {
+        Some(Sizes::with_stack(size_of::<FixedIsizeType>()))
     }
 }
 
 impl Serialize<FixedIsize> for &FixedIsize {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        <FixedIsizeType as Serialize<FixedIsizeType>>::serialize(self.0, ser)
+        <FixedIsizeType as Serialize<FixedIsizeType>>::serialize(self.0, sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, size_of::<FixedIsizeType>()))
+    fn size_hint(&self) -> Option<Sizes> {
+        Some(Sizes::with_stack(size_of::<FixedIsizeType>()))
     }
 }
 
 impl Serialize<FixedIsize> for isize {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        Serialize::<FixedIsizeType>::serialize(FixedIsize::truncate_unchecked(self).0, ser)
+        Serialize::<FixedIsizeType>::serialize(
+            FixedIsize::truncate_unchecked(self).0,
+            sizes,
+            buffer,
+        )
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, size_of::<FixedIsizeType>()))
+    fn size_hint(&self) -> Option<Sizes> {
+        Some(Sizes::with_stack(size_of::<FixedIsizeType>()))
     }
 }
 
 impl Serialize<FixedIsize> for &isize {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        Serialize::<FixedIsizeType>::serialize(FixedIsize::truncate_unchecked(*self).0, ser)
+        Serialize::<FixedIsizeType>::serialize(
+            FixedIsize::truncate_unchecked(*self).0,
+            sizes,
+            buffer,
+        )
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, size_of::<FixedIsizeType>()))
+    fn size_hint(&self) -> Option<Sizes> {
+        Some(Sizes::with_stack(size_of::<FixedIsizeType>()))
     }
 }
 
@@ -331,7 +345,7 @@ impl Deserialize<'_, FixedIsize> for FixedIsize {
 
         #[cfg(debug_assertions)]
         if isize::try_from(value).is_err() {
-            return err(DeserializeError::InvalidIsize(value));
+            return Err(DeserializeError::InvalidIsize(value));
         }
 
         Ok(FixedIsize(value))
@@ -350,7 +364,7 @@ impl Deserialize<'_, FixedIsize> for isize {
 
         #[cfg(debug_assertions)]
         if isize::try_from(value).is_err() {
-            return err(DeserializeError::InvalidIsize(value));
+            return Err(DeserializeError::InvalidIsize(value));
         }
 
         Ok(value as isize)

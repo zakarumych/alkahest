@@ -1,16 +1,40 @@
+use core::mem::size_of;
+
 use crate::{
+    buffer::Buffer,
     deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::Formula,
-    serialize::{Serialize, Serializer},
+    serialize::{write_slice, Serialize, Sizes},
     size::FixedUsize,
-    slice::default_iter_fast_sizes,
 };
 
+/// Returns the size of the serialized data if it can be determined fast.
+#[inline(always)]
+pub fn default_iter_fast_sizes<F, I>(iter: &I) -> Option<usize>
+where
+    F: Formula,
+    I: Iterator,
+{
+    match (F::EXACT_SIZE, F::HEAPLESS, F::MAX_STACK_SIZE) {
+        (_, true, Some(0)) => Some(size_of::<FixedUsize>()),
+        (_, true, Some(max_stack_size)) => {
+            let (lower, upper) = iter.size_hint();
+            match upper {
+                Some(upper) if upper == lower => {
+                    // Expect this to be the truth.
+                    // If not, serialization will fail or produce incorrect results.
+                    Some(lower * max_stack_size)
+                }
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
 macro_rules! serialize_iter_to_slice {
-    ($F:ty : $self:expr => $ser:expr) => {{
-        let mut ser = $ser.into();
-        ser.write_slice::<$F, _>($self)?;
-        ser.finish()
+    ($F:ty : $self:expr => $sizes:ident, $buffer:ident) => {{
+        write_slice::<$F, _, _>($self, $sizes, $buffer)
     }};
 }
 
@@ -28,16 +52,16 @@ where
     T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        serialize_iter_to_slice!(F : self.0 => ser)
+        serialize_iter_to_slice!(F : self.0 => sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, default_iter_fast_sizes::<F, I>(&self.0)?))
+    fn size_hint(&self) -> Option<Sizes> {
+        default_iter_fast_sizes::<F, I>(&self.0).map(Sizes::with_stack)
     }
 }
 
@@ -48,16 +72,16 @@ where
     core::ops::Range<T>: Iterator<Item = T>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        serialize_iter_to_slice!(F : self => ser)
+        serialize_iter_to_slice!(F : self => sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, default_iter_fast_sizes::<F, _>(self)?))
+    fn size_hint(&self) -> Option<Sizes> {
+        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
     }
 }
 
@@ -68,37 +92,37 @@ where
     core::ops::RangeInclusive<T>: Iterator<Item = T>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        serialize_iter_to_slice!(F : self => ser)
+        serialize_iter_to_slice!(F : self => sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, default_iter_fast_sizes::<F, _>(self)?))
+    fn size_hint(&self) -> Option<Sizes> {
+        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
     }
 }
 
-impl<F, A, B, T> Serialize<[F]> for core::iter::Chain<A, B>
+impl<F, X, Y, T> Serialize<[F]> for core::iter::Chain<X, Y>
 where
     F: Formula,
-    A: Iterator<Item = T>,
-    B: Iterator<Item = T>,
+    X: Iterator<Item = T>,
+    Y: Iterator<Item = T>,
     T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        serialize_iter_to_slice!(F : self => ser)
+        serialize_iter_to_slice!(F : self => sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, default_iter_fast_sizes::<F, _>(self)?))
+    fn size_hint(&self) -> Option<Sizes> {
+        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
     }
 }
 
@@ -109,16 +133,16 @@ where
     T: Clone + Serialize<F> + 'a,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        serialize_iter_to_slice!(F : self => ser)
+        serialize_iter_to_slice!(F : self => sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, default_iter_fast_sizes::<F, _>(self)?))
+    fn size_hint(&self) -> Option<Sizes> {
+        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
     }
 }
 
@@ -129,16 +153,16 @@ where
     T: Copy + Serialize<F> + 'a,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        serialize_iter_to_slice!(F : self => ser)
+        serialize_iter_to_slice!(F : self => sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, default_iter_fast_sizes::<F, _>(self)?))
+    fn size_hint(&self) -> Option<Sizes> {
+        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
     }
 }
 
@@ -148,38 +172,38 @@ where
     T: Copy + Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        serialize_iter_to_slice!(F : self => ser)
+        serialize_iter_to_slice!(F : self => sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, 0))
+    fn size_hint(&self) -> Option<Sizes> {
+        Some(Sizes::ZERO)
     }
 }
 
 // Typically `usize` is not serializable.
 // But lib makes exception for `usize`s that are derived from actual sizes.
-impl<'a, F, I, T> Serialize<[(FixedUsize, F)]> for core::iter::Enumerate<I>
+impl<F, I, T> Serialize<[(FixedUsize, F)]> for core::iter::Enumerate<I>
 where
     F: Formula,
     I: Iterator<Item = T>,
     T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        serialize_iter_to_slice!((FixedUsize, F) : self => ser)
+        serialize_iter_to_slice!((FixedUsize, F) : self => sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, default_iter_fast_sizes::<(FixedUsize, F), _>(self)?))
+    fn size_hint(&self) -> Option<Sizes> {
+        default_iter_fast_sizes::<(FixedUsize, F), _>(self).map(Sizes::with_stack)
     }
 }
 
@@ -191,16 +215,16 @@ where
     T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        serialize_iter_to_slice!(F : self => ser)
+        serialize_iter_to_slice!(F : self => sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, default_iter_fast_sizes::<F, _>(self)?))
+    fn size_hint(&self) -> Option<Sizes> {
+        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
     }
 }
 
@@ -212,16 +236,16 @@ where
     T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        serialize_iter_to_slice!(F : self => ser)
+        serialize_iter_to_slice!(F : self => sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, default_iter_fast_sizes::<F, _>(self)?))
+    fn size_hint(&self) -> Option<Sizes> {
+        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
     }
 }
 
@@ -234,16 +258,16 @@ where
     T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        serialize_iter_to_slice!(F : self => ser)
+        serialize_iter_to_slice!(F : self => sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, default_iter_fast_sizes::<F, _>(self)?))
+    fn size_hint(&self) -> Option<Sizes> {
+        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
     }
 }
 
@@ -255,16 +279,16 @@ where
     T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        serialize_iter_to_slice!(F : self => ser)
+        serialize_iter_to_slice!(F : self => sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, default_iter_fast_sizes::<F, _>(self)?))
+    fn size_hint(&self) -> Option<Sizes> {
+        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
     }
 }
 
@@ -275,16 +299,16 @@ where
     T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        serialize_iter_to_slice!(F : self => ser)
+        serialize_iter_to_slice!(F : self => sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, default_iter_fast_sizes::<F, _>(self)?))
+    fn size_hint(&self) -> Option<Sizes> {
+        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
     }
 }
 
@@ -295,16 +319,16 @@ where
     T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        serialize_iter_to_slice!(F : self => ser)
+        serialize_iter_to_slice!(F : self => sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, default_iter_fast_sizes::<F, _>(self)?))
+    fn size_hint(&self) -> Option<Sizes> {
+        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
     }
 }
 
@@ -316,16 +340,16 @@ where
     X: FnMut(&T),
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        serialize_iter_to_slice!(F : self => ser)
+        serialize_iter_to_slice!(F : self => sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, default_iter_fast_sizes::<F, _>(self)?))
+    fn size_hint(&self) -> Option<Sizes> {
+        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
     }
 }
 
@@ -337,16 +361,16 @@ where
     T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        serialize_iter_to_slice!(F : self => ser)
+        serialize_iter_to_slice!(F : self => sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, default_iter_fast_sizes::<F, _>(self)?))
+    fn size_hint(&self) -> Option<Sizes> {
+        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
     }
 }
 
@@ -358,16 +382,16 @@ where
     T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        serialize_iter_to_slice!(F : self => ser)
+        serialize_iter_to_slice!(F : self => sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, default_iter_fast_sizes::<F, _>(self)?))
+    fn size_hint(&self) -> Option<Sizes> {
+        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
     }
 }
 
@@ -377,16 +401,16 @@ where
     T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        serialize_iter_to_slice!(F : self => ser)
+        serialize_iter_to_slice!(F : self => sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, default_iter_fast_sizes::<F, _>(self)?))
+    fn size_hint(&self) -> Option<Sizes> {
+        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
     }
 }
 
@@ -397,16 +421,16 @@ where
     T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        serialize_iter_to_slice!(F : self => ser)
+        serialize_iter_to_slice!(F : self => sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, default_iter_fast_sizes::<F, _>(self)?))
+    fn size_hint(&self) -> Option<Sizes> {
+        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
     }
 }
 
@@ -417,16 +441,16 @@ where
     T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        serialize_iter_to_slice!(F : self => ser)
+        serialize_iter_to_slice!(F : self => sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, default_iter_fast_sizes::<F, _>(self)?))
+    fn size_hint(&self) -> Option<Sizes> {
+        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
     }
 }
 
@@ -437,16 +461,16 @@ where
     T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        serialize_iter_to_slice!(F : self => ser)
+        serialize_iter_to_slice!(F : self => sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, default_iter_fast_sizes::<F, _>(self)?))
+    fn size_hint(&self) -> Option<Sizes> {
+        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
     }
 }
 
@@ -458,16 +482,16 @@ where
     T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        serialize_iter_to_slice!(F : self => ser)
+        serialize_iter_to_slice!(F : self => sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, default_iter_fast_sizes::<F, _>(self)?))
+    fn size_hint(&self) -> Option<Sizes> {
+        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
     }
 }
 
@@ -478,16 +502,16 @@ where
     T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        serialize_iter_to_slice!(F : self => ser)
+        serialize_iter_to_slice!(F : self => sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, default_iter_fast_sizes::<F, _>(self)?))
+    fn size_hint(&self) -> Option<Sizes> {
+        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
     }
 }
 
@@ -499,16 +523,16 @@ where
     T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        serialize_iter_to_slice!(F : self => ser)
+        serialize_iter_to_slice!(F : self => sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, default_iter_fast_sizes::<F, _>(self)?))
+    fn size_hint(&self) -> Option<Sizes> {
+        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
     }
 }
 
@@ -519,16 +543,16 @@ where
     T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        serialize_iter_to_slice!(F : self => ser)
+        serialize_iter_to_slice!(F : self => sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, default_iter_fast_sizes::<F, _>(self)?))
+    fn size_hint(&self) -> Option<Sizes> {
+        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
     }
 }
 
@@ -539,16 +563,16 @@ where
     T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        serialize_iter_to_slice!(F : self => ser)
+        serialize_iter_to_slice!(F : self => sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, default_iter_fast_sizes::<F, _>(self)?))
+    fn size_hint(&self) -> Option<Sizes> {
+        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
     }
 }
 
@@ -559,16 +583,16 @@ where
     T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        serialize_iter_to_slice!(F : self => ser)
+        serialize_iter_to_slice!(F : self => sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, default_iter_fast_sizes::<F, _>(self)?))
+    fn size_hint(&self) -> Option<Sizes> {
+        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
     }
 }
 
@@ -580,42 +604,43 @@ where
     T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        serialize_iter_to_slice!(F : self => ser)
+        serialize_iter_to_slice!(F : self => sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, default_iter_fast_sizes::<F, _>(self)?))
+    fn size_hint(&self) -> Option<Sizes> {
+        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
     }
 }
 
-impl<FA, FB, A, B> Serialize<[(FA, FB)]> for core::iter::Zip<A, B>
+impl<FX, FY, X, Y> Serialize<[(FX, FY)]> for core::iter::Zip<X, Y>
 where
-    FA: Formula,
-    FB: Formula,
-    A: Iterator,
-    B: Iterator,
-    A::Item: Serialize<FA>,
-    B::Item: Serialize<FB>,
+    FX: Formula,
+    FY: Formula,
+    X: Iterator,
+    Y: Iterator,
+    X::Item: Serialize<FX>,
+    Y::Item: Serialize<FY>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        serialize_iter_to_slice!((FA, FB) : self => ser)
+        serialize_iter_to_slice!((FX, FY) : self => sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, default_iter_fast_sizes::<(FA, FB), _>(self)?))
+    fn size_hint(&self) -> Option<Sizes> {
+        default_iter_fast_sizes::<(FX, FY), _>(self).map(Sizes::with_stack)
     }
 }
 
+/// Deserialize `FromIterator` value from slice formula.
 pub fn deserialize_from_iter<'de, F, A, T>(de: Deserializer<'de>) -> Result<T, DeserializeError>
 where
     F: Formula + ?Sized,
@@ -639,6 +664,8 @@ where
     }
 }
 
+/// Deserialize into `Extend` value from slice formula.
+#[inline]
 pub fn deserialize_extend_iter<'de, F, A, T>(
     value: &mut T,
     de: Deserializer<'de>,

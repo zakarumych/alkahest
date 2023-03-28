@@ -1,13 +1,13 @@
 use alloc::vec::Vec;
 
 use crate::{
+    buffer::Buffer,
     bytes::Bytes,
     deserialize::{Deserialize, DeserializeError, Deserializer},
-    formula::Formula,
-    iter::deserialize_extend_iter,
+    formula::{reference_size, Formula},
+    iter::{default_iter_fast_sizes, deserialize_extend_iter},
     reference::Ref,
-    serialize::{reference_size, Serialize, Serializer},
-    slice::default_iter_fast_sizes,
+    serialize::{write_bytes, write_ref, write_slice, Serialize, Sizes},
 };
 
 impl<F> Formula for Vec<F>
@@ -25,18 +25,19 @@ where
     T: Serialize<[F]>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        T: Serialize<[F]>,
-        S: Serializer,
+        B: Buffer,
     {
-        ser.into().write_ref::<[F], T>(self)
+        write_ref::<[F], T, B>(self, sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        let (heap, stack) = <Self as Serialize<[F]>>::size_hint(self)?;
-        Some((heap + stack, reference_size::<[F]>()))
+    fn size_hint(&self) -> Option<Sizes> {
+        let mut sizes = <Self as Serialize<[F]>>::size_hint(self)?;
+        sizes.to_heap(0);
+        sizes.add_stack(reference_size::<[F]>());
+        Some(sizes)
     }
 }
 
@@ -64,18 +65,16 @@ where
     T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        let mut ser = ser.into();
-        ser.write_slice(self.into_iter())?;
-        ser.finish()
+        write_slice(self.into_iter(), sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, default_iter_fast_sizes::<F, _>(&self.iter())?))
+    fn size_hint(&self) -> Option<Sizes> {
+        default_iter_fast_sizes::<F, _>(&self.iter()).map(Sizes::with_stack)
     }
 }
 
@@ -85,18 +84,16 @@ where
     &'ser T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        let mut ser = ser.into();
-        ser.write_slice(self.iter())?;
-        ser.finish()
+        write_slice(self.iter(), sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, default_iter_fast_sizes::<F, _>(&self.iter())?))
+    fn size_hint(&self) -> Option<Sizes> {
+        default_iter_fast_sizes::<F, _>(&self.iter()).map(Sizes::with_stack)
     }
 }
 
@@ -136,33 +133,31 @@ where
 
 impl Serialize<Bytes> for Vec<u8> {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        Serialize::<Bytes>::serialize(&*self, ser)
+        write_bytes(self.as_slice(), sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, self.len()))
+    fn size_hint(&self) -> Option<Sizes> {
+        Some(Sizes::with_stack(self.len()))
     }
 }
 
 impl Serialize<Bytes> for &Vec<u8> {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        let mut ser = ser.into();
-        ser.write_bytes(self)?;
-        ser.finish()
+        write_bytes(self.as_slice(), sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, self.len()))
+    fn size_hint(&self) -> Option<Sizes> {
+        Some(Sizes::with_stack(self.len()))
     }
 }
 

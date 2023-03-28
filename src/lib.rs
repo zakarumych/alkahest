@@ -1,9 +1,16 @@
 #![doc = include_str!("../README.md")]
+//!
+//! The root module exports public API sufficient for most use cases.
+//! Except manual implementation and direct usage of `Buffer`, `Formula`,
+//! `Serialize` and `Deserialize` traits and `Deserializer` type.
+//! For those use cases, see `advanced` module.
+
 #![no_std]
 #![forbid(unsafe_code)]
 #![deny(warnings)]
 #![doc(test(attr(deny(warnings))))]
 
+#[cfg(test)]
 extern crate self as alkahest;
 
 #[cfg(feature = "alloc")]
@@ -13,7 +20,6 @@ mod array;
 mod r#as;
 mod buffer;
 mod bytes;
-mod cold;
 mod deserialize;
 mod formula;
 mod iter;
@@ -44,24 +50,19 @@ mod string;
 mod bincode;
 
 pub use crate::{
-    buffer::{Buffer, BufferExhausted, BufferSizeRequired, MaybeFixedBuffer, UncheckedFixedBuffer},
+    buffer::{BufferExhausted, BufferSizeRequired},
     bytes::Bytes,
     deserialize::{
         deserialize, deserialize_in_place, value_size, DeIter, Deserialize, DeserializeError,
-        Deserializer,
     },
-    formula::{max_size, BareFormula, Formula},
-    iter::{deserialize_extend_iter, deserialize_from_iter, SerIter},
+    formula::Formula,
+    iter::SerIter,
     lazy::Lazy,
     r#as::As,
     reference::Ref,
-    serialize::{
-        header_size, serialize, serialize_or_size, serialized_size, Serialize, Serializer,
-        SliceWriter,
-    },
+    serialize::{serialize, serialize_or_size, serialize_unchecked, serialized_size, Serialize},
     size::{FixedIsize, FixedUsize},
     skip::Skip,
-    slice::default_iter_fast_sizes,
 };
 
 #[cfg(feature = "alloc")]
@@ -70,7 +71,41 @@ pub use crate::{buffer::VecBuffer, serialize::serialize_to_vec};
 #[cfg(feature = "derive")]
 pub use alkahest_proc::{Deserialize, Formula, Serialize};
 
+/// This module contains types and functions for manual implementations of
+/// `Serialize` and `Deserialize` traits.
+pub mod advanced {
+    pub use crate::{
+        buffer::{
+            Buffer, BufferExhausted, BufferSizeRequired, CheckedFixedBuffer, MaybeFixedBuffer,
+        },
+        bytes::Bytes,
+        deserialize::{
+            deserialize, deserialize_in_place, value_size, DeIter, Deserialize, DeserializeError,
+            Deserializer,
+        },
+        formula::{reference_size, BareFormula, Formula},
+        iter::{default_iter_fast_sizes, deserialize_extend_iter, deserialize_from_iter, SerIter},
+        lazy::Lazy,
+        r#as::As,
+        reference::Ref,
+        serialize::{
+            field_size_hint, formula_fast_sizes, serialize, serialize_or_size, serialize_unchecked,
+            serialized_size, slice_writer, write_bytes, write_exact_size_field, write_field,
+            write_ref, write_reference, write_slice, Serialize, Sizes, SliceWriter,
+        },
+        size::{FixedIsize, FixedIsizeType, FixedUsize, FixedUsizeType},
+        skip::Skip,
+    };
+
+    #[cfg(feature = "alloc")]
+    pub use crate::{buffer::VecBuffer, serialize::serialize_to_vec};
+
+    #[cfg(feature = "derive")]
+    pub use alkahest_proc::{Deserialize, Formula, Serialize};
+}
+
 /// Private module for macros to use.
+/// Changes here are not considered breaking.
 #[doc(hidden)]
 pub mod private {
     pub use {
@@ -80,10 +115,10 @@ pub mod private {
     };
 
     pub use crate::{
-        cold::{cold, err},
+        buffer::Buffer,
         deserialize::{Deserialize, DeserializeError, Deserializer},
-        formula::{formula_fast_sizes, max_size, sum_size, BareFormula, Formula},
-        serialize::{Serialize, Serializer},
+        formula::{max_size, sum_size, BareFormula, Formula},
+        serialize::{formula_fast_sizes, write_exact_size_field, write_field, Serialize, Sizes},
     };
 
     use core::marker::PhantomData;
@@ -100,25 +135,22 @@ pub mod private {
         F: Formula + ?Sized,
     {
         #[inline(always)]
-        pub fn write_value<T, S>(self, ser: &mut S, value: T) -> Result<(), S::Error>
+        pub fn write_field<T, B>(
+            self,
+            value: T,
+            sizes: &mut Sizes,
+            buffer: B,
+            last: bool,
+        ) -> Result<(), B::Error>
         where
-            S: Serializer,
+            B: Buffer,
             T: Serialize<F>,
         {
-            ser.write_value::<F, T>(value)
+            crate::serialize::write_field(value, sizes, buffer, last)
         }
 
         #[inline(always)]
-        pub fn write_last_value<T, S>(self, ser: S, value: T) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
-            T: Serialize<F>,
-        {
-            ser.write_last_value::<F, T>(value)
-        }
-
-        #[inline(always)]
-        pub fn read_value<'de, T>(
+        pub fn read_field<'de, T>(
             self,
             de: &mut Deserializer<'de>,
             last: bool,
@@ -145,7 +177,7 @@ pub mod private {
         }
 
         #[inline(always)]
-        pub fn size_hint<T>(self, value: &T, last: bool) -> Option<(usize, usize)>
+        pub fn size_hint<T>(self, value: &T, last: bool) -> Option<Sizes>
         where
             T: Serialize<F>,
         {

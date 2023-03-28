@@ -1,13 +1,11 @@
 use core::{iter::FusedIterator, marker::PhantomData, mem::size_of, str::Utf8Error};
 
 use crate::{
-    cold::err,
-    formula::{unwrap_size, Formula},
-    serialize::reference_size,
+    formula::{reference_size, unwrap_size, Formula},
     size::{FixedIsizeType, FixedUsize, FixedUsizeType},
 };
 
-/// DeserializeError that can occur during deserialization.
+/// Error that can occur during deserialization.
 #[derive(Clone, Copy, Debug)]
 pub enum DeserializeError {
     /// Indicates that input buffer is smaller than
@@ -57,6 +55,8 @@ pub trait Deserialize<'de, F: Formula + ?Sized> {
     ) -> Result<(), DeserializeError>;
 }
 
+/// Deserializer from raw bytes.
+/// Provides methods for deserialization of values.
 #[must_use]
 #[derive(Clone)]
 pub struct Deserializer<'de> {
@@ -66,28 +66,27 @@ pub struct Deserializer<'de> {
 }
 
 impl<'de> Deserializer<'de> {
-    #[must_use]
+    /// Creates new deserializer from input buffer.
     #[inline(always)]
-    pub fn new(stack: usize, input: &'de [u8]) -> Result<Self, DeserializeError> {
+    pub const fn new(stack: usize, input: &'de [u8]) -> Result<Self, DeserializeError> {
         if stack > input.len() {
-            return err(DeserializeError::OutOfBounds);
+            return Err(DeserializeError::OutOfBounds);
         }
         Ok(Self::new_unchecked(stack, input))
     }
 
-    #[must_use]
+    /// Creates new deserializer from input buffer without bounds checking.
     #[inline(always)]
     pub const fn new_unchecked(stack: usize, input: &'de [u8]) -> Self {
         debug_assert!(stack <= input.len());
         Deserializer { input, stack }
     }
 
-    #[must_use]
     #[inline(always)]
     #[track_caller]
     pub(crate) fn sub(&mut self, stack: usize) -> Result<Self, DeserializeError> {
         if self.stack < stack {
-            return err(DeserializeError::WrongLength);
+            return Err(DeserializeError::WrongLength);
         }
 
         let sub = Deserializer::new_unchecked(stack, self.input);
@@ -98,10 +97,13 @@ impl<'de> Deserializer<'de> {
         Ok(sub)
     }
 
+    /// Reads specified number of bytes from the input buffer.
+    /// Returns slice of bytes.
+    /// Advances the input buffer.
     #[inline(always)]
     pub fn read_bytes(&mut self, len: usize) -> Result<&'de [u8], DeserializeError> {
         if len > self.stack {
-            return err(DeserializeError::WrongLength);
+            return Err(DeserializeError::WrongLength);
         }
         let at = self.input.len() - len;
         let (head, tail) = self.input.split_at(at);
@@ -110,12 +112,15 @@ impl<'de> Deserializer<'de> {
         Ok(tail)
     }
 
+    /// Reads the rest of the input buffer as bytes.
     #[inline(always)]
     pub fn read_all_bytes(self) -> &'de [u8] {
         let at = self.input.len() - self.stack;
         &self.input[at..]
     }
 
+    /// Reads and deserializes field from the input buffer.
+    /// Advances the input buffer.
     #[inline(always)]
     pub fn read_value<F, T>(&mut self, last: bool) -> Result<T, DeserializeError>
     where
@@ -131,8 +136,108 @@ impl<'de> Deserializer<'de> {
         <T as Deserialize<'de, F>>::deserialize(self.sub(stack)?)
     }
 
+    /// Reads and deserializes field from the input buffer in-place.
     #[inline(always)]
-    pub fn skip_values<F>(&mut self, n: usize) -> Result<(), DeserializeError>
+    pub fn read_in_place<F, T>(&mut self, place: &mut T, last: bool) -> Result<(), DeserializeError>
+    where
+        F: Formula + ?Sized,
+        T: Deserialize<'de, F> + ?Sized,
+    {
+        let stack = match (last, F::MAX_STACK_SIZE) {
+            (true, _) => self.stack,
+            (false, Some(max_stack)) => max_stack,
+            (false, None) => self.read_value::<FixedUsize, usize>(false)?,
+        };
+
+        <T as Deserialize<'de, F>>::deserialize_in_place(place, self.sub(stack)?)
+    }
+
+    /// Reads and deserializes reference from the input buffer.
+    #[inline(always)]
+    pub fn deref<F>(self) -> Result<Deserializer<'de>, DeserializeError>
+    where
+        F: Formula + ?Sized,
+    {
+        let reference_size = reference_size::<F>();
+        if self.stack < reference_size {
+            return Err(DeserializeError::OutOfBounds);
+        }
+
+        let (head, tail) = self.input.split_at(self.input.len() - reference_size);
+        let (address, size) = read_reference::<F>(tail, head.len());
+
+        if address > head.len() {
+            return Err(DeserializeError::WrongAddress);
+        }
+
+        let input = &head[..address];
+
+        Deserializer::new(size, input)
+    }
+
+    /// Converts deserializer into iterator over deserialized values with
+    /// specified formula.
+    /// The formula must be sized and size must match.
+    #[inline(always)]
+    pub fn into_sized_iter<F, T>(self) -> SizedDeIter<'de, F, T>
+    where
+        F: Formula + ?Sized,
+        T: Deserialize<'de, F>,
+    {
+        let upper = match F::MAX_STACK_SIZE {
+            None => panic!("Formula must be sized"),
+            Some(0) => self
+                .clone()
+                .read_value::<FixedUsize, usize>(true)
+                .unwrap_or(0),
+            Some(max_stack) => (self.stack - 1) / max_stack + 1,
+        };
+
+        DeIter {
+            de: self,
+            marker: PhantomData,
+            upper,
+        }
+    }
+
+    /// Converts deserializer into iterator over deserialized values with
+    /// specified formula.
+    #[inline(always)]
+    pub fn into_unsized_iter<F, T>(self) -> DeIter<'de, F, T>
+    where
+        F: Formula + ?Sized,
+        T: Deserialize<'de, F>,
+    {
+        let upper = match (F::MAX_STACK_SIZE, self.stack) {
+            (_, 0) => 0,
+            (None, _) => 1 + (self.stack - 1) / size_of::<FixedUsize>(),
+            (Some(0), _) => self
+                .clone()
+                .read_value::<FixedUsize, usize>(true)
+                .unwrap_or(0),
+            (Some(max_stack), _) => (self.stack - 1) / max_stack + 1,
+        };
+
+        DeIter {
+            de: self,
+            marker: PhantomData,
+            upper,
+        }
+    }
+
+    /// Finishing check for deserializer.
+    #[inline(always)]
+    pub fn finish(self) -> Result<(), DeserializeError> {
+        if self.stack == 0 {
+            Ok(())
+        } else {
+            Err(DeserializeError::WrongLength)
+        }
+    }
+
+    /// Skips specified number of values with specified formula.
+    #[inline(always)]
+    fn skip_values<F>(&mut self, n: usize) -> Result<(), DeserializeError>
     where
         F: Formula + ?Sized,
     {
@@ -153,101 +258,6 @@ impl<'de> Deserializer<'de> {
             }
         }
         Ok(())
-    }
-
-    #[inline(always)]
-    pub fn read_in_place<F, T>(&mut self, place: &mut T, last: bool) -> Result<(), DeserializeError>
-    where
-        F: Formula + ?Sized,
-        T: Deserialize<'de, F> + ?Sized,
-    {
-        let stack = match (last, F::MAX_STACK_SIZE) {
-            (true, _) => self.stack,
-            (false, Some(max_stack)) => max_stack,
-            (false, None) => self.read_value::<FixedUsize, usize>(false)?,
-        };
-
-        <T as Deserialize<'de, F>>::deserialize_in_place(place, self.sub(stack)?)
-    }
-
-    #[inline(always)]
-    pub fn deref<F>(self) -> Result<Deserializer<'de>, DeserializeError>
-    where
-        F: Formula + ?Sized,
-    {
-        let reference_size = reference_size::<F>();
-        if self.stack < reference_size {
-            return err(DeserializeError::OutOfBounds);
-        }
-        // if self.stack != reference_size {
-        //     return err(DeserializeError::WrongLength);
-        // }
-
-        let (head, tail) = self.input.split_at(self.input.len() - reference_size);
-        let (address, size) = read_reference::<F>(tail, head.len());
-
-        if address > head.len() {
-            return err(DeserializeError::WrongAddress);
-        }
-
-        let input = &head[..address];
-
-        Deserializer::new(size, input)
-    }
-
-    #[inline(always)]
-    pub fn into_sized_iter<F, T>(self, max_stack: usize) -> SizedDeIter<'de, F, T>
-    where
-        F: Formula + ?Sized,
-        T: Deserialize<'de, F>,
-    {
-        debug_assert_eq!(F::MAX_STACK_SIZE, Some(max_stack));
-
-        let upper = match F::MAX_STACK_SIZE {
-            None => unreachable!(),
-            Some(0) => self
-                .clone()
-                .read_value::<FixedUsize, usize>(true)
-                .unwrap_or(0),
-            Some(max_stack) => (self.stack - 1) / max_stack + 1,
-        };
-
-        DeIter {
-            de: self,
-            marker: PhantomData,
-            upper,
-        }
-    }
-
-    #[inline(always)]
-    pub fn into_unsized_iter<F, T>(self) -> DeIter<'de, F, T>
-    where
-        F: Formula + ?Sized,
-        T: Deserialize<'de, F>,
-    {
-        let upper = match F::MAX_STACK_SIZE {
-            None => 1 + (self.stack - 1) / size_of::<FixedUsize>(),
-            Some(0) => self
-                .clone()
-                .read_value::<FixedUsize, usize>(true)
-                .unwrap_or(0),
-            Some(max_stack) => (self.stack - 1) / max_stack + 1,
-        };
-
-        DeIter {
-            de: self,
-            marker: PhantomData,
-            upper,
-        }
-    }
-
-    #[inline(always)]
-    pub fn finish(self) -> Result<(), DeserializeError> {
-        if self.stack == 0 {
-            Ok(())
-        } else {
-            err(DeserializeError::WrongLength)
-        }
     }
 }
 
@@ -342,9 +352,9 @@ where
                 self.upper = 0;
                 return None;
             }
-            if let Err(_) = self.de.skip_values::<F>(n) {
+            if let Err(err) = self.de.skip_values::<F>(n) {
                 self.upper = 0;
-                return None;
+                return Some(Err(err));
             }
         }
         self.next()
@@ -485,17 +495,17 @@ where
     let reference_size = reference_size::<F>();
 
     if input.len() < reference_size {
-        return err(DeserializeError::OutOfBounds);
+        return Err(DeserializeError::OutOfBounds);
     }
 
     let (address, size) = read_reference::<F>(input, input.len() - reference_size);
 
     if size > address {
-        return err(DeserializeError::WrongAddress);
+        return Err(DeserializeError::WrongAddress);
     }
 
     if address > input.len() {
-        return err(DeserializeError::OutOfBounds);
+        return Err(DeserializeError::OutOfBounds);
     }
 
     let de = Deserializer::new_unchecked(size, &input[..address]);
@@ -516,20 +526,20 @@ where
     let reference_size = reference_size::<F>();
 
     if input.len() < reference_size {
-        return err(DeserializeError::OutOfBounds);
+        return Err(DeserializeError::OutOfBounds);
     }
 
     let (address, size) = read_reference::<F>(input, input.len() - reference_size);
 
     if size > address {
-        return err(DeserializeError::WrongAddress);
+        return Err(DeserializeError::WrongAddress);
     }
 
     if address > input.len() {
-        return err(DeserializeError::OutOfBounds);
+        return Err(DeserializeError::OutOfBounds);
     }
 
-    let de = Deserializer::new_unchecked(size.into(), &input[..address]);
+    let de = Deserializer::new_unchecked(size, &input[..address]);
     <T as Deserialize<'de, F>>::deserialize_in_place(place, de)?;
 
     Ok(address)

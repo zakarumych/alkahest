@@ -1,13 +1,11 @@
-use core::mem::size_of;
-
 use alloc::{borrow::ToOwned, string::String};
 
 use crate::{
+    buffer::Buffer,
     deserialize::{Deserialize, DeserializeError, Deserializer},
-    formula::Formula,
+    formula::{reference_size, Formula},
     reference::Ref,
-    serialize::{Serialize, Serializer},
-    size::FixedUsize,
+    serialize::{write_bytes, write_ref, Serialize, Sizes},
 };
 
 impl Formula for String {
@@ -21,19 +19,19 @@ where
     T: Serialize<str>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        T: Serialize<str>,
-        S: Serializer,
+        B: Buffer,
     {
-        ser.into().write_ref::<str, T>(self)
+        write_ref::<str, T, _>(self, sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        let (heap, stack) = self.size_hint()?;
-        debug_assert_eq!(heap, 0);
-        Some((stack, size_of::<[FixedUsize; 2]>()))
+    fn size_hint(&self) -> Option<Sizes> {
+        let mut sizes = <Self as Serialize<str>>::size_hint(self)?;
+        sizes.to_heap(0);
+        sizes.add_stack(reference_size::<str>());
+        Some(sizes)
     }
 }
 
@@ -56,35 +54,31 @@ where
 
 impl Serialize<str> for String {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        let mut ser = ser.into();
-        ser.write_bytes(self.as_bytes())?;
-        ser.finish()
+        write_bytes(self.as_bytes(), sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, self.len()))
+    fn size_hint(&self) -> Option<Sizes> {
+        Some(Sizes::with_stack(self.len()))
     }
 }
 
 impl Serialize<str> for &String {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        let mut ser = ser.into();
-        ser.write_bytes(self.as_bytes())?;
-        ser.finish()
+        write_bytes(self.as_bytes(), sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, self.len()))
+    fn size_hint(&self) -> Option<Sizes> {
+        Some(Sizes::with_stack(self.len()))
     }
 }
 

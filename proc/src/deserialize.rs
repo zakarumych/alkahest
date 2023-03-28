@@ -294,7 +294,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                 #formula_path #bind_ref_names => #bound_names,
                                 _ => unreachable!(),
                             });
-                            let #bound_names = with_formula.read_value(&mut de, #field_count == 1 + #field_ids)?;
+                            let #bound_names = with_formula.read_field(&mut de, #field_count == 1 + #field_ids)?;
                         )*
                         // #consume_tail
                         de.finish()?;
@@ -493,14 +493,14 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                             #formula_path::#variant_names #bind_ref_names => #bound_names,
                                             _ => unreachable!(),
                                         });
-                                        let #bound_names = with_formula.read_value(&mut de, #field_counts == 1 + #field_ids)?;
+                                        let #bound_names = with_formula.read_field(&mut de, #field_counts == 1 + #field_ids)?;
                                     )*
                                     // #consume_tail
                                     de.finish()?;
                                     ::alkahest::private::Result::Ok(#ident::#variant_names #bind_names)
                                 }
                             )*
-                            invalid => ::alkahest::private::err(::alkahest::private::DeserializeError::WrongVariant(invalid)),
+                            invalid => ::alkahest::private::Result::Err(::alkahest::private::DeserializeError::WrongVariant(invalid)),
                         }
                     }
 
@@ -533,7 +533,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                             #formula_path::#variant_names #bind_ref_names => #bound_names,
                                             _ => unreachable!(),
                                         });
-                                        let #bound_names = with_formula.read_value(&mut de, #field_counts == 1 + #field_ids)?;
+                                        let #bound_names = with_formula.read_field(&mut de, #field_counts == 1 + #field_ids)?;
                                     )*
                                     // #consume_tail
                                     de.finish()?;
@@ -541,7 +541,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                     ::alkahest::private::Result::Ok(())
                                 }
                             )*
-                            (invalid, _) => ::alkahest::private::err(::alkahest::private::DeserializeError::WrongVariant(invalid)),
+                            (invalid, _) => ::alkahest::private::Result::Err(::alkahest::private::DeserializeError::WrongVariant(invalid)),
                         }
                     }
                 }

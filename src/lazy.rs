@@ -71,10 +71,10 @@ where
     #[inline(always)]
     fn sized_iter_impl<T>(&self) -> SizedDeIter<'de, F, T>
     where
-        F: Formula,
         T: Deserialize<'de, F>,
     {
-        self.de.clone().into_sized_iter(Self::ELEMENT_SIZE)
+        assert_eq!(Some(Self::ELEMENT_SIZE), F::MAX_STACK_SIZE);
+        self.de.clone().into_sized_iter()
     }
 }
 

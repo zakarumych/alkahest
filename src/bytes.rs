@@ -1,7 +1,8 @@
 use crate::{
+    buffer::Buffer,
     deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::{BareFormula, Formula},
-    serialize::{Serialize, Serializer},
+    serialize::{write_bytes, Serialize, Sizes},
 };
 
 /// A formula for a raw byte slices.
@@ -18,18 +19,16 @@ impl BareFormula for Bytes {}
 
 impl Serialize<Bytes> for &[u8] {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        let mut ser = ser.into();
-        ser.write_bytes(self)?;
-        ser.finish()
+        write_bytes(self, sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, self.len()))
+    fn size_hint(&self) -> Option<Sizes> {
+        Some(Sizes::with_stack(self.len()))
     }
 }
 

@@ -1,8 +1,10 @@
 use core::mem::size_of;
 
 use crate::{
+    buffer::Buffer,
     formula::{BareFormula, Formula},
-    serialize::{Serialize, Serializer},
+    iter::default_iter_fast_sizes,
+    serialize::{write_slice, Serialize, Sizes},
     size::FixedUsize,
 };
 
@@ -15,14 +17,8 @@ where
         Some(_) => None,
         None => None,
     };
-    const EXACT_SIZE: bool = match F::MAX_STACK_SIZE {
-        Some(0) => true,
-        _ => false,
-    };
-    const HEAPLESS: bool = match F::MAX_STACK_SIZE {
-        Some(0) => true,
-        _ => false,
-    };
+    const EXACT_SIZE: bool = matches!(F::MAX_STACK_SIZE, Some(0));
+    const HEAPLESS: bool = F::HEAPLESS;
 }
 
 impl<F> BareFormula for [F] where F: Formula {}
@@ -32,40 +28,17 @@ where
     F: Formula,
     &'ser T: Serialize<F>,
 {
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
         Self: Sized,
-        S: Serializer,
+        B: Buffer,
     {
-        let mut ser = ser.into();
-        ser.write_slice::<F, &'ser T>(self.iter())?;
-        ser.finish()
+        write_slice(self.iter(), sizes, buffer)
     }
 
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, default_iter_fast_sizes::<F, _>(&self.iter())?))
-    }
-}
-
-#[inline(always)]
-pub fn default_iter_fast_sizes<F, I>(iter: &I) -> Option<usize>
-where
-    F: Formula,
-    I: Iterator,
-{
-    match (F::EXACT_SIZE, F::HEAPLESS, F::MAX_STACK_SIZE) {
-        (_, true, Some(0)) => Some(size_of::<FixedUsize>()),
-        (_, true, Some(max_stack_size)) => {
-            let (lower, upper) = iter.size_hint();
-            match upper {
-                Some(upper) if upper == lower => {
-                    // Expect this to be the truth.
-                    // If not, serialization will fail or produce incorrect results.
-                    Some(lower * max_stack_size)
-                }
-                _ => None,
-            }
-        }
-        _ => None,
+    fn size_hint(&self) -> Option<Sizes> {
+        Some(Sizes::with_stack(default_iter_fast_sizes::<F, _>(
+            &self.iter(),
+        )?))
     }
 }

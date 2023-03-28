@@ -1,9 +1,10 @@
 use core::marker::PhantomData;
 
 use crate::{
+    buffer::Buffer,
     deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::{BareFormula, Formula},
-    serialize::{Serialize, Serializer},
+    serialize::{Serialize, Sizes},
 };
 
 /// Formula type that mirrors specified formula `F`.
@@ -58,16 +59,16 @@ where
     T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
         Self: Sized,
-        S: Serializer,
+        B: Buffer,
     {
-        <T as Serialize<F>>::serialize(self, ser)
+        <T as Serialize<F>>::serialize(self, sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
+    fn size_hint(&self) -> Option<Sizes> {
         <T as Serialize<F>>::size_hint(self)
     }
 }

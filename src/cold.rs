@@ -1,9 +1,6 @@
-#[cold]
-#[inline(always)]
-pub const fn cold() {}
-
-#[cold]
-#[inline(never)]
-pub fn err<T, E>(err: E) -> Result<T, E> {
-    Err(err)
-}
+// #[cold]
+// #[inline(always)]
+// #[doc(hidden)]
+// pub const fn err<T, E>(err: E) -> Result<T, E> {
+//     Err(err)
+// }

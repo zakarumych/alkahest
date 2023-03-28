@@ -1,11 +1,16 @@
 use core::{borrow::Borrow, mem::size_of};
 
 use crate::{
-    cold::cold,
+    buffer::Buffer,
     deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::{BareFormula, Formula},
-    serialize::{Serialize, Serializer},
+    serialize::{write_bytes, Serialize, Sizes},
 };
+
+#[cold]
+#[inline(always)]
+#[doc(hidden)]
+fn cold() {}
 
 macro_rules! impl_primitive {
     () => {};
@@ -26,35 +31,31 @@ macro_rules! impl_primitive {
 
         impl Serialize<$ty> for $ty {
             #[inline(always)]
-            fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+            fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
             where
-                S: Serializer,
+                B: Buffer,
             {
-                let mut ser = ser.into();
-                ser.write_bytes(&self.to_le_bytes())?;
-                ser.finish()
+                write_bytes(&self.to_le_bytes(), sizes, buffer)
             }
 
             #[inline(always)]
-            fn size_hint(&self) -> Option<(usize, usize)> {
-                Some((0, size_of::<$ty>()))
+            fn size_hint(&self) -> Option<Sizes> {
+                Some(Sizes{ heap: 0, stack: size_of::<$ty>()})
             }
         }
 
         impl Serialize<$ty> for &$ty {
             #[inline(always)]
-            fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+            fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
             where
-                S: Serializer,
+                B: Buffer,
             {
-                let mut ser = ser.into();
-                ser.write_bytes(&self.to_le_bytes())?;
-                ser.finish()
+                write_bytes(&self.to_le_bytes(), sizes, buffer)
             }
 
             #[inline(always)]
-            fn size_hint(&self) -> Option<(usize, usize)> {
-                Some((0, size_of::<$ty>()))
+            fn size_hint(&self) -> Option<Sizes> {
+                Some(Sizes{ heap: 0, stack: size_of::<$ty>()})
             }
         }
 
@@ -115,31 +116,38 @@ impl BareFormula for bool {}
 
 impl Serialize<bool> for bool {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        Self: Sized,
+        B: Buffer,
     {
-        <u8 as Serialize<u8>>::serialize(*self.borrow() as u8, ser)
+        write_bytes(&[self as u8], sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, size_of::<u8>()))
+    fn size_hint(&self) -> Option<Sizes> {
+        Some(Sizes {
+            heap: 0,
+            stack: size_of::<u8>(),
+        })
     }
 }
 
 impl Serialize<bool> for &bool {
     #[inline(always)]
-    fn serialize<S>(self, ser: impl Into<S>) -> Result<S::Ok, S::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        S: Serializer,
+        B: Buffer,
     {
-        <u8 as Serialize<u8>>::serialize(*self.borrow() as u8, ser)
+        <u8 as Serialize<u8>>::serialize(*self.borrow() as u8, sizes, buffer)
     }
 
     #[inline(always)]
-    fn size_hint(&self) -> Option<(usize, usize)> {
-        Some((0, size_of::<u8>()))
+    fn size_hint(&self) -> Option<Sizes> {
+        Some(Sizes {
+            heap: 0,
+            stack: size_of::<u8>(),
+        })
     }
 }
 
