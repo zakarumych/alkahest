@@ -28,13 +28,22 @@ pub trait Buffer {
     /// Returned buffer is always of `FixedBuffer` type.
     ///
     /// If buffer cannot reserve heap space, it should return `Ok(None)`.
-    /// In this case serializing code should fallback to using `sub`.
+    /// In this case serializing code should fallback
+    /// to using `write_stack` and `move_to_heap`.
     fn reserve_heap(
         &mut self,
         heap: usize,
         stack: usize,
         len: usize,
     ) -> Result<Option<&mut [u8]>, Self::Error>;
+
+    /// Returns true if this buffer is actually `DryBuffer` or similar.
+    /// i.e. all data is discarded.
+    #[doc(hidden)]
+    #[inline(always)]
+    fn is_dry() -> bool {
+        false
+    }
 }
 
 /// No-op buffer that does not write anything.
@@ -72,6 +81,11 @@ impl Buffer for DryBuffer {
         _len: usize,
     ) -> Result<Option<&mut [u8]>, Infallible> {
         Ok(None)
+    }
+
+    #[inline(always)]
+    fn is_dry() -> bool {
+        true
     }
 }
 
@@ -204,6 +218,7 @@ pub struct MaybeFixedBuffer<'a> {
 }
 
 impl<'a> MaybeFixedBuffer<'a> {
+    /// Creates a new buffer with exhausted flag.
     pub fn new(buf: &'a mut [u8], exhausted: &'a mut bool) -> Self {
         MaybeFixedBuffer { buf, exhausted }
     }

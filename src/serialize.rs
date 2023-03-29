@@ -85,7 +85,7 @@ impl ops::AddAssign for Sizes {
 /// # Examples
 ///
 /// ```
-/// # use alkahest::advanced::*;
+/// # use alkahest::{*, advanced::*};
 ///
 /// struct ThreeBytes;
 ///
@@ -297,6 +297,12 @@ where
     Ok(sizes.heap + sizes.stack)
 }
 
+/// Serialize value into bytes slice.
+/// Returns the number of bytes written.
+/// Fails if the buffer is too small.
+///
+/// To retrieve the number of bytes required to serialize the value,
+/// use [`serialized_size`] or [`serialize_or_size`].
 #[inline(always)]
 pub fn serialize<F, T>(value: T, output: &mut [u8]) -> Result<usize, BufferExhausted>
 where
@@ -306,6 +312,10 @@ where
     serialize_into::<F, T, _>(value, CheckedFixedBuffer::new(output))
 }
 
+/// Slightly faster version of [`serialize`].
+/// Panics if the buffer is too small instead of returning an error.
+///
+/// Use instead of using [`serialize`] with immediate [`unwrap`](Result::unwrap).
 #[inline(always)]
 pub fn serialize_unchecked<F, T>(value: T, output: &mut [u8]) -> usize
 where
@@ -318,6 +328,13 @@ where
     }
 }
 
+/// Serialize value into bytes slice.
+/// Returns the number of bytes written.
+///
+/// If the buffer is too small, returns error that contains
+/// the exact number of bytes required.
+///
+/// Use [`serialize`] if this information is not needed.
 #[inline(always)]
 pub fn serialize_or_size<F, T>(value: T, output: &mut [u8]) -> Result<usize, BufferSizeRequired>
 where
@@ -333,6 +350,13 @@ where
     }
 }
 
+/// Serialize value into byte vector.
+/// Returns the number of bytes written.
+///
+/// Grows the vector if needed.
+/// Infallible except for allocation errors.
+///
+/// Use pre-allocated vector when possible to avoid reallocations.
 #[cfg(feature = "alloc")]
 #[inline(always)]
 pub fn serialize_to_vec<F, T>(value: T, output: &mut alloc::vec::Vec<u8>) -> usize
@@ -359,6 +383,12 @@ where
     }
 }
 
+/// Returns the number of bytes required to serialize the value.
+/// Note that value is consumed.
+///
+/// Use when value is `Copy` or can be cheaply replicated to allocate
+/// the buffer for serialization in advance.
+/// Or to find out required size after [`serialize`] fails.
 #[inline(always)]
 pub fn serialized_size<F, T>(value: T) -> usize
 where
@@ -389,6 +419,9 @@ where
     };
 }
 
+/// Size hint for serializing a field.
+///
+/// Use in [`Serialize::size_hint`](Serialize::size_hint) implementation.`
 #[inline(always)]
 pub fn field_size_hint<F: Formula + ?Sized>(
     value: &impl Serialize<F>,
@@ -411,6 +444,10 @@ pub fn field_size_hint<F: Formula + ?Sized>(
     }
 }
 
+/// Writes reference into the buffer.
+///
+/// Use in [`Serialize::serialize`](Serialize::serialize) implementation
+/// after writing value to the heap.
 #[inline(always)]
 pub fn write_reference<F, B>(
     size: usize,
@@ -445,6 +482,9 @@ where
     Ok(())
 }
 
+/// Writes field value into the buffer.
+///
+/// Use in [`Serialize::serialize`](Serialize::serialize) implementation.
 #[inline(always)]
 pub fn write_field<F, T, B>(
     value: T,
@@ -490,7 +530,10 @@ where
     Ok(())
 }
 
-/// Write a field with exact size.
+/// Write a field with exact size into buffer.
+/// Requires that `F::EXACT_SIZE` is `true`.
+///
+/// Use in [`Serialize::serialize`](Serialize::serialize) implementation.
 #[inline(always)]
 pub fn write_exact_size_field<F, T, B>(
     value: T,
@@ -509,7 +552,9 @@ where
     Ok(())
 }
 
-/// Write bytes to the stack.
+/// Write raw bytes to the buffer.
+///
+/// Use in [`Serialize::serialize`](Serialize::serialize) implementation.
 #[inline(always)]
 pub fn write_bytes<B>(bytes: &[u8], sizes: &mut Sizes, mut buffer: B) -> Result<(), B::Error>
 where
@@ -534,7 +579,10 @@ where
     Ok(len)
 }
 
-/// Write to the heap and reference to the stack.
+/// Write value to the buffer as a reference,
+/// placing value into the heap and reference into the stack.
+///
+/// Use in [`Serialize::serialize`](Serialize::serialize) implementation.
 #[inline(always)]
 pub fn write_ref<F, T, B>(value: T, sizes: &mut Sizes, mut buffer: B) -> Result<(), B::Error>
 where
@@ -573,7 +621,10 @@ where
     Ok(())
 }
 
-/// Writes slices of elements.
+/// Writes elements of a slice one by one into associated buffer.
+///
+/// Use in [`Serialize::serialize`](Serialize::serialize) implementation
+/// for slice formulas.
 pub struct SliceWriter<'a, F: Formula + ?Sized, B: Buffer + ?Sized> {
     buffer: &'a mut B,
     sizes: &'a mut Sizes,
@@ -586,7 +637,7 @@ where
     F: Formula + ?Sized,
     B: Buffer + ?Sized,
 {
-    /// Serialize next element into the slice.
+    /// Serialize next element of a slice.
     pub fn write_elem<T>(&mut self, value: T) -> Result<(), B::Error>
     where
         T: Serialize<F>,
@@ -611,7 +662,30 @@ where
     }
 }
 
-/// Writes iterator into slice formula.
+/// Returns a writer to write elements of a slice
+/// one by one into associated buffer.
+///
+/// Use in [`Serialize::serialize`](Serialize::serialize) implementation
+/// for slice formulas.
+pub fn slice_writer<'a, F, B>(sizes: &'a mut Sizes, buffer: &'a mut B) -> SliceWriter<'a, F, B>
+where
+    F: Formula + ?Sized,
+    B: Buffer,
+{
+    SliceWriter {
+        buffer,
+        sizes,
+        count: 0,
+        marker: PhantomData,
+    }
+}
+
+/// Writes iterator into buffer.
+///
+/// Use in [`Serialize::serialize`](Serialize::serialize) implementation
+/// for slice formulas.
+/// Prefer this over `slice_writer` and manual iteration when
+/// got an iterator.
 pub fn write_slice<F, T, B>(
     mut iter: impl Iterator<Item = T>,
     sizes: &mut Sizes,
@@ -639,23 +713,10 @@ where
     }
 }
 
-/// Returns a writer for slice formula.
-/// It can be used to serialize elements one by one.
-/// `SliceWriter::finish` must be called to finish the serialization.
-pub fn slice_writer<'a, F, B>(sizes: &'a mut Sizes, buffer: &'a mut B) -> SliceWriter<'a, F, B>
-where
-    F: Formula + ?Sized,
-    B: Buffer,
-{
-    SliceWriter {
-        buffer,
-        sizes,
-        count: 0,
-        marker: PhantomData,
-    }
-}
-
-/// Fast sizes for formula if it is known at compile time.
+/// Returns size hint for the formula if it is known at compile time.
+///
+/// Use in [`Serialize::size_hint`](Serialize::size_hint) implementation
+/// before manual calculation.
 #[inline(always)]
 pub const fn formula_fast_sizes<F>() -> Option<Sizes>
 where

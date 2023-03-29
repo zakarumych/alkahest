@@ -71,7 +71,7 @@ fn main() {
     let value = TestS {
         a: 1,
         b: X,
-        c: vec![2..4, 4..6],
+        c: vec![2u8..4, 4..6],
     };
 
     let size = serialized_size::<MyFormula, _>(value.clone());

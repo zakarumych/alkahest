@@ -7,6 +7,7 @@ use crate::{
     r#as::As,
     reference::Ref,
     serialize::{serialize, serialize_or_size, serialized_size, Serialize},
+    vlq::Vlq,
 };
 
 fn test_type<'a, F, T, D>(value: &T, buffer: &'a mut [u8], eq: impl Fn(&T, &D) -> bool)
@@ -390,4 +391,90 @@ fn test_ref_in_enum() {
     let (data, _) = deserialize::<[Test], Vec<Test>>(&buffer[..size]).unwrap();
 
     assert_eq!(data, [value]);
+}
+
+#[test]
+fn test_vlq() {
+    let mut buffer = [0u8; 1024];
+
+    let u8s = [0u8, 1, 2, 3, 15, 16, 127, 128, 255];
+
+    let u32s = [
+        0u32, 1, 2, 3, 15, 16, 127, 128, 255, 256, 511, 512, 541, 1235, 145436, 1415156,
+    ];
+
+    let u128s = [
+        0u128,
+        1,
+        2,
+        3,
+        15,
+        16,
+        127,
+        128,
+        255,
+        256,
+        511,
+        512,
+        541,
+        1235,
+        145436,
+        1415156,
+        8686126246,
+        451395861346,
+        8513556350934828745,
+        35815984654386789363134,
+        784467440737095516151415,
+        335135563509348287454252346983435251968,
+    ];
+
+    for i in u8s {
+        let size = serialize::<Vlq, _>(i, &mut buffer).unwrap();
+        let (de, _) = deserialize::<Vlq, u32>(&buffer[..size]).unwrap();
+        assert_eq!(de, u32::from(i));
+    }
+    for i in u32s {
+        let size = serialize::<Vlq, _>(i, &mut buffer).unwrap();
+        let (de, _) = deserialize::<Vlq, u64>(&buffer[..size]).unwrap();
+        assert_eq!(de, u64::from(i));
+    }
+    for i in u128s {
+        let size = serialize::<Vlq, _>(i, &mut buffer).unwrap();
+        let (de, _) = deserialize::<Vlq, u128>(&buffer[..size]).unwrap();
+        assert_eq!(de, i);
+    }
+}
+
+#[cfg(feature = "bincoded")]
+#[test]
+fn test_bincoded() {
+    use serde::{de::*, ser::*};
+
+    use crate::bincoded::*;
+
+    struct Value(u32);
+
+    impl Serialize for Value {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            <u32 as Serialize>::serialize(&self.0, serializer)
+        }
+    }
+
+    impl<'de> Deserialize<'de> for Value {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            <u32 as Deserialize<'de>>::deserialize(deserializer).map(Value)
+        }
+    }
+
+    let mut buffer = [0u8; 1024];
+
+    let size = serialize::<Bincode, _>(Value(102414), &mut buffer).unwrap();
+    let (de, _) = deserialize::<Bincode, Value>(&buffer[..size]).unwrap();
+    assert_eq!(de.0, 102414);
 }

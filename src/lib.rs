@@ -5,10 +5,9 @@
 //! `Serialize` and `Deserialize` traits and `Deserializer` type.
 //! For those use cases, see `advanced` module.
 
-#![no_std]
+#![cfg_attr(not(feature = "std"), no_std)]
 #![forbid(unsafe_code)]
-#![deny(warnings)]
-#![doc(test(attr(deny(warnings))))]
+#![deny(missing_docs)]
 
 #[cfg(test)]
 extern crate self as alkahest;
@@ -33,6 +32,7 @@ mod skip;
 mod slice;
 mod str;
 mod tuple;
+mod vlq;
 
 #[cfg(test)]
 mod tests;
@@ -46,8 +46,8 @@ mod vec_deque;
 #[cfg(feature = "alloc")]
 mod string;
 
-#[cfg(feature = "serde-bincode")]
-mod bincode;
+#[cfg(feature = "bincoded")]
+mod bincoded;
 
 pub use crate::{
     buffer::{BufferExhausted, BufferSizeRequired},
@@ -63,45 +63,35 @@ pub use crate::{
     serialize::{serialize, serialize_or_size, serialize_unchecked, serialized_size, Serialize},
     size::{FixedIsize, FixedUsize},
     skip::Skip,
+    vlq::Vlq,
 };
 
 #[cfg(feature = "alloc")]
-pub use crate::{buffer::VecBuffer, serialize::serialize_to_vec};
+pub use crate::serialize::serialize_to_vec;
 
 #[cfg(feature = "derive")]
 pub use alkahest_proc::{Deserialize, Formula, Serialize};
+
+#[cfg(feature = "bincoded")]
+pub use bincoded::{Bincode, Bincoded};
 
 /// This module contains types and functions for manual implementations of
 /// `Serialize` and `Deserialize` traits.
 pub mod advanced {
     pub use crate::{
-        buffer::{
-            Buffer, BufferExhausted, BufferSizeRequired, CheckedFixedBuffer, MaybeFixedBuffer,
-        },
-        bytes::Bytes,
-        deserialize::{
-            deserialize, deserialize_in_place, value_size, DeIter, Deserialize, DeserializeError,
-            Deserializer,
-        },
-        formula::{reference_size, BareFormula, Formula},
-        iter::{default_iter_fast_sizes, deserialize_extend_iter, deserialize_from_iter, SerIter},
-        lazy::Lazy,
-        r#as::As,
-        reference::Ref,
+        buffer::{Buffer, CheckedFixedBuffer, MaybeFixedBuffer},
+        deserialize::Deserializer,
+        formula::{reference_size, BareFormula},
+        iter::{default_iter_fast_sizes, deserialize_extend_iter, deserialize_from_iter},
         serialize::{
-            field_size_hint, formula_fast_sizes, serialize, serialize_or_size, serialize_unchecked,
-            serialized_size, slice_writer, write_bytes, write_exact_size_field, write_field,
-            write_ref, write_reference, write_slice, Serialize, Sizes, SliceWriter,
+            field_size_hint, formula_fast_sizes, slice_writer, write_bytes, write_exact_size_field,
+            write_field, write_ref, write_reference, write_slice, Sizes, SliceWriter,
         },
-        size::{FixedIsize, FixedIsizeType, FixedUsize, FixedUsizeType},
-        skip::Skip,
+        size::{FixedIsize, FixedIsizeType},
     };
 
     #[cfg(feature = "alloc")]
-    pub use crate::{buffer::VecBuffer, serialize::serialize_to_vec};
-
-    #[cfg(feature = "derive")]
-    pub use alkahest_proc::{Deserialize, Formula, Serialize};
+    pub use crate::buffer::VecBuffer;
 }
 
 /// Private module for macros to use.

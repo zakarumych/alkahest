@@ -1,6 +1,6 @@
 [package]
 name = "alkahest-proc"
-version = "0.2.0-rc.6"
+version = "0.2.0-rc.8"
 authors = ["Zakarum <zakarumych@ya.ru>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"

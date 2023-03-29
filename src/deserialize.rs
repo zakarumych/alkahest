@@ -29,6 +29,16 @@ pub enum DeserializeError {
 
     /// Bytes slice is not UTF8 where `str` is expected.
     NonUtf8(Utf8Error),
+
+    /// Signals that deserialization of integer value fails due to
+    /// destination type being too small.
+    ///
+    /// This can happen when deserializing `Vlq` formula
+    /// into fixed-size integer type.
+    IntegerOverflow,
+
+    /// Data is incompatible with the type to be deserialized.
+    Incompatible,
 }
 
 /// Trait for types that can be deserialized
@@ -266,6 +276,7 @@ pub struct IterMaybeUnsized;
 
 pub type SizedDeIter<'de, F, T> = DeIter<'de, F, T, IterSized>;
 
+/// Iterator over deserialized values.
 #[must_use]
 pub struct DeIter<'de, F: ?Sized, T, M = IterMaybeUnsized> {
     de: Deserializer<'de>,
@@ -373,7 +384,6 @@ where
             let result = self.de.read_value::<F, T>(false);
             if let Err(DeserializeError::WrongLength) = result {
                 self.upper = 0;
-                return accum;
             }
             accum = f(accum, result);
         }
@@ -486,6 +496,8 @@ where
     }
 }
 
+/// Deserializes value from the input.
+/// Returns deserialized value and number of bytes consumed.
 #[inline(always)]
 pub fn deserialize<'de, F, T>(input: &'de [u8]) -> Result<(T, usize), DeserializeError>
 where
@@ -514,6 +526,8 @@ where
     Ok((value, address))
 }
 
+/// Deserializes value from the input into specified place.
+/// Returns number of bytes consumed.
 #[inline(always)]
 pub fn deserialize_in_place<'de, F, T>(
     place: &mut T,

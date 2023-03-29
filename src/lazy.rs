@@ -89,7 +89,7 @@ where
     /// # use alkahest::*;
     /// let mut buffer = [0u8; 1024];
     ///
-    /// serialize::<[u32], _>([1, 2, 3], &mut buffer).unwrap();
+    /// serialize::<[u32], _>([1u8, 2, 3], &mut buffer).unwrap();
     /// let (lazy, _) = deserialize::<[u32], Lazy<[u32]>>(&buffer).unwrap();
     /// let mut iter = lazy.sized_iter::<u32>();
     /// assert_eq!(iter.next().unwrap().unwrap(), 1);
@@ -128,7 +128,7 @@ where
     /// # use alkahest::*;
     /// let mut buffer = [0u8; 1024];
     ///
-    /// serialize::<[u32], _>([1, 2, 3], &mut buffer).unwrap();
+    /// serialize::<[u32], _>([1u8, 2, 3], &mut buffer).unwrap();
     /// let (lazy, _) = deserialize::<[u32], Lazy<[u32]>>(&buffer).unwrap();
     /// let mut iter = lazy.iter::<u32>();
     /// assert_eq!(iter.next().unwrap().unwrap(), 1);

@@ -7,27 +7,35 @@ use crate::{
     serialize::{Serialize, Sizes},
 };
 
+/// Type used to represent sizes and offsets in serialized data.
 #[cfg(feature = "fixed8")]
 pub type FixedUsizeType = u8;
 
+/// Type used to represent sizes and offsets in serialized data.
 #[cfg(feature = "fixed16")]
 pub type FixedUsizeType = u16;
 
+/// Type used to represent sizes and offsets in serialized data.
 #[cfg(feature = "fixed32")]
 pub type FixedUsizeType = u32;
 
+/// Type used to represent sizes and offsets in serialized data.
 #[cfg(feature = "fixed64")]
 pub type FixedUsizeType = u64;
 
+/// Type used to represent sizes and offsets in serialized data.
 #[cfg(feature = "fixed8")]
 pub type FixedIsizeType = i8;
 
+/// Type used to represent sizes and offsets in serialized data.
 #[cfg(feature = "fixed16")]
 pub type FixedIsizeType = i16;
 
+/// Type used to represent sizes and offsets in serialized data.
 #[cfg(feature = "fixed32")]
 pub type FixedIsizeType = i32;
 
+/// Type used to represent sizes and offsets in serialized data.
 #[cfg(feature = "fixed64")]
 pub type FixedIsizeType = i64;
 
@@ -39,17 +47,20 @@ pub type FixedIsizeType = i64;
 pub struct FixedUsize(FixedUsizeType);
 
 impl FixedUsize {
+    /// Truncates `usize` to `FixedUsizeType` without checking.
     #[inline(always)]
     pub fn truncate_unchecked(value: usize) -> Self {
         debug_assert!(FixedUsize::try_from(value).is_ok());
         FixedUsize(value as FixedUsizeType)
     }
 
+    /// Converts to byte array in little endian.
     #[inline(always)]
     pub fn to_le_bytes(self) -> [u8; size_of::<Self>()] {
         self.0.to_le_bytes()
     }
 
+    /// Converts from byte array in little endian.
     #[inline(always)]
     pub fn from_le_bytes(bytes: [u8; size_of::<Self>()]) -> Result<Self, TryFromIntError> {
         FixedUsizeType::from_le_bytes(bytes).try_into()
@@ -212,17 +223,20 @@ impl Deserialize<'_, FixedUsize> for usize {
 pub struct FixedIsize(FixedIsizeType);
 
 impl FixedIsize {
+    /// Truncates `isize` to `FixedIsizeType` without checking.
     #[inline(always)]
     pub fn truncate_unchecked(value: isize) -> Self {
         debug_assert!(FixedIsize::try_from(value).is_ok());
         FixedIsize(value as FixedIsizeType)
     }
 
+    /// Converts to byte array in little endian.
     #[inline(always)]
     pub fn to_le_bytes(self) -> [u8; size_of::<Self>()] {
         self.0.to_le_bytes()
     }
 
+    /// Converts from byte array in little endian.
     #[inline(always)]
     pub fn from_le_bytes(bytes: [u8; size_of::<Self>()]) -> Result<Self, TryFromIntError> {
         FixedIsizeType::from_le_bytes(bytes).try_into()
