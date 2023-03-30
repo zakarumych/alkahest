@@ -4,31 +4,104 @@ use crate::{
     buffer::Buffer,
     deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::Formula,
-    serialize::{write_slice, Serialize, Sizes},
+    serialize::{field_size_hint, write_slice, Serialize, Sizes},
     size::FixedUsize,
 };
 
+const ITER_UPPER: usize = 8;
+
 /// Returns the size of the serialized data if it can be determined fast.
 #[inline(always)]
-pub fn default_iter_fast_sizes<F, I>(iter: &I) -> Option<usize>
+pub fn default_iter_fast_sizes<F, I>(iter: &I) -> Option<Sizes>
 where
-    F: Formula,
+    F: Formula + ?Sized,
     I: Iterator,
+    I::Item: Serialize<F>,
 {
-    match (F::EXACT_SIZE, F::HEAPLESS, F::MAX_STACK_SIZE) {
-        (_, true, Some(0)) => Some(size_of::<FixedUsize>()),
-        (_, true, Some(max_stack_size)) => {
+    match (F::HEAPLESS, F::MAX_STACK_SIZE) {
+        (true, Some(0)) => Some(Sizes::with_stack(size_of::<FixedUsize>())),
+        (true, Some(max_stack)) => {
             let (lower, upper) = iter.size_hint();
             match upper {
                 Some(upper) if upper == lower => {
                     // Expect this to be the truth.
                     // If not, serialization will fail or produce incorrect results.
-                    Some(lower * max_stack_size)
+                    Some(Sizes::with_stack(lower * max_stack))
                 }
                 _ => None,
             }
         }
         _ => None,
+    }
+}
+
+/// Returns the size of the serialized data if it can be determined fast.
+#[inline(always)]
+pub fn ref_iter_fast_sizes<'a, F, I, T: 'a>(iter: I) -> Option<Sizes>
+where
+    F: Formula + ?Sized,
+    I: Iterator<Item = T>,
+    T: Serialize<F>,
+{
+    match (F::HEAPLESS, F::MAX_STACK_SIZE) {
+        (true, Some(0)) => Some(Sizes::with_stack(size_of::<FixedUsize>())),
+        (true, Some(max_stack)) => {
+            let (lower, upper) = iter.size_hint();
+            match upper {
+                Some(upper) if upper == lower => {
+                    // Expect this to be the truth.
+                    // If not, serialization will fail or produce incorrect results.
+                    Some(Sizes::with_stack(lower * max_stack))
+                }
+                _ => None,
+            }
+        }
+        _ => {
+            let (_lower, upper) = iter.size_hint();
+            if upper.map_or(false, |upper| upper <= ITER_UPPER) {
+                let mut sizes = Sizes::ZERO;
+                for elem in iter {
+                    sizes += field_size_hint::<F>(&elem, false)?;
+                }
+                return Some(sizes);
+            }
+            None
+        }
+    }
+}
+
+/// Returns the size of the serialized data if it can be determined fast.
+#[inline(always)]
+pub fn owned_iter_fast_sizes<'a, F, I, T: 'a>(iter: I) -> Option<Sizes>
+where
+    F: Formula + ?Sized,
+    I: Iterator<Item = &'a T>,
+    T: Serialize<F>,
+{
+    match (F::HEAPLESS, F::MAX_STACK_SIZE) {
+        (true, Some(0)) => Some(Sizes::with_stack(size_of::<FixedUsize>())),
+        (true, Some(max_stack)) => {
+            let (lower, upper) = iter.size_hint();
+            match upper {
+                Some(upper) if upper == lower => {
+                    // Expect this to be the truth.
+                    // If not, serialization will fail or produce incorrect results.
+                    Some(Sizes::with_stack(lower * max_stack))
+                }
+                _ => None,
+            }
+        }
+        _ => {
+            let (_lower, upper) = iter.size_hint();
+            if upper.map_or(false, |upper| upper <= ITER_UPPER) {
+                let mut sizes = Sizes::ZERO;
+                for elem in iter {
+                    sizes += field_size_hint::<F>(elem, false)?;
+                }
+                return Some(sizes);
+            }
+            None
+        }
     }
 }
 
@@ -61,7 +134,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        default_iter_fast_sizes::<F, I>(&self.0).map(Sizes::with_stack)
+        default_iter_fast_sizes::<F, I>(&self.0)
     }
 }
 
@@ -81,7 +154,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
+        default_iter_fast_sizes::<F, _>(self)
     }
 }
 
@@ -101,7 +174,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
+        default_iter_fast_sizes::<F, _>(self)
     }
 }
 
@@ -122,7 +195,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
+        default_iter_fast_sizes::<F, _>(self)
     }
 }
 
@@ -142,7 +215,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
+        default_iter_fast_sizes::<F, _>(self)
     }
 }
 
@@ -162,7 +235,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
+        default_iter_fast_sizes::<F, _>(self)
     }
 }
 
@@ -203,7 +276,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        default_iter_fast_sizes::<(FixedUsize, F), _>(self).map(Sizes::with_stack)
+        default_iter_fast_sizes::<(FixedUsize, F), _>(self)
     }
 }
 
@@ -224,7 +297,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
+        default_iter_fast_sizes::<F, _>(self)
     }
 }
 
@@ -245,7 +318,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
+        default_iter_fast_sizes::<F, _>(self)
     }
 }
 
@@ -267,7 +340,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
+        default_iter_fast_sizes::<F, _>(self)
     }
 }
 
@@ -288,7 +361,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
+        default_iter_fast_sizes::<F, _>(self)
     }
 }
 
@@ -308,7 +381,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
+        default_iter_fast_sizes::<F, _>(self)
     }
 }
 
@@ -328,7 +401,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
+        default_iter_fast_sizes::<F, _>(self)
     }
 }
 
@@ -349,7 +422,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
+        default_iter_fast_sizes::<F, _>(self)
     }
 }
 
@@ -370,7 +443,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
+        default_iter_fast_sizes::<F, _>(self)
     }
 }
 
@@ -391,7 +464,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
+        default_iter_fast_sizes::<F, _>(self)
     }
 }
 
@@ -410,7 +483,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
+        default_iter_fast_sizes::<F, _>(self)
     }
 }
 
@@ -430,7 +503,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
+        default_iter_fast_sizes::<F, _>(self)
     }
 }
 
@@ -450,7 +523,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
+        default_iter_fast_sizes::<F, _>(self)
     }
 }
 
@@ -470,7 +543,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
+        default_iter_fast_sizes::<F, _>(self)
     }
 }
 
@@ -491,7 +564,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
+        default_iter_fast_sizes::<F, _>(self)
     }
 }
 
@@ -511,7 +584,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
+        default_iter_fast_sizes::<F, _>(self)
     }
 }
 
@@ -532,7 +605,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
+        default_iter_fast_sizes::<F, _>(self)
     }
 }
 
@@ -552,7 +625,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
+        default_iter_fast_sizes::<F, _>(self)
     }
 }
 
@@ -572,7 +645,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
+        default_iter_fast_sizes::<F, _>(self)
     }
 }
 
@@ -592,7 +665,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
+        default_iter_fast_sizes::<F, _>(self)
     }
 }
 
@@ -613,7 +686,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        default_iter_fast_sizes::<F, _>(self).map(Sizes::with_stack)
+        default_iter_fast_sizes::<F, _>(self)
     }
 }
 
@@ -636,7 +709,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        default_iter_fast_sizes::<(FX, FY), _>(self).map(Sizes::with_stack)
+        default_iter_fast_sizes::<(FX, FY), _>(self)
     }
 }
 

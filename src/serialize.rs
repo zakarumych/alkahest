@@ -235,7 +235,7 @@ where
 
 /// Serialize value into buffer.
 /// The buffer type controls bytes writing and failing strategy.
-#[inline]
+#[inline(always)]
 pub fn serialize_into<F, T, B>(value: T, mut buffer: B) -> Result<usize, B::Error>
 where
     F: Formula + ?Sized,
@@ -254,25 +254,21 @@ where
     };
 
     match promised {
-        None => <T as Serialize<F>>::serialize(value, &mut sizes, buffer.reborrow())?,
+        None => {
+            <T as Serialize<F>>::serialize(value, &mut sizes, buffer.reborrow())?;
+            buffer.move_to_heap(sizes.heap, sizes.stack, sizes.stack)
+        }
         Some(promised) => {
             match buffer.reserve_heap(reference_size, 0, promised.heap + promised.stack)? {
-                None => {
+                [] => {
                     sizes += serialized_sizes(value);
                 }
-                Some(reserved) => {
+                reserved => {
                     <T as Serialize<F>>::serialize(value, &mut sizes, reserved).unwrap();
                     debug_assert_eq!(sizes.heap, promised.heap + reference_size);
                     debug_assert_eq!(sizes.stack, promised.stack);
                 }
             }
-        }
-    };
-    check_stack::<F, T>(sizes.stack);
-
-    match promised {
-        None => buffer.move_to_heap(sizes.heap, sizes.stack, sizes.stack),
-        Some(promised) => {
             debug_assert_eq!(
                 reference_size + promised.heap,
                 sizes.heap,
@@ -288,10 +284,27 @@ where
                 type_name::<F>()
             );
         }
+    };
+
+    #[cfg(debug_assertions)]
+    {
+        if let Some(max_size) = F::MAX_STACK_SIZE {
+            assert!(
+                sizes.stack <= max_size,
+                "Incorrect `<{} as Serialize<{}>>` implementation. `stack` size is `{}` but must be at most `{}`",
+                type_name::<T>(),
+                type_name::<F>(),
+                sizes.stack,
+                max_size,
+            )
+        };
     }
 
-    if let Some(reserved) = buffer.reserve_heap(0, 0, reference_size)? {
-        write_reference::<F, _>(sizes.stack, sizes.heap + sizes.stack, 0, 0, reserved).unwrap();
+    match buffer.reserve_heap(0, 0, reference_size)? {
+        [] => {}
+        reserved => {
+            write_reference::<F, _>(sizes.stack, sizes.heap + sizes.stack, 0, 0, reserved).unwrap()
+        }
     }
 
     Ok(sizes.heap + sizes.stack)
@@ -400,25 +413,6 @@ where
     sizes.heap + sizes.stack + reference_size
 }
 
-#[inline(always)]
-#[track_caller]
-fn check_stack<F, T>(stack: usize)
-where
-    F: Formula + ?Sized,
-    T: Serialize<F>,
-{
-    if let Some(max_size) = F::MAX_STACK_SIZE {
-        assert!(
-            stack <= max_size,
-            "Incorrect `<{} as Serialize<{}>>` implementation. `stack` size is `{}` but must be at most `{}`",
-            type_name::<T>(),
-            type_name::<F>(),
-            stack,
-            max_size,
-        )
-    };
-}
-
 /// Size hint for serializing a field.
 ///
 /// Use in [`Serialize::size_hint`](Serialize::size_hint) implementation.`
@@ -505,12 +499,15 @@ where
     let old_stack = sizes.stack;
     <T as Serialize<F>>::serialize(value, sizes, buffer.reborrow())?;
 
-    match (last, F::MAX_STACK_SIZE) {
-        (true, None) => {}
-        (true, Some(max_stack)) => {
+    match (last, F::MAX_STACK_SIZE, F::EXACT_SIZE) {
+        (true, None, _) => {}
+        (true, Some(max_stack), false) => {
             debug_assert!(sizes.stack - old_stack <= max_stack);
         }
-        (false, None) => {
+        (true, Some(max_stack), true) => {
+            debug_assert_eq!(sizes.stack - old_stack, max_stack);
+        }
+        (false, None, _) => {
             let size = FixedUsize::truncate_unchecked(sizes.stack - old_stack);
             let res = buffer.write_stack(
                 sizes.heap,
@@ -521,9 +518,12 @@ where
                 unreachable!("Successfully written before");
             };
         }
-        (false, Some(max_stack)) => {
+        (false, Some(max_stack), false) => {
             debug_assert!(sizes.stack - old_stack <= max_stack);
             sizes.stack = old_stack + max_stack;
+        }
+        (false, Some(max_stack), true) => {
+            debug_assert_eq!(sizes.stack - old_stack, max_stack);
         }
     }
 
@@ -565,7 +565,7 @@ where
     Ok(())
 }
 
-#[inline(always)]
+#[cold]
 fn write_ref_slow<F, T, B>(value: T, sizes: &mut Sizes, mut buffer: B) -> Result<usize, B::Error>
 where
     F: Formula + ?Sized,
@@ -599,8 +599,8 @@ where
         None => write_ref_slow(value, sizes, buffer.reborrow())?,
         Some(promised) => {
             match buffer.reserve_heap(sizes.heap, sizes.stack, promised.heap + promised.stack)? {
-                None => write_ref_slow(value, sizes, buffer.reborrow())?,
-                Some(reserved) => {
+                [] => write_ref_slow(value, sizes, buffer.reborrow())?,
+                reserved => {
                     let mut reserved_sizes = Sizes {
                         heap: sizes.heap,
                         stack: 0,
@@ -638,6 +638,7 @@ where
     B: Buffer + ?Sized,
 {
     /// Serialize next element of a slice.
+    #[inline(always)]
     pub fn write_elem<T>(&mut self, value: T) -> Result<(), B::Error>
     where
         T: Serialize<F>,
@@ -653,6 +654,7 @@ where
     }
 
     /// Finishes the slice serialization.
+    #[inline(always)]
     pub fn finish(self) -> Result<(), B::Error> {
         if let Some(0) = <F as Formula>::MAX_STACK_SIZE {
             debug_assert!(<F as Formula>::HEAPLESS);
@@ -667,6 +669,7 @@ where
 ///
 /// Use in [`Serialize::serialize`](Serialize::serialize) implementation
 /// for slice formulas.
+#[inline(always)]
 pub fn slice_writer<'a, F, B>(sizes: &'a mut Sizes, buffer: &'a mut B) -> SliceWriter<'a, F, B>
 where
     F: Formula + ?Sized,
@@ -686,6 +689,7 @@ where
 /// for slice formulas.
 /// Prefer this over `slice_writer` and manual iteration when
 /// got an iterator.
+#[inline]
 pub fn write_slice<F, T, B>(
     mut iter: impl Iterator<Item = T>,
     sizes: &mut Sizes,

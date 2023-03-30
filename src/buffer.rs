@@ -35,15 +35,7 @@ pub trait Buffer {
         heap: usize,
         stack: usize,
         len: usize,
-    ) -> Result<Option<&mut [u8]>, Self::Error>;
-
-    /// Returns true if this buffer is actually `DryBuffer` or similar.
-    /// i.e. all data is discarded.
-    #[doc(hidden)]
-    #[inline(always)]
-    fn is_dry() -> bool {
-        false
-    }
+    ) -> Result<&mut [u8], Self::Error>;
 }
 
 /// No-op buffer that does not write anything.
@@ -79,13 +71,8 @@ impl Buffer for DryBuffer {
         _heap: usize,
         _stack: usize,
         _len: usize,
-    ) -> Result<Option<&mut [u8]>, Infallible> {
-        Ok(None)
-    }
-
-    #[inline(always)]
-    fn is_dry() -> bool {
-        true
+    ) -> Result<&mut [u8], Infallible> {
+        Ok(&mut [])
     }
 }
 
@@ -158,13 +145,13 @@ impl<'a> Buffer for CheckedFixedBuffer<'a> {
         heap: usize,
         stack: usize,
         len: usize,
-    ) -> Result<Option<&mut [u8]>, BufferExhausted> {
+    ) -> Result<&mut [u8], BufferExhausted> {
         debug_assert!(heap + stack <= self.buf.len());
         if self.buf.len() - heap - stack < len {
             return Err(BufferExhausted);
         }
         let end = heap + len;
-        Ok(Some(&mut self.buf[..end]))
+        Ok(&mut self.buf[..end])
     }
 }
 
@@ -201,10 +188,10 @@ impl<'a> Buffer for &'a mut [u8] {
         heap: usize,
         stack: usize,
         len: usize,
-    ) -> Result<Option<&mut [u8]>, Infallible> {
+    ) -> Result<&mut [u8], Infallible> {
         debug_assert!(heap + stack <= self.len());
         let end = heap + len;
-        Ok(Some(&mut self[..end]))
+        Ok(&mut self[..end])
     }
 }
 
@@ -293,7 +280,7 @@ impl<'a> Buffer for MaybeFixedBuffer<'a> {
         heap: usize,
         stack: usize,
         len: usize,
-    ) -> Result<Option<&mut [u8]>, BufferSizeRequired> {
+    ) -> Result<&mut [u8], BufferSizeRequired> {
         if !*self.exhausted {
             debug_assert!(heap + stack <= self.buf.len());
             if self.buf.len() - heap - stack < len {
@@ -302,10 +289,10 @@ impl<'a> Buffer for MaybeFixedBuffer<'a> {
         }
 
         match *self.exhausted {
-            true => Ok(None),
+            true => Ok(&mut []),
             false => {
                 let end = heap + len;
-                Ok(Some(&mut self.buf[..end]))
+                Ok(&mut self.buf[..end])
             }
         }
     }
@@ -386,9 +373,9 @@ impl<'a> Buffer for VecBuffer<'a> {
         heap: usize,
         stack: usize,
         len: usize,
-    ) -> Result<Option<&mut [u8]>, Infallible> {
+    ) -> Result<&mut [u8], Infallible> {
         debug_assert!(heap + stack <= self.buf.len());
         self.reserve(heap, stack, len);
-        Ok(Some(&mut self.buf[..heap + len]))
+        Ok(&mut self.buf[..heap + len])
     }
 }

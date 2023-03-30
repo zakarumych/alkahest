@@ -3,7 +3,7 @@ use core::mem::size_of;
 use crate::{
     buffer::Buffer,
     formula::{BareFormula, Formula},
-    iter::default_iter_fast_sizes,
+    iter::ref_iter_fast_sizes,
     serialize::{write_slice, Serialize, Sizes},
     size::FixedUsize,
 };
@@ -28,6 +28,7 @@ where
     F: Formula,
     &'ser T: Serialize<F>,
 {
+    #[inline(always)]
     fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
         Self: Sized,
@@ -36,9 +37,8 @@ where
         write_slice(self.iter(), sizes, buffer)
     }
 
+    #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        Some(Sizes::with_stack(default_iter_fast_sizes::<F, _>(
-            &self.iter(),
-        )?))
+        ref_iter_fast_sizes::<F, _, _>(self.iter())
     }
 }

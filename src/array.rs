@@ -2,7 +2,8 @@ use crate::{
     buffer::Buffer,
     deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::{repeat_size, BareFormula, Formula},
-    serialize::{field_size_hint, formula_fast_sizes, write_slice, Serialize, Sizes},
+    iter::{owned_iter_fast_sizes, ref_iter_fast_sizes},
+    serialize::{write_slice, Serialize, Sizes},
 };
 
 impl<F, const N: usize> Formula for [F; N]
@@ -69,17 +70,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        if let Some(sizes) = formula_fast_sizes::<[F]>() {
-            return Some(sizes);
-        }
-        if N <= 4 {
-            let mut sizes = Sizes::ZERO;
-            for elem in self.iter() {
-                sizes += field_size_hint::<F>(elem, false)?;
-            }
-            return Some(sizes);
-        }
-        None
+        owned_iter_fast_sizes::<F, _, _>(self.iter())
     }
 }
 
@@ -98,17 +89,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        if let Some(sizes) = formula_fast_sizes::<[F]>() {
-            return Some(sizes);
-        }
-        if N <= 4 {
-            let mut sizes = Sizes::ZERO;
-            for elem in self.iter() {
-                sizes += field_size_hint::<F>(&elem, false)?;
-            }
-            return Some(sizes);
-        }
-        None
+        ref_iter_fast_sizes::<F, _, _>(self.iter())
     }
 }
 

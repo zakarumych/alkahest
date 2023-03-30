@@ -5,7 +5,7 @@ use crate::{
     bytes::Bytes,
     deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::{reference_size, Formula},
-    iter::{default_iter_fast_sizes, deserialize_extend_iter},
+    iter::{deserialize_extend_iter, owned_iter_fast_sizes, ref_iter_fast_sizes},
     reference::Ref,
     serialize::{write_bytes, write_ref, write_slice, Serialize, Sizes},
 };
@@ -74,7 +74,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        default_iter_fast_sizes::<F, _>(&self.iter()).map(Sizes::with_stack)
+        owned_iter_fast_sizes::<F, _, _>(self.iter())
     }
 }
 
@@ -93,7 +93,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        default_iter_fast_sizes::<F, _>(&self.iter()).map(Sizes::with_stack)
+        ref_iter_fast_sizes::<F, _, _>(self.iter())
     }
 }
 

@@ -47,39 +47,22 @@ where
         };
         let size: usize = size.into();
 
-        if B::is_dry() {
-            // Nothing else to do for buffers that discard all data.
-            sizes.heap += size;
-            sizes.stack += size_of::<[FixedUsize; 2]>();
-            return Ok(());
-        }
-
         match buffer.reserve_heap(sizes.heap, sizes.stack, size) {
             Err(err) => return Err(err),
-            Ok(None) => {
-                let bytes = match bincode::Options::serialize(options, &self) {
-                    Ok(bytes) => bytes,
-                    Err(err) => panic!("Bincode serialization error: {}", err),
-                };
-                debug_assert_eq!(size, bytes.len());
-                buffer.write_stack(sizes.heap, sizes.stack, &bytes)?;
-                buffer.move_to_heap(sizes.heap, sizes.stack + bytes.len(), bytes.len());
-                sizes.heap += bytes.len();
-                Ok(())
-            }
-            Ok(Some(bytes)) => {
+            Ok([]) => {} // Nothing to do.
+            Ok(bytes) => {
                 let mut cursor = Cursor::new(&mut bytes[sizes.heap..]);
                 if let Err(err) = bincode::Options::serialize_into(options, &mut cursor, &self) {
                     panic!("Bincode serialization error: {}", err);
                 };
                 assert_eq!(cursor.position(), size as u64);
-                sizes.heap += size;
-
-                write_reference::<Bincode, B>(size, sizes.heap, sizes.heap, sizes.stack, buffer)?;
-                sizes.stack += reference_size::<Bincode>();
-                Ok(())
             }
         }
+
+        sizes.heap += size;
+        write_reference::<Bincode, B>(size, sizes.heap, sizes.heap, sizes.stack, buffer)?;
+        sizes.stack += reference_size::<Bincode>();
+        Ok(())
     }
 
     #[inline(always)]
