@@ -15,7 +15,7 @@ fn de_lifetime(formula: &mut Formula, generics: &syn::Generics) -> syn::Lifetime
             let lifetime = default_de_lifetime();
             let bounds: syn::punctuated::Punctuated<_, syn::Token![+]> =
                 generics.lifetimes().map(|lt| lt.lifetime.clone()).collect();
-            let de = syn::LifetimeDef {
+            let de = syn::LifetimeParam {
                 attrs: Vec::new(),
                 lifetime: lifetime.clone(),
                 colon_token: (!bounds.is_empty()).then(Default::default),

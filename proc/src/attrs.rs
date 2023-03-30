@@ -1,5 +1,6 @@
 use proc_easy::{EasyArgument, EasyAttributes, EasyPeek, EasyToken};
-use proc_macro2::Span;
+use proc_macro2::{Span, TokenStream};
+use quote::ToTokens;
 use syn::{
     parse::{Lookahead1, Parse, ParseStream},
     spanned::Spanned,
@@ -83,19 +84,16 @@ impl Parse for FormulaRef {
     }
 }
 
-impl Spanned for FormulaRef {
-    fn span(&self) -> Span {
-        let mut span = self.path.span();
-
+impl ToTokens for FormulaRef {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
         if let Some(params) = &self.params {
-            span = params.token.span().join(span).unwrap_or(span);
-        };
-
-        if let Some(where_clause) = &self.where_clause {
-            span = span.join(where_clause.span()).unwrap_or(span);
+            params.token.to_tokens(tokens);
+            params.generics.to_tokens(tokens);
         }
-
-        span
+        self.path.to_tokens(tokens);
+        if let Some(where_clause) = &self.where_clause {
+            where_clause.to_tokens(tokens);
+        }
     }
 }
 
