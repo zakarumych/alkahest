@@ -390,3 +390,6 @@ impl Deserialize<'_, FixedIsize> for isize {
         Ok(())
     }
 }
+
+/// Stack space occupied by sizes and addresses.
+pub const SIZE_STACK: usize = size_of::<FixedUsize>();

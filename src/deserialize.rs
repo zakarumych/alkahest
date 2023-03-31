@@ -1,8 +1,8 @@
-use core::{iter::FusedIterator, marker::PhantomData, mem::size_of, str::Utf8Error};
+use core::{iter::FusedIterator, marker::PhantomData, str::Utf8Error};
 
 use crate::{
     formula::{reference_size, unwrap_size, Formula},
-    size::{FixedIsizeType, FixedUsize, FixedUsizeType},
+    size::{FixedIsizeType, FixedUsize, FixedUsizeType, SIZE_STACK},
 };
 
 /// Error that can occur during deserialization.
@@ -146,6 +146,28 @@ impl<'de> Deserializer<'de> {
         <T as Deserialize<'de, F>>::deserialize(self.sub(stack)?)
     }
 
+    /// Reads and deserializes field from the back of input buffer.
+    /// Advances the input buffer.
+    #[inline(always)]
+    pub fn read_back_value<F, T>(&mut self) -> Result<T, DeserializeError>
+    where
+        F: Formula + ?Sized,
+        T: Deserialize<'de, F>,
+    {
+        let stack = unwrap_size(F::MAX_STACK_SIZE);
+
+        if self.stack < stack {
+            self.stack = 0;
+            return Err(DeserializeError::WrongLength);
+        }
+
+        let input_back = &self.input[..self.input.len() - self.stack + stack];
+        self.stack -= stack;
+
+        let sub = Deserializer::new_unchecked(stack, input_back);
+        <T as Deserialize<'de, F>>::deserialize(sub)
+    }
+
     /// Reads and deserializes field from the input buffer in-place.
     #[inline(always)]
     pub fn read_in_place<F, T>(&mut self, place: &mut T, last: bool) -> Result<(), DeserializeError>
@@ -200,9 +222,10 @@ impl<'de> Deserializer<'de> {
                 .clone()
                 .read_value::<FixedUsize, usize>(true)
                 .unwrap_or(0),
-            Some(max_stack) => (self.stack - 1) / max_stack + 1,
+            Some(max_stack) => self.stack / max_stack,
         };
 
+        assert!(self.stack <= self.input.len());
         DeIter {
             de: self,
             marker: PhantomData,
@@ -218,13 +241,13 @@ impl<'de> Deserializer<'de> {
         F: Formula + ?Sized,
         T: Deserialize<'de, F>,
     {
-        let upper = match (F::MAX_STACK_SIZE, self.stack) {
-            (_, 0) => 0,
-            (None, _) => 1 + (self.stack - 1) / size_of::<FixedUsize>(),
-            (Some(0), _) => self.read_value::<FixedUsize, usize>(true).unwrap_or(0),
-            (Some(max_stack), _) => (self.stack - 1) / max_stack + 1,
+        let upper = match F::MAX_STACK_SIZE {
+            None => self.stack / SIZE_STACK,
+            Some(0) => self.read_value::<FixedUsize, usize>(true).unwrap_or(0),
+            Some(max_stack) => self.stack / max_stack,
         };
 
+        assert!(self.stack <= self.input.len());
         DeIter {
             de: self,
             marker: PhantomData,
@@ -289,12 +312,17 @@ where
     /// Returns true if no items remains in the iterator.
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
-        self.upper == 0
-            || match (F::MAX_STACK_SIZE, self.de.stack) {
-                (None, stack) => stack < size_of::<FixedUsize>(),
-                (Some(0), _) => false,
-                (Some(max_stack), _) => self.de.stack < max_stack,
-            }
+        self.upper == 0 || self.stack_empty()
+    }
+
+    /// Returns true if no items remains in the iterator.
+    #[inline(always)]
+    fn stack_empty(&self) -> bool {
+        match F::MAX_STACK_SIZE {
+            None => self.de.stack < SIZE_STACK,
+            Some(0) => false,
+            Some(max_stack) => self.de.stack < max_stack,
+        }
     }
 }
 
@@ -327,7 +355,7 @@ where
     #[inline(always)]
     fn size_hint(&self) -> (usize, Option<usize>) {
         match F::MAX_STACK_SIZE {
-            None => (0, Some(self.upper)),
+            None => ((self.de.stack >= SIZE_STACK) as usize, Some(self.upper)),
             Some(_) => (self.upper, Some(self.upper)),
         }
     }
@@ -368,19 +396,51 @@ where
     }
 
     #[inline(always)]
-    fn fold<B, Fun>(mut self, init: B, mut f: Fun) -> B
+    fn fold<B, Fun>(mut self, mut init: B, mut f: Fun) -> B
     where
         Fun: FnMut(B, Result<T, DeserializeError>) -> B,
     {
-        let mut acc = init;
-        loop {
-            if self.is_empty() {
-                return acc;
+        match F::MAX_STACK_SIZE {
+            None => loop {
+                if self.de.stack < SIZE_STACK {
+                    break;
+                }
+                let sub = Deserializer::new_unchecked(SIZE_STACK, self.de.input);
+                self.de.input = &self.de.input[..self.de.input.len() - SIZE_STACK];
+
+                let stack = match <usize as Deserialize<'de, FixedUsize>>::deserialize(sub) {
+                    Ok(stack) => stack,
+                    Err(err) => {
+                        self.de.stack = 0;
+                        return f(init, Err(err));
+                    }
+                };
+                let sub = Deserializer::new_unchecked(stack, self.de.input);
+                self.de.input = &self.de.input[..self.de.input.len() - stack];
+                self.de.stack -= SIZE_STACK * stack;
+
+                let result = <T as Deserialize<'de, F>>::deserialize(sub);
+                init = f(init, result);
+            },
+            Some(0) => {
+                let sub = Deserializer::new_unchecked(0, self.de.input);
+                for _ in 0..self.upper {
+                    let result = <T as Deserialize<'de, F>>::deserialize(sub.clone());
+                    init = f(init, result);
+                }
             }
-            let result = self.de.read_value::<F, T>(false);
-            self.upper -= 1;
-            acc = f(acc, result);
+            Some(stack) => {
+                assert_eq!(self.de.stack / stack, self.upper);
+                for _ in 0..self.upper {
+                    let sub = Deserializer::new_unchecked(stack, self.de.input);
+                    self.de.input = &self.de.input[..self.de.input.len() - stack];
+
+                    let result = <T as Deserialize<'de, F>>::deserialize(sub);
+                    init = f(init, result);
+                }
+            }
         }
+        init
     }
 }
 
@@ -402,16 +462,9 @@ where
         if Self::is_empty(self) {
             return None;
         }
-
-        let last = &self.de.input[..self.de.input.len() - self.de.stack + Self::ELEMENT_SIZE];
-        self.de.stack -= Self::ELEMENT_SIZE;
+        let item = self.de.read_back_value::<F, T>();
         self.upper -= 1;
-
-        Some(
-            Deserializer::new(Self::ELEMENT_SIZE, last)
-                .unwrap()
-                .read_value::<F, T>(false),
-        )
+        Some(item)
     }
 
     #[inline(always)]
@@ -428,26 +481,31 @@ where
     }
 
     #[inline(always)]
-    fn rfold<B, Fun>(mut self, init: B, mut f: Fun) -> B
+    fn rfold<B, Fun>(self, mut init: B, mut f: Fun) -> B
     where
         Fun: FnMut(B, Result<T, DeserializeError>) -> B,
     {
-        let mut accum = init;
-        loop {
-            if Self::is_empty(&self) {
-                return accum;
+        match Self::ELEMENT_SIZE {
+            0 => {
+                let sub = Deserializer::new_unchecked(0, self.de.input);
+                for _ in 0..self.upper {
+                    let result = <T as Deserialize<'de, F>>::deserialize(sub.clone());
+                    init = f(init, result);
+                }
             }
+            stack => {
+                assert_eq!(self.de.stack / stack, self.upper);
+                let mut end = self.de.input.len() - stack * self.upper;
+                for _ in 0..self.upper {
+                    end += stack;
+                    let sub = Deserializer::new_unchecked(stack, &self.de.input[..end]);
 
-            let last = &self.de.input[..self.de.input.len() - self.de.stack + Self::ELEMENT_SIZE];
-            self.de.stack -= Self::ELEMENT_SIZE;
-            self.upper -= 1;
-
-            let result = Deserializer::new(Self::ELEMENT_SIZE, last)
-                .unwrap()
-                .read_value::<F, T>(false);
-
-            accum = f(accum, result);
+                    let result = <T as Deserialize<'de, F>>::deserialize(sub);
+                    init = f(init, result);
+                }
+            }
         }
+        init
     }
 }
 
@@ -479,13 +537,10 @@ where
     match F::MAX_STACK_SIZE {
         Some(0) => Some(0),
         _ => {
-            if input.len() < size_of::<FixedUsize>() {
+            if input.len() < SIZE_STACK {
                 None
             } else {
-                let mut de = Deserializer::new_unchecked(
-                    size_of::<FixedUsize>(),
-                    &input[..size_of::<FixedUsize>()],
-                );
+                let mut de = Deserializer::new_unchecked(SIZE_STACK, &input[..SIZE_STACK]);
                 let address = de.read_value::<FixedUsize, usize>(false).unwrap();
                 Some(address)
             }

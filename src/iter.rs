@@ -1,11 +1,9 @@
-use core::mem::size_of;
-
 use crate::{
     buffer::Buffer,
-    deserialize::{Deserialize, DeserializeError, Deserializer},
+    deserialize::DeserializeError,
     formula::Formula,
     serialize::{field_size_hint, write_slice, Serialize, Sizes},
-    size::FixedUsize,
+    size::{FixedUsize, SIZE_STACK},
 };
 
 const ITER_UPPER: usize = 8;
@@ -19,7 +17,7 @@ where
     I::Item: Serialize<F>,
 {
     match (F::HEAPLESS, F::MAX_STACK_SIZE) {
-        (true, Some(0)) => Some(Sizes::with_stack(size_of::<FixedUsize>())),
+        (true, Some(0)) => Some(Sizes::with_stack(SIZE_STACK)),
         (true, Some(max_stack)) => {
             let (lower, upper) = iter.size_hint();
             match upper {
@@ -44,7 +42,7 @@ where
     T: Serialize<F>,
 {
     match (F::HEAPLESS, F::MAX_STACK_SIZE) {
-        (true, Some(0)) => Some(Sizes::with_stack(size_of::<FixedUsize>())),
+        (true, Some(0)) => Some(Sizes::with_stack(SIZE_STACK)),
         (true, Some(max_stack)) => {
             let (lower, upper) = iter.size_hint();
             match upper {
@@ -79,7 +77,7 @@ where
     T: Serialize<F>,
 {
     match (F::HEAPLESS, F::MAX_STACK_SIZE) {
-        (true, Some(0)) => Some(Sizes::with_stack(size_of::<FixedUsize>())),
+        (true, Some(0)) => Some(Sizes::with_stack(SIZE_STACK)),
         (true, Some(max_stack)) => {
             let (lower, upper) = iter.size_hint();
             match upper {
@@ -714,13 +712,12 @@ where
 }
 
 /// Deserialize `FromIterator` value from slice formula.
-pub fn deserialize_from_iter<'de, F, A, T>(de: Deserializer<'de>) -> Result<T, DeserializeError>
+pub fn deserialize_from_iter<'de, A, T>(
+    mut iter: impl Iterator<Item = Result<A, DeserializeError>>,
+) -> Result<T, DeserializeError>
 where
-    F: Formula + ?Sized,
-    A: Deserialize<'de, F>,
     T: FromIterator<A>,
 {
-    let mut iter = de.into_unsized_iter::<F, A>();
     let mut err = None;
     let value = T::from_iter(core::iter::from_fn(|| match iter.next() {
         None => None,
@@ -738,29 +735,22 @@ where
 }
 
 /// Deserialize into `Extend` value from slice formula.
-#[inline]
-pub fn deserialize_extend_iter<'de, F, A, T>(
+#[inline(always)]
+pub fn deserialize_extend_iter<'de, A, T>(
     value: &mut T,
-    de: Deserializer<'de>,
+    mut iter: impl Iterator<Item = Result<A, DeserializeError>>,
 ) -> Result<(), DeserializeError>
 where
-    F: Formula + ?Sized,
-    A: Deserialize<'de, F>,
     T: Extend<A>,
 {
-    let mut iter = de.into_unsized_iter::<F, A>();
-    let mut err = None;
+    let mut result = Ok(());
     value.extend(core::iter::from_fn(|| match iter.next() {
         None => None,
         Some(Ok(elem)) => Some(elem),
-        Some(Err(e)) => {
-            err = Some(e);
+        Some(Err(err)) => {
+            result = Err(err);
             None
         }
     }));
-
-    match err {
-        None => Ok(()),
-        Some(e) => Err(e),
-    }
+    result
 }

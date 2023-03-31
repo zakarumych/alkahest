@@ -1,11 +1,9 @@
-use core::mem::size_of;
-
 use crate::{
     buffer::Buffer,
     formula::{BareFormula, Formula},
     iter::ref_iter_fast_sizes,
     serialize::{write_slice, Serialize, Sizes},
-    size::FixedUsize,
+    size::SIZE_STACK,
 };
 
 impl<F> Formula for [F]
@@ -13,7 +11,7 @@ where
     F: Formula,
 {
     const MAX_STACK_SIZE: Option<usize> = match F::MAX_STACK_SIZE {
-        Some(0) => Some(size_of::<FixedUsize>()),
+        Some(0) => Some(SIZE_STACK),
         Some(_) => None,
         None => None,
     };

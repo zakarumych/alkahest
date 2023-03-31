@@ -1,9 +1,9 @@
-use core::{any::type_name, marker::PhantomData, mem::size_of, ops};
+use core::{any::type_name, marker::PhantomData, ops};
 
 use crate::{
     buffer::*,
     formula::{reference_size, BareFormula, Formula},
-    size::FixedUsize,
+    size::{FixedUsize, SIZE_STACK},
 };
 
 /// Heap and stack sizes.
@@ -465,11 +465,7 @@ where
             buffer.write_stack(heap, stack, &address.to_le_bytes())?;
         }
         _ => {
-            buffer.write_stack(
-                heap,
-                stack + size_of::<FixedUsize>(),
-                &address.to_le_bytes(),
-            )?;
+            buffer.write_stack(heap, stack + SIZE_STACK, &address.to_le_bytes())?;
             buffer.write_stack(heap, stack, &size.to_le_bytes())?;
         }
     }
@@ -492,8 +488,8 @@ where
     B: Buffer,
 {
     if !last && F::MAX_STACK_SIZE.is_none() {
-        buffer.write_stack(sizes.heap, sizes.stack, &[0; size_of::<FixedUsize>()])?;
-        sizes.stack += size_of::<FixedUsize>();
+        buffer.write_stack(sizes.heap, sizes.stack, &[0; SIZE_STACK])?;
+        sizes.stack += SIZE_STACK;
     }
 
     let old_stack = sizes.stack;
@@ -509,11 +505,7 @@ where
         }
         (false, None, _) => {
             let size = FixedUsize::truncate_unchecked(sizes.stack - old_stack);
-            let res = buffer.write_stack(
-                sizes.heap,
-                old_stack - size_of::<FixedUsize>(),
-                &size.to_le_bytes(),
-            );
+            let res = buffer.write_stack(sizes.heap, old_stack - SIZE_STACK, &size.to_le_bytes());
             if res.is_err() {
                 unreachable!("Successfully written before");
             };

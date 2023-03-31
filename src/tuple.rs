@@ -1,11 +1,9 @@
-use core::mem::size_of;
-
 use crate::{
     buffer::Buffer,
     deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::{sum_size, BareFormula, Formula},
     serialize::{field_size_hint, write_field, Serialize, Sizes},
-    size::FixedUsize,
+    size::SIZE_STACK,
 };
 
 impl Formula for () {
@@ -132,7 +130,7 @@ macro_rules! formula_serialize {
                 let ($($b,)* $bt,) = self;
                 $(
                     if $a::MAX_STACK_SIZE.is_none() {
-                        sizes.add_stack(size_of::<FixedUsize>());
+                        sizes.add_stack(SIZE_STACK);
                     }
                     sizes += field_size_hint::<$a>($b, false)?;
                 )*
@@ -171,7 +169,7 @@ macro_rules! formula_serialize {
                 let ($($b,)* $bt,) = self;
                 $(
                     if $a::MAX_STACK_SIZE.is_none() {
-                        sizes.add_stack(size_of::<FixedUsize>());
+                        sizes.add_stack(SIZE_STACK);
                     }
                     sizes += field_size_hint::<$a>(&$b, false)?;
                 )*

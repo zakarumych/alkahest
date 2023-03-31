@@ -104,13 +104,20 @@ where
 {
     #[inline(always)]
     fn deserialize(de: Deserializer<'de>) -> Result<Self, DeserializeError> {
-        de.into_unsized_iter::<F, T>().collect()
+        let iter = de.into_unsized_iter();
+        let (lower, _) = Iterator::size_hint(&iter);
+        let mut vec = VecDeque::with_capacity(lower);
+        deserialize_extend_iter(&mut vec, iter)?;
+        Ok(vec)
     }
 
     #[inline(always)]
     fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), DeserializeError> {
         self.clear();
-        deserialize_extend_iter::<F, T, Self>(self, de)
+        let iter = de.into_unsized_iter();
+        let (lower, _) = Iterator::size_hint(&iter);
+        self.reserve(lower);
+        deserialize_extend_iter(self, iter)
     }
 }
 
@@ -121,13 +128,16 @@ where
 {
     #[inline(always)]
     fn deserialize(de: Deserializer<'de>) -> Result<Self, DeserializeError> {
-        de.into_unsized_iter::<F, T>().collect()
+        let mut vec = VecDeque::with_capacity(N);
+        deserialize_extend_iter(&mut vec, de.into_unsized_iter())?;
+        Ok(vec)
     }
 
     #[inline(always)]
     fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), DeserializeError> {
         self.clear();
-        deserialize_extend_iter::<F, T, Self>(self, de)
+        self.reserve(N);
+        deserialize_extend_iter(self, de.into_unsized_iter())
     }
 }
 

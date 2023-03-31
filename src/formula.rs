@@ -1,6 +1,4 @@
-use core::mem::size_of;
-
-use crate::size::FixedUsize;
+use crate::size::SIZE_STACK;
 
 /// Trait for data formulas.
 /// Types that implement this trait are used as markers
@@ -179,7 +177,7 @@ where
 {
     match (F::MAX_STACK_SIZE, F::EXACT_SIZE) {
         (Some(0), _) => 0,
-        (Some(_), true) => size_of::<FixedUsize>(),
-        _ => size_of::<[FixedUsize; 2]>(),
+        (Some(_), true) => SIZE_STACK,
+        _ => SIZE_STACK * 2,
     }
 }
