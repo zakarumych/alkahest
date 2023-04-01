@@ -314,6 +314,8 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         let mut exact = true;
                         let mut common_size = None;
                         #(
+                            #(exact &= <#all_field_types as ::alkahest::private::Formula>::EXACT_SIZE;)*
+
                             let var_size = {
                                 #[allow(unused_mut)]
                                 let mut max_size = Some(0);
