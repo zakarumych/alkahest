@@ -18,7 +18,7 @@ pub struct Bincode;
 
 impl Formula for Bincode {
     const MAX_STACK_SIZE: Option<usize> = Some(size_of::<[FixedUsizeType; 2]>());
-    const EXACT_SIZE: bool = false;
+    const EXACT_SIZE: bool = true;
     const HEAPLESS: bool = false;
 }
 
@@ -116,8 +116,8 @@ where
 pub struct Bincoded<T>(PhantomData<fn(&T) -> &T>);
 
 impl<T> Formula for Bincoded<T> {
-    const MAX_STACK_SIZE: Option<usize> = None;
-    const EXACT_SIZE: bool = false;
+    const MAX_STACK_SIZE: Option<usize> = Some(size_of::<[FixedUsizeType; 2]>());
+    const EXACT_SIZE: bool = true;
     const HEAPLESS: bool = false;
 }
 

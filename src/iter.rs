@@ -6,7 +6,7 @@ use crate::{
     size::{FixedUsize, SIZE_STACK},
 };
 
-const ITER_UPPER: usize = 8;
+const ITER_UPPER: usize = 4;
 
 /// Returns the size of the serialized data if it can be determined fast.
 #[inline(always)]
@@ -38,41 +38,6 @@ where
 pub fn ref_iter_fast_sizes<'a, F, I, T: 'a>(iter: I) -> Option<Sizes>
 where
     F: Formula + ?Sized,
-    I: Iterator<Item = T>,
-    T: Serialize<F>,
-{
-    match (F::HEAPLESS, F::MAX_STACK_SIZE) {
-        (true, Some(0)) => Some(Sizes::with_stack(SIZE_STACK)),
-        (true, Some(max_stack)) => {
-            let (lower, upper) = iter.size_hint();
-            match upper {
-                Some(upper) if upper == lower => {
-                    // Expect this to be the truth.
-                    // If not, serialization will fail or produce incorrect results.
-                    Some(Sizes::with_stack(lower * max_stack))
-                }
-                _ => None,
-            }
-        }
-        _ => {
-            let (_lower, upper) = iter.size_hint();
-            if upper.map_or(false, |upper| upper <= ITER_UPPER) {
-                let mut sizes = Sizes::ZERO;
-                for elem in iter {
-                    sizes += field_size_hint::<F>(&elem, false)?;
-                }
-                return Some(sizes);
-            }
-            None
-        }
-    }
-}
-
-/// Returns the size of the serialized data if it can be determined fast.
-#[inline(always)]
-pub fn owned_iter_fast_sizes<'a, F, I, T: 'a>(iter: I) -> Option<Sizes>
-where
-    F: Formula + ?Sized,
     I: Iterator<Item = &'a T>,
     T: Serialize<F>,
 {
@@ -95,6 +60,41 @@ where
                 let mut sizes = Sizes::ZERO;
                 for elem in iter {
                     sizes += field_size_hint::<F>(elem, false)?;
+                }
+                return Some(sizes);
+            }
+            None
+        }
+    }
+}
+
+/// Returns the size of the serialized data if it can be determined fast.
+#[inline(always)]
+pub fn owned_iter_fast_sizes<F, I, T>(iter: I) -> Option<Sizes>
+where
+    F: Formula + ?Sized,
+    I: Iterator<Item = T>,
+    T: Serialize<F>,
+{
+    match (F::HEAPLESS, F::MAX_STACK_SIZE) {
+        (true, Some(0)) => Some(Sizes::with_stack(SIZE_STACK)),
+        (true, Some(max_stack)) => {
+            let (lower, upper) = iter.size_hint();
+            match upper {
+                Some(upper) if upper == lower => {
+                    // Expect this to be the truth.
+                    // If not, serialization will fail or produce incorrect results.
+                    Some(Sizes::with_stack(lower * max_stack))
+                }
+                _ => None,
+            }
+        }
+        _ => {
+            let (_lower, upper) = iter.size_hint();
+            if upper.map_or(false, |upper| upper <= ITER_UPPER) {
+                let mut sizes = Sizes::ZERO;
+                for elem in iter {
+                    sizes += field_size_hint::<F>(&elem, false)?;
                 }
                 return Some(sizes);
             }

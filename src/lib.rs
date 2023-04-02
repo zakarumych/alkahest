@@ -50,7 +50,7 @@ mod string;
 mod bincoded;
 
 pub use crate::{
-    buffer::{BufferExhausted, BufferSizeRequired},
+    buffer::BufferExhausted,
     bytes::Bytes,
     deserialize::{
         deserialize, deserialize_in_place, value_size, DeIter, Deserialize, DeserializeError,
@@ -60,7 +60,10 @@ pub use crate::{
     lazy::Lazy,
     r#as::As,
     reference::Ref,
-    serialize::{serialize, serialize_or_size, serialize_unchecked, serialized_size, Serialize},
+    serialize::{
+        serialize, serialize_or_size, serialize_unchecked, serialized_size, BufferSizeRequired,
+        Serialize,
+    },
     size::{FixedIsize, FixedUsize},
     skip::Skip,
     vlq::Vlq,
@@ -84,8 +87,9 @@ pub mod advanced {
         formula::{reference_size, BareFormula},
         iter::{default_iter_fast_sizes, deserialize_extend_iter, deserialize_from_iter},
         serialize::{
-            field_size_hint, formula_fast_sizes, slice_writer, write_bytes, write_exact_size_field,
-            write_field, write_ref, write_reference, write_slice, Sizes, SliceWriter,
+            field_size_hint, formula_fast_sizes, slice_writer, write_array, write_bytes,
+            write_exact_size_field, write_field, write_ref, write_reference, write_slice, Sizes,
+            SliceWriter,
         },
         size::{FixedIsize, FixedIsizeType},
     };

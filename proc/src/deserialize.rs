@@ -297,7 +297,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                             let #bound_names = with_formula.read_field(&mut de, #field_count == 1 + #field_ids)?;
                         )*
                         // #consume_tail
-                        de.finish()?;
+                        // de.finish()?;
 
                         let value = #ident #bind_names;
                         ::alkahest::private::Result::Ok(value)
@@ -317,7 +317,8 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                             with_formula.read_in_place(#bound_names, &mut de, #field_count == 1 + #field_ids)?;
                         )*
                         // #consume_tail
-                        de.finish()
+                        // de.finish()?;
+                        ::alkahest::private::Result::Ok(())
                     }
                 }
             })
@@ -496,7 +497,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                         let #bound_names = with_formula.read_field(&mut de, #field_counts == 1 + #field_ids)?;
                                     )*
                                     // #consume_tail
-                                    de.finish()?;
+                                    // de.finish()?;
                                     ::alkahest::private::Result::Ok(#ident::#variant_names #bind_names)
                                 }
                             )*
@@ -521,7 +522,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                         with_formula.read_in_place(#bound_names, &mut de, #field_counts == 1 + #field_ids)?;
                                     )*
                                     // #consume_tail
-                                    de.finish()?;
+                                    // de.finish()?;
                                     ::alkahest::private::Result::Ok(())
                                 }
                             )*
@@ -536,7 +537,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                                         let #bound_names = with_formula.read_field(&mut de, #field_counts == 1 + #field_ids)?;
                                     )*
                                     // #consume_tail
-                                    de.finish()?;
+                                    // de.finish()?;
                                     *me = #ident::#variant_names #bind_names;
                                     ::alkahest::private::Result::Ok(())
                                 }

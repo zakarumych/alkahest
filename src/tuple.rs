@@ -88,7 +88,7 @@ macro_rules! formula_serialize {
                 size
             };
 
-            const EXACT_SIZE: bool = $(<$a as Formula>::EXACT_SIZE &&)* <$at as Formula>::EXACT_SIZE;
+            const EXACT_SIZE: bool = <$at as Formula>::EXACT_SIZE;
             const HEAPLESS: bool = $(<$a as Formula>::HEAPLESS &&)* <$at as Formula>::HEAPLESS;
         }
 
@@ -196,7 +196,7 @@ macro_rules! formula_serialize {
                     let $b = de.read_value::<$a, $b>(false)?;
                 )*
                 let $bt = de.read_value::<$at, $bt>(true)?;
-                de.finish()?;
+                // de.finish()?;
 
                 let value = ($($b,)* $bt,);
                 Ok(value)
@@ -212,7 +212,7 @@ macro_rules! formula_serialize {
                     de.read_in_place::<$a, $b>($b, false)?;
                 )*
                 de.read_in_place::<$at, $bt>($bt, true)?;
-                de.finish()?;
+                // de.finish()?;
 
                 Ok(())
             }

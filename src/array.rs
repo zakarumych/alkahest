@@ -3,7 +3,7 @@ use crate::{
     deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::{repeat_size, BareFormula, Formula},
     iter::{owned_iter_fast_sizes, ref_iter_fast_sizes},
-    serialize::{write_slice, Serialize, Sizes},
+    serialize::{write_array, write_slice, Serialize, Sizes},
 };
 
 impl<F, const N: usize> Formula for [F; N]
@@ -11,7 +11,7 @@ where
     F: Formula,
 {
     const MAX_STACK_SIZE: Option<usize> = repeat_size(F::MAX_STACK_SIZE, N);
-    const EXACT_SIZE: bool = F::EXACT_SIZE;
+    const EXACT_SIZE: bool = true; // All elements are padded.
     const HEAPLESS: bool = F::HEAPLESS;
 }
 
@@ -27,12 +27,12 @@ where
     where
         B: Buffer,
     {
-        <Self as Serialize<[F]>>::serialize(self, sizes, buffer)
+        write_array(self.into_iter(), sizes, buffer)
     }
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        <Self as Serialize<[F]>>::size_hint(self)
+        ref_array_fast_sizes::<F, _, _>(self.iter())
     }
 }
 
@@ -46,12 +46,12 @@ where
     where
         B: Buffer,
     {
-        <Self as Serialize<[F]>>::serialize(self, sizes, buffer)
+        write_array(self.iter(), sizes, buffer)
     }
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        <Self as Serialize<[F]>>::size_hint(self)
+        owned_array_fast_sizes::<F, _, _>(self.iter())
     }
 }
 
@@ -70,7 +70,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        owned_iter_fast_sizes::<F, _, _>(self.iter())
+        ref_iter_fast_sizes::<F, _, _>(self.iter())
     }
 }
 
@@ -89,7 +89,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        ref_iter_fast_sizes::<F, _, _>(self.iter())
+        owned_iter_fast_sizes::<F, _, _>(self.iter())
     }
 }
 
@@ -114,5 +114,33 @@ where
         self.iter_mut()
             .try_for_each(|elem| de.read_in_place::<F, T>(elem, false))?;
         Ok(())
+    }
+}
+
+/// Returns the size of the serialized data if it can be determined fast.
+#[inline(always)]
+pub fn owned_array_fast_sizes<F, I, T>(iter: I) -> Option<Sizes>
+where
+    F: Formula + ?Sized,
+    I: Iterator<Item = T>,
+    T: Serialize<F>,
+{
+    match (F::HEAPLESS, F::MAX_STACK_SIZE) {
+        (true, Some(0)) => Some(Sizes::ZERO),
+        _ => owned_iter_fast_sizes::<F, I, T>(iter),
+    }
+}
+
+/// Returns the size of the serialized data if it can be determined fast.
+#[inline(always)]
+pub fn ref_array_fast_sizes<'a, F, I, T: 'a>(iter: I) -> Option<Sizes>
+where
+    F: Formula + ?Sized,
+    I: Iterator<Item = &'a T>,
+    T: Serialize<F>,
+{
+    match (F::HEAPLESS, F::MAX_STACK_SIZE) {
+        (true, Some(0)) => Some(Sizes::ZERO),
+        _ => ref_iter_fast_sizes::<F, I, T>(iter),
     }
 }

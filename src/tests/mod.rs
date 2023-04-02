@@ -1,3 +1,12 @@
+#[cfg(all(feature = "alloc", feature = "derive"))]
+mod net;
+
+#[cfg(feature = "alloc")]
+use alloc::{collections::VecDeque, vec, vec::Vec};
+
+#[cfg(feature = "derive")]
+use alkahest_proc::{Deserialize, Formula, Serialize};
+
 use crate::{
     buffer::BufferExhausted,
     bytes::Bytes,
@@ -311,7 +320,6 @@ fn test_size() {
 #[cfg(all(feature = "derive", feature = "alloc"))]
 #[test]
 fn test_packet() {
-    use alkahest_proc::{Deserialize, Formula, Serialize};
     use alloc::{string::String, vec, vec::Vec};
 
     #[derive(Debug, Clone, Formula, Serialize, Deserialize)]
@@ -320,17 +328,35 @@ fn test_packet() {
         Server(ServerMessage),
     }
 
+    assert_eq!(
+        <GameMessage as Formula>::EXACT_SIZE,
+        false,
+        "Enum with non-EXACT_SIZE variants are not EXACT_SIZE"
+    );
+
     #[derive(Debug, Clone, Formula, Serialize, Deserialize)]
     pub enum ClientMessage {
         ClientData { nickname: String, clan: String },
         Chat(String),
     }
 
+    assert_eq!(
+        <ClientMessage as Formula>::EXACT_SIZE,
+        false,
+        "Enums with differently sized variants are not EXACT_SIZE"
+    );
+
     #[derive(Debug, Clone, Formula, Serialize, Deserialize)]
     pub enum ServerMessage {
         ServerData,
         ClientChat { client_id: u64, message: String },
     }
+
+    assert_eq!(
+        <ServerMessage as Formula>::EXACT_SIZE,
+        false,
+        "Enums with differently sized variants are not EXACT_SIZE"
+    );
 
     #[derive(Debug, Formula, Serialize, Deserialize)]
     pub struct NetPacket<G> {
@@ -477,4 +503,19 @@ fn test_bincoded() {
     let size = serialize::<Bincode, _>(Value(102414), &mut buffer).unwrap();
     let (de, _) = deserialize::<Bincode, Value>(&buffer[..size]).unwrap();
     assert_eq!(de.0, 102414);
+}
+
+#[test]
+fn test_zero_sized_arrays() {
+    serialize::<[u8; 0], [u8; 0]>([], &mut []).unwrap();
+    serialize::<[(); 1], [(); 1]>([()], &mut []).unwrap();
+
+    let ([], _) = deserialize::<[u8; 0], [u8; 0]>(&[]).unwrap();
+    let ([()], _) = deserialize::<[(); 1], [(); 1]>(&[]).unwrap();
+
+    #[cfg(feature = "alloc")]
+    {
+        deserialize::<[u8; 0], Vec<u8>>(&[]).unwrap();
+        deserialize::<[u8; 0], VecDeque<u8>>(&[]).unwrap();
+    }
 }

@@ -137,10 +137,13 @@ impl<'de> Deserializer<'de> {
         F: Formula + ?Sized,
         T: Deserialize<'de, F>,
     {
-        let stack = match (last, F::MAX_STACK_SIZE) {
-            (true, _) => self.stack,
-            (false, Some(max_stack)) => max_stack,
-            (false, None) => self.read_value::<FixedUsize, usize>(false)?,
+        let stack = match (F::MAX_STACK_SIZE, F::EXACT_SIZE, last) {
+            (None, _, false) => self.read_value::<FixedUsize, usize>(false)?,
+            (None, _, true) => self.stack,
+            (Some(max_stack), false, false) => max_stack,
+            (Some(max_stack), false, true) => max_stack.min(self.stack),
+            (Some(max_stack), true, false) => max_stack,
+            (Some(max_stack), true, true) => max_stack,
         };
 
         <T as Deserialize<'de, F>>::deserialize(self.sub(stack)?)
@@ -211,17 +214,14 @@ impl<'de> Deserializer<'de> {
     /// specified formula.
     /// The formula must be sized and size must match.
     #[inline(always)]
-    pub fn into_sized_iter<F, T>(self) -> SizedDeIter<'de, F, T>
+    pub fn into_sized_iter<F, T>(mut self) -> SizedDeIter<'de, F, T>
     where
         F: Formula + ?Sized,
         T: Deserialize<'de, F>,
     {
         let upper = match F::MAX_STACK_SIZE {
             None => panic!("Formula must be sized"),
-            Some(0) => self
-                .clone()
-                .read_value::<FixedUsize, usize>(true)
-                .unwrap_or(0),
+            Some(0) => self.read_value::<FixedUsize, usize>(true).unwrap_or(0),
             Some(max_stack) => self.stack / max_stack,
         };
 
@@ -255,15 +255,52 @@ impl<'de> Deserializer<'de> {
         }
     }
 
-    /// Finishing check for deserializer.
+    /// Converts deserializer into iterator over deserialized values with
+    /// specified formula.
+    /// The formula must be sized and size must match.
     #[inline(always)]
-    pub fn finish(self) -> Result<(), DeserializeError> {
-        if self.stack == 0 {
-            Ok(())
-        } else {
-            Err(DeserializeError::WrongLength)
+    pub fn into_sized_array_iter<F, T>(self, len: usize) -> SizedDeIter<'de, F, T>
+    where
+        F: Formula + ?Sized,
+        T: Deserialize<'de, F>,
+    {
+        if F::MAX_STACK_SIZE.is_none() {
+            panic!("Formula must be sized");
+        }
+
+        assert!(self.stack <= self.input.len());
+        DeIter {
+            de: self,
+            marker: PhantomData,
+            upper: len,
         }
     }
+
+    /// Converts deserializer into iterator over deserialized values with
+    /// specified formula.
+    #[inline(always)]
+    pub fn into_unsized_array_iter<F, T>(self, len: usize) -> DeIter<'de, F, T>
+    where
+        F: Formula + ?Sized,
+        T: Deserialize<'de, F>,
+    {
+        assert!(self.stack <= self.input.len());
+        DeIter {
+            de: self,
+            marker: PhantomData,
+            upper: len,
+        }
+    }
+
+    // /// Finishing check for deserializer.
+    // #[inline(always)]
+    // pub fn finish(self) -> Result<(), DeserializeError> {
+    //     if self.stack == 0 {
+    //         Ok(())
+    //     } else {
+    //         Err(DeserializeError::WrongLength)
+    //     }
+    // }
 
     /// Skips specified number of values with specified formula.
     #[inline(always)]

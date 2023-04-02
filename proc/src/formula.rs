@@ -40,6 +40,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
         }
         syn::Data::Struct(data) => {
             let all_field_types: Vec<_> = data.fields.iter().map(|field| &field.ty).collect();
+            let last_field_type = all_field_types.last().copied().into_iter();
             let mut all_generic_field_types: HashSet<_> = all_field_types.iter().copied().collect();
             all_generic_field_types
                 .retain(|ty| is_generic_ty(ty, filter_type_param(input.generics.params.iter())));
@@ -120,7 +121,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         max_size
                     };
 
-                    const EXACT_SIZE: ::alkahest::private::bool = true #(&& <#all_field_types as ::alkahest::private::Formula>::EXACT_SIZE)*;
+                    const EXACT_SIZE: ::alkahest::private::bool = {true #(; <#last_field_type as ::alkahest::private::Formula>::EXACT_SIZE)*};
 
                     const HEAPLESS: ::alkahest::private::bool = true #(&& <#all_field_types as ::alkahest::private::Formula>::HEAPLESS)*;
                 }
@@ -135,6 +136,11 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 .variants
                 .iter()
                 .map(|variant| variant.fields.iter().map(|field| &field.ty).collect())
+                .collect();
+
+            let last_field_types: Vec<Vec<_>> = all_field_types
+                .iter()
+                .map(|variants| variants.last().copied().into_iter().collect())
                 .collect();
 
             let all_field_types_flat: Vec<&syn::Type> = data
@@ -314,7 +320,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                         let mut exact = true;
                         let mut common_size = None;
                         #(
-                            #(exact &= <#all_field_types as ::alkahest::private::Formula>::EXACT_SIZE;)*
+                            #(exact &= <#last_field_types as ::alkahest::private::Formula>::EXACT_SIZE;)*
 
                             let var_size = {
                                 #[allow(unused_mut)]

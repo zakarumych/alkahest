@@ -10,8 +10,8 @@ where
     F: Formula,
 {
     const MAX_STACK_SIZE: Option<usize> = sum_size(Some(1), F::MAX_STACK_SIZE);
-    const EXACT_SIZE: bool = false;
-    const HEAPLESS: bool = true;
+    const EXACT_SIZE: bool = matches!(F::MAX_STACK_SIZE, Some(0));
+    const HEAPLESS: bool = F::HEAPLESS;
 }
 
 impl<F> BareFormula for Option<F> where F: Formula {}

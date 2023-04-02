@@ -1,7 +1,7 @@
 use crate::{
     buffer::Buffer,
     formula::{BareFormula, Formula},
-    iter::ref_iter_fast_sizes,
+    iter::owned_iter_fast_sizes,
     serialize::{write_slice, Serialize, Sizes},
     size::SIZE_STACK,
 };
@@ -12,10 +12,9 @@ where
 {
     const MAX_STACK_SIZE: Option<usize> = match F::MAX_STACK_SIZE {
         Some(0) => Some(SIZE_STACK),
-        Some(_) => None,
-        None => None,
+        _ => None,
     };
-    const EXACT_SIZE: bool = matches!(F::MAX_STACK_SIZE, Some(0));
+    const EXACT_SIZE: bool = true;
     const HEAPLESS: bool = F::HEAPLESS;
 }
 
@@ -37,6 +36,6 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        ref_iter_fast_sizes::<F, _, _>(self.iter())
+        owned_iter_fast_sizes::<F, _, _>(self.iter())
     }
 }

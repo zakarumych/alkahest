@@ -58,7 +58,7 @@ pub struct Vlq;
 
 impl Formula for Vlq {
     const MAX_STACK_SIZE: Option<usize> = None;
-    const EXACT_SIZE: bool = false;
+    const EXACT_SIZE: bool = true;
     const HEAPLESS: bool = true;
 }
 

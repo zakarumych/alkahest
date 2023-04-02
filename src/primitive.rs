@@ -101,7 +101,7 @@ macro_rules! impl_primitive {
             #[inline(always)]
             fn deserialize(mut de: Deserializer) -> Result<Self, DeserializeError> {
                 let input = de.read_bytes(size_of::<$ty>())?;
-                de.finish()?;
+                // de.finish()?;
                 let mut bytes = [0; size_of::<$ty>()];
                 bytes.copy_from_slice(input);
                 let value = <$ty>::from_le_bytes(bytes);

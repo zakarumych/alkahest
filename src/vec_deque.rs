@@ -74,7 +74,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        owned_iter_fast_sizes::<F, _, _>(self.iter())
+        ref_iter_fast_sizes::<F, _, _>(self.iter())
     }
 }
 
@@ -93,7 +93,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        ref_iter_fast_sizes::<F, _, _>(self.iter())
+        owned_iter_fast_sizes::<F, _, _>(self.iter())
     }
 }
 
@@ -129,7 +129,7 @@ where
     #[inline(always)]
     fn deserialize(de: Deserializer<'de>) -> Result<Self, DeserializeError> {
         let mut vec = VecDeque::with_capacity(N);
-        deserialize_extend_iter(&mut vec, de.into_unsized_iter())?;
+        deserialize_extend_iter(&mut vec, de.into_unsized_array_iter(N))?;
         Ok(vec)
     }
 
@@ -137,7 +137,7 @@ where
     fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), DeserializeError> {
         self.clear();
         self.reserve(N);
-        deserialize_extend_iter(self, de.into_unsized_iter())
+        deserialize_extend_iter(self, de.into_unsized_array_iter(N))
     }
 }
 

@@ -28,7 +28,7 @@ where
 {
     const MAX_STACK_SIZE: Option<usize> = Some(reference_size::<F>());
     const EXACT_SIZE: bool = true;
-    const HEAPLESS: bool = false;
+    const HEAPLESS: bool = matches!(F::MAX_STACK_SIZE, Some(0));
 }
 
 impl<F, T> Serialize<Ref<F>> for T

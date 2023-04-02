@@ -1,4 +1,4 @@
-use core::{any::type_name, marker::PhantomData, ops};
+use core::{any::type_name, fmt, marker::PhantomData, ops};
 
 use crate::{
     buffer::*,
@@ -256,7 +256,7 @@ where
     match promised {
         None => {
             <T as Serialize<F>>::serialize(value, &mut sizes, buffer.reborrow())?;
-            buffer.move_to_heap(sizes.heap, sizes.stack, sizes.stack)
+            buffer.move_to_heap(sizes.heap, sizes.stack, sizes.stack)?;
         }
         Some(promised) => {
             match buffer.reserve_heap(reference_size, 0, promised.heap + promised.stack)? {
@@ -341,6 +341,24 @@ where
     }
 }
 
+/// DeserializeError that may occur during serialization,
+/// if buffer is too small to fit serialized data.
+///
+/// Contains the size of the buffer required to fit serialized data.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct BufferSizeRequired {
+    /// Size of the buffer required to fit serialized data.
+    pub required: usize,
+}
+
+impl fmt::Display for BufferSizeRequired {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "buffer size required: {}", self.required)
+    }
+}
+
 /// Serialize value into bytes slice.
 /// Returns the number of bytes written.
 ///
@@ -355,7 +373,11 @@ where
     T: Serialize<F>,
 {
     let mut exhausted = false;
-    let size = serialize_into::<F, T, _>(value, MaybeFixedBuffer::new(output, &mut exhausted))?;
+    let result = serialize_into::<F, T, _>(value, MaybeFixedBuffer::new(output, &mut exhausted));
+    let size = match result {
+        Ok(size) => size,
+        Err(never) => match never {},
+    };
     if exhausted {
         Err(BufferSizeRequired { required: size })
     } else {
@@ -495,26 +517,26 @@ where
     let old_stack = sizes.stack;
     <T as Serialize<F>>::serialize(value, sizes, buffer.reborrow())?;
 
-    match (last, F::MAX_STACK_SIZE, F::EXACT_SIZE) {
-        (true, None, _) => {}
-        (true, Some(max_stack), false) => {
-            debug_assert!(sizes.stack - old_stack <= max_stack);
-        }
-        (true, Some(max_stack), true) => {
-            debug_assert_eq!(sizes.stack - old_stack, max_stack);
-        }
-        (false, None, _) => {
+    match (F::MAX_STACK_SIZE, F::EXACT_SIZE, last) {
+        (None, _, false) => {
             let size = FixedUsize::truncate_unchecked(sizes.stack - old_stack);
             let res = buffer.write_stack(sizes.heap, old_stack - SIZE_STACK, &size.to_le_bytes());
             if res.is_err() {
                 unreachable!("Successfully written before");
             };
         }
-        (false, Some(max_stack), false) => {
+        (None, _, true) => {}
+        (Some(max_stack), false, false) => {
             debug_assert!(sizes.stack - old_stack <= max_stack);
             sizes.stack = old_stack + max_stack;
         }
-        (false, Some(max_stack), true) => {
+        (Some(max_stack), false, true) => {
+            debug_assert!(sizes.stack - old_stack <= max_stack);
+        }
+        (Some(max_stack), true, false) => {
+            debug_assert_eq!(sizes.stack - old_stack, max_stack);
+        }
+        (Some(max_stack), true, true) => {
             debug_assert_eq!(sizes.stack - old_stack, max_stack);
         }
     }
@@ -530,7 +552,7 @@ where
 pub fn write_exact_size_field<F, T, B>(
     value: T,
     sizes: &mut Sizes,
-    mut buffer: B,
+    buffer: B,
 ) -> Result<(), B::Error>
 where
     F: Formula + ?Sized,
@@ -539,7 +561,7 @@ where
 {
     debug_assert!(F::EXACT_SIZE);
     let old_stack = sizes.stack;
-    <T as Serialize<F>>::serialize(value, sizes, buffer.reborrow())?;
+    <T as Serialize<F>>::serialize(value, sizes, buffer)?;
     debug_assert_eq!(old_stack + F::MAX_STACK_SIZE.unwrap(), sizes.stack);
     Ok(())
 }
@@ -567,7 +589,7 @@ where
     let old_stack = sizes.stack;
     write_field(value, sizes, buffer.reborrow(), true)?;
     let len = sizes.to_heap(old_stack);
-    buffer.move_to_heap(sizes.heap - len, sizes.stack + len, len);
+    buffer.move_to_heap(sizes.heap - len, sizes.stack + len, len)?;
     Ok(len)
 }
 
@@ -707,6 +729,26 @@ where
         iter.try_for_each(|elem| write_field::<F, _, _>(elem, sizes, buffer.reborrow(), false))?;
         Ok(())
     }
+}
+
+/// Writes array into buffer.
+///
+/// Use in [`Serialize::serialize`](Serialize::serialize) implementation
+/// for slice formulas.
+/// Prefer this over `slice_writer` and manual iteration when
+/// got an iterator.
+#[inline]
+pub fn write_array<F, T, B>(
+    mut iter: impl Iterator<Item = T>,
+    sizes: &mut Sizes,
+    mut buffer: B,
+) -> Result<(), B::Error>
+where
+    F: Formula + ?Sized,
+    T: Serialize<F>,
+    B: Buffer,
+{
+    iter.try_for_each(|elem| write_field::<F, _, _>(elem, sizes, buffer.reborrow(), false))
 }
 
 /// Returns size hint for the formula if it is known at compile time.
