@@ -1,5 +1,6 @@
 extern crate alkahest;
 extern crate criterion;
+extern crate rand;
 
 #[cfg(feature = "rkyv")]
 extern crate bytecheck;
@@ -7,198 +8,307 @@ extern crate bytecheck;
 #[cfg(feature = "rkyv")]
 extern crate rkyv;
 
-use alkahest::{Deserialize, Formula, Lazy, Ref, Serialize};
+#[cfg(feature = "speedy")]
+extern crate speedy;
+
+use alkahest::{Deserialize, Formula, Lazy, Ref, SerIter, Serialize};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 #[cfg(feature = "rkyv")]
 use bytecheck::CheckBytes;
+use rand::{
+    distributions::{Alphanumeric, DistString},
+    rngs::SmallRng,
+    thread_rng, Rng, SeedableRng,
+};
 
-#[derive(Formula)]
-enum TestFormula {
-    Foo { a: Ref<u32>, b: Ref<u32> },
-    Bar { c: Vec<u32>, d: Vec<Vec<u32>> },
-}
-
-#[derive(Serialize, Deserialize)]
-#[alkahest(TestFormula)]
+#[derive(Debug, Clone, Formula, Serialize, Deserialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "rkyv", derive(rkyv::Archive, rkyv::Serialize))]
 #[cfg_attr(feature = "rkyv", archive_attr(derive(CheckBytes)))]
-enum TestData {
-    Foo { a: u32, b: u32 },
-    Bar { c: Vec<u32>, d: Vec<Vec<u32>> },
+#[cfg_attr(feature = "speedy", derive(speedy::Writable, speedy::Readable))]
+pub enum GameMessage {
+    Client(ClientMessage),
+    Server(ServerMessage),
 }
 
-#[derive(Deserialize)]
-#[alkahest(for<'de: 'a> TestFormula)]
-enum TestDataLazy<'a> {
-    Foo {
-        a: u32,
-        b: u32,
-    },
-    Bar {
-        c: Lazy<'a, [u32]>,
-        d: Lazy<'a, [Vec<u32>]>,
-    },
+#[derive(Debug, Deserialize)]
+#[alkahest(GameMessage)]
+pub enum GameMessageRead<'de> {
+    Client(ClientMessageRead<'de>),
+    Server(ServerMessageRead<'de>),
 }
 
-fn ser_alkahest(bytes: &mut [u8], data: &TestData) -> usize {
-    alkahest::serialize::<TestFormula, _>(data, bytes).unwrap()
+#[derive(Debug, Clone, Formula, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "rkyv", derive(rkyv::Archive, rkyv::Serialize))]
+#[cfg_attr(feature = "rkyv", archive_attr(derive(CheckBytes)))]
+#[cfg_attr(feature = "speedy", derive(speedy::Writable, speedy::Readable))]
+pub enum ClientMessage {
+    ClientData { nickname: String, clan: String },
+    Chat(String),
 }
 
-#[cfg(feature = "serde_json")]
-fn ser_json(bytes: &mut [u8], data: &TestData) -> usize {
-    serde_json::to_writer(bytes, data).unwrap();
+#[derive(Debug, Deserialize)]
+#[alkahest(ClientMessage)]
+pub enum ClientMessageRead<'de> {
+    ClientData { nickname: &'de str, clan: &'de str },
+    Chat(&'de str),
 }
 
-#[cfg(feature = "bincode")]
-fn ser_bincode(bytes: &mut [u8], data: &TestData) -> usize {
-    bincode::serialize_into(bytes, data).unwrap();
+#[derive(Debug, Clone, Formula, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "rkyv", derive(rkyv::Archive, rkyv::Serialize))]
+#[cfg_attr(feature = "rkyv", archive_attr(derive(CheckBytes)))]
+#[cfg_attr(feature = "speedy", derive(speedy::Writable, speedy::Readable))]
+pub enum ServerMessage {
+    ServerData(u64),
+    ClientChat { client_id: u64, message: String },
 }
 
-#[cfg(feature = "rkyv")]
-fn ser_rkyv(bytes: &mut [u8], data: &TestData) -> usize {
-    use rkyv::ser::Serializer;
-
-    let mut ser = rkyv::ser::serializers::CompositeSerializer::new(
-        rkyv::ser::serializers::BufferSerializer::new(bytes),
-        rkyv::ser::serializers::HeapScratch::<1024>::new(),
-        rkyv::ser::serializers::SharedSerializeMap::new(),
-    );
-    ser.serialize_value(data).unwrap()
+#[derive(Debug, Deserialize)]
+#[alkahest(ServerMessage)]
+pub enum ServerMessageRead<'de> {
+    ServerData(u64),
+    ClientChat { client_id: u64, message: &'de str },
 }
 
-fn de_alkahest(bytes: &[u8]) {
-    match alkahest::deserialize::<TestFormula, TestDataLazy>(bytes)
-        .unwrap()
-        .0
-    {
-        TestDataLazy::Foo { a, b } => {
-            black_box(a);
-            black_box(b);
-        }
-        TestDataLazy::Bar { c, d } => {
-            c.iter::<u32>().for_each(|c| {
-                black_box(c.unwrap());
-            });
-            d.iter::<Lazy<[u32]>>().for_each(|d| {
-                d.unwrap().iter::<u32>().for_each(|d| {
-                    black_box(d.unwrap());
-                })
-            });
-        }
-    }
+#[derive(Debug, Formula, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "rkyv", derive(rkyv::Archive, rkyv::Serialize))]
+#[cfg_attr(feature = "rkyv", archive_attr(derive(CheckBytes)))]
+#[cfg_attr(feature = "speedy", derive(speedy::Writable, speedy::Readable))]
+pub struct NetPacket<G> {
+    pub game_messages: Vec<G>,
 }
 
-#[cfg(feature = "serde_json")]
-fn de_json(bytes: &[u8]) {
-    match serde_json::from_slice::<TestData>(bytes).unwrap() {
-        TestData::Foo { a, b } => {
-            black_box(a);
-            black_box(b);
-        }
-        TestData::Bar { c, d } => {
-            c.iter().for_each(|c| {
-                black_box(c);
-            });
-            d.iter().for_each(|d| {
-                d.iter().for_each(|d| {
-                    black_box(d);
-                })
-            });
-        }
-    }
+#[derive(Debug, Serialize)]
+#[alkahest(owned(for<X: Formula> NetPacket<X> where G: Serialize<[X]>))]
+pub struct NetPacketWrite<G> {
+    pub game_messages: G,
 }
 
-#[cfg(feature = "bincode")]
-fn de_bincode(bytes: &[u8]) {
-    match bincode::deserialize::<TestData>(bytes).unwrap() {
-        TestData::Foo { a, b } => {
-            black_box(a);
-            black_box(b);
-        }
-        TestData::Bar { c, d } => {
-            c.into_iter().for_each(|c| {
-                black_box(c);
-            });
-            d.into_iter().for_each(|d| {
-                d.into_iter().for_each(|d| {
-                    black_box(d);
-                })
-            });
-        }
-    }
+#[derive(Debug, Deserialize)]
+#[alkahest(NetPacket<G> where G: Formula)]
+pub struct NetPacketRead<'de, G> {
+    pub game_messages: Lazy<'de, [G]>,
 }
 
-#[cfg(feature = "rkyv")]
-fn de_rkyv(bytes: &[u8]) {
-    match rkyv::check_archived_root::<TestData>(bytes).unwrap() {
-        ArchivedTestData::Foo { a, b } => {
-            black_box(a);
-            black_box(b);
-        }
-        ArchivedTestData::Bar { c, d } => {
-            c.into_iter().for_each(|c| {
-                black_box(c);
-            });
-            d.into_iter().for_each(|d| {
-                d.into_iter().for_each(|d| {
-                    black_box(d);
-                })
-            });
-        }
-    }
+fn get_string(rng: &mut impl Rng) -> String {
+    Alphanumeric.sample_string(rng, 8)
+}
+
+fn messages<'a>(mut rng: impl Rng + 'a, len: usize) -> impl Iterator<Item = GameMessage> + 'a {
+    core::iter::repeat_with(move || match rng.gen_range(0..4) {
+        0 => GameMessage::Client(ClientMessage::ClientData {
+            nickname: get_string(&mut rng),
+            clan: get_string(&mut rng),
+        }),
+        1 => GameMessage::Client(ClientMessage::Chat(get_string(&mut rng))),
+        2 => GameMessage::Server(ServerMessage::ClientChat {
+            client_id: rng.gen(),
+            message: get_string(&mut rng),
+        }),
+        3 => GameMessage::Server(ServerMessage::ServerData(rng.gen_range(0..10))),
+        _ => unreachable!(),
+    })
+    .take(len)
+    // Make size unpredictable for `FromIterator` as this is common in real-world.
+    .filter(|msg| !matches!(msg, GameMessage::Server(ServerMessage::ServerData(3..=10))))
 }
 
 pub fn criterion_benchmark(c: &mut Criterion) {
-    // let data = TestData::Bar {
-    //     c: vec![1, 2, 3],
-    //     d: vec![vec![4, 5, 1]],
-    // };
+    let mut buffer = Vec::with_capacity(1 << 14);
+    buffer.resize(buffer.capacity(), 0);
+    let mut rng = SmallRng::seed_from_u64(42);
 
-    let data = TestData::Foo { a: 1, b: 2 };
+    const LEN: usize = 200;
 
-    let mut bytes = [0u8; 1024];
-    let mut size = 0;
-
-    c.bench_function("first/alkahest/ser", |b| {
-        b.iter(|| size = ser_alkahest(&mut bytes, black_box(&data)))
-    });
-
-    c.bench_function("first/alkahest/de", |b| {
-        b.iter(|| de_alkahest(black_box(&bytes[..size])))
-    });
-
-    #[cfg(feature = "serde_json")]
     {
-        c.bench_function("first/json/ser", |b| {
-            b.iter(|| size = ser_json(&mut bytes, black_box(&data)))
+        let mut group = c.benchmark_group("net-packet/alkahest");
+        group.bench_function("serialize", |b| {
+            b.iter(|| {
+                alkahest::serialize_to_vec::<NetPacket<GameMessage>, _>(
+                    NetPacketWrite {
+                        game_messages: SerIter(messages(rng.clone(), black_box(LEN))),
+                    },
+                    &mut buffer,
+                );
+            })
         });
 
-        c.bench_function("first/json/de", |b| {
-            b.iter(|| de_json(black_box(&bytes[..size])))
+        group.bench_function("read", |b| {
+            b.iter(|| {
+                let (packet, _) = alkahest::deserialize::<
+                    NetPacket<GameMessage>,
+                    NetPacketRead<GameMessage>,
+                >(&buffer[..])
+                .unwrap();
+
+                for message in packet.game_messages.iter::<GameMessageRead>() {
+                    match message.unwrap() {
+                        GameMessageRead::Client(ClientMessageRead::ClientData {
+                            nickname,
+                            clan,
+                        }) => {
+                            black_box(nickname);
+                            black_box(clan);
+                        }
+                        GameMessageRead::Client(ClientMessageRead::Chat(message)) => {
+                            black_box(message);
+                        }
+                        GameMessageRead::Server(ServerMessageRead::ServerData(data)) => {
+                            black_box(data);
+                        }
+                        GameMessageRead::Server(ServerMessageRead::ClientChat {
+                            client_id,
+                            message,
+                        }) => {
+                            black_box(client_id);
+                            black_box(message);
+                        }
+                    }
+                }
+            })
         });
     }
 
     #[cfg(feature = "bincode")]
     {
-        c.bench_function("first/bincode/ser", |b| {
-            b.iter(|| size = ser_bincode(&mut bytes, black_box(&data)))
+        let mut group = c.benchmark_group("net-packet/bincode");
+        group.bench_function("serialize", |b| {
+            b.iter(|| {
+                buffer.clear();
+                bincode::serialize_into(
+                    &mut buffer,
+                    &NetPacket {
+                        game_messages: messages(rng.clone(), black_box(LEN)).collect(),
+                    },
+                )
+                .unwrap();
+            })
         });
 
-        c.bench_function("first/bincode/de", |b| {
-            b.iter(|| de_bincode(black_box(&bytes[..size])))
+        group.bench_function("read", |b| {
+            b.iter(|| {
+                let packet = bincode::deserialize::<NetPacket<GameMessage>>(&buffer).unwrap();
+
+                for message in packet.game_messages.iter() {
+                    match message {
+                        GameMessage::Client(ClientMessage::ClientData { nickname, clan }) => {
+                            black_box(nickname);
+                            black_box(clan);
+                        }
+                        GameMessage::Client(ClientMessage::Chat(message)) => {
+                            black_box(message);
+                        }
+                        GameMessage::Server(ServerMessage::ServerData(data)) => {
+                            black_box(data);
+                        }
+                        GameMessage::Server(ServerMessage::ClientChat { client_id, message }) => {
+                            black_box(client_id);
+                            black_box(message);
+                        }
+                    }
+                }
+            })
         });
     }
 
     #[cfg(feature = "rkyv")]
     {
-        c.bench_function("first/rkyv/ser", |b| {
-            b.iter(|| size = ser_rkyv(&mut bytes, black_box(&data)))
+        let mut group = c.benchmark_group("net-packet/rkyv");
+        let mut rkyv_ser = rkyv::ser::serializers::AllocSerializer::<1024>::default();
+
+        group.bench_function("serialize", |b| {
+            b.iter(|| {
+                use rkyv::ser::Serializer;
+
+                rkyv_ser
+                    .serialize_value(&NetPacket {
+                        game_messages: messages(rng.clone(), black_box(LEN)).collect(),
+                    })
+                    .unwrap()
+            })
         });
 
-        c.bench_function("first/rkyv/de", |b| {
-            b.iter(|| de_rkyv(black_box(&bytes[..size])))
+        let vec: rkyv::AlignedVec = rkyv_ser.into_serializer().into_inner();
+        group.bench_function("read", |b| {
+            b.iter(|| {
+                let packet = rkyv::check_archived_root::<NetPacket<GameMessage>>(&vec[..]).unwrap();
+
+                for message in packet.game_messages.iter() {
+                    match message {
+                        ArchivedGameMessage::Client(ArchivedClientMessage::ClientData {
+                            nickname,
+                            clan,
+                        }) => {
+                            black_box(nickname);
+                            black_box(clan);
+                        }
+                        ArchivedGameMessage::Client(ArchivedClientMessage::Chat(message)) => {
+                            black_box(message);
+                        }
+                        ArchivedGameMessage::Server(ArchivedServerMessage::ServerData(data)) => {
+                            black_box(data);
+                        }
+                        ArchivedGameMessage::Server(ArchivedServerMessage::ClientChat {
+                            client_id,
+                            message,
+                        }) => {
+                            black_box(client_id);
+                            black_box(message);
+                        }
+                    }
+                }
+            })
+        });
+    }
+
+    #[cfg(feature = "speedy")]
+    {
+        let mut group = c.benchmark_group("net-packet/speedy");
+
+        buffer.clear();
+        buffer.resize(buffer.capacity(), 0);
+
+        group.bench_function("serialize", |b| {
+            b.iter(|| {
+                speedy::Writable::write_to_buffer(
+                    &NetPacket {
+                        game_messages: messages(rng.clone(), black_box(LEN)).collect(),
+                    },
+                    &mut buffer,
+                )
+                .unwrap();
+            })
+        });
+
+        group.bench_function("read", |b| {
+            b.iter(|| {
+                let packet =
+                    <NetPacket<GameMessage> as speedy::Readable<_>>::read_from_buffer(&buffer)
+                        .unwrap();
+
+                for message in packet.game_messages.iter() {
+                    match message {
+                        GameMessage::Client(ClientMessage::ClientData { nickname, clan }) => {
+                            black_box(nickname);
+                            black_box(clan);
+                        }
+                        GameMessage::Client(ClientMessage::Chat(message)) => {
+                            black_box(message);
+                        }
+                        GameMessage::Server(ServerMessage::ServerData(data)) => {
+                            black_box(data);
+                        }
+                        GameMessage::Server(ServerMessage::ClientChat { client_id, message }) => {
+                            black_box(client_id);
+                            black_box(message);
+                        }
+                    }
+                }
+            })
         });
     }
 }
