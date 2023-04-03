@@ -4,7 +4,7 @@ mod net;
 #[cfg(feature = "alloc")]
 use alloc::{collections::VecDeque, vec, vec::Vec};
 
-#[cfg(feature = "derive")]
+#[cfg(all(feature = "derive", feature = "alloc"))]
 use alkahest_proc::{Deserialize, Formula, Serialize};
 
 use crate::{

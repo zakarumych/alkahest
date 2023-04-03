@@ -1,10 +1,13 @@
 use core::{any::type_name, fmt, marker::PhantomData, ops};
 
 use crate::{
-    buffer::{Buffer, BufferExhausted, CheckedFixedBuffer, DryBuffer, MaybeFixedBuffer, VecBuffer},
+    buffer::{Buffer, BufferExhausted, CheckedFixedBuffer, DryBuffer, MaybeFixedBuffer},
     formula::{reference_size, unwrap_size, BareFormula, Formula},
     size::{FixedUsize, SIZE_STACK},
 };
+
+#[cfg(feature = "alloc")]
+use crate::buffer::VecBuffer;
 
 /// Heap and stack sizes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

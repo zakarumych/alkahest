@@ -88,6 +88,10 @@ fn messages<'a>(mut rng: impl Rng + 'a, len: usize) -> impl Iterator<Item = Game
 fn test_net_packet() {
     let rng = rand::rngs::SmallRng::from_rng(rand::thread_rng()).unwrap();
 
+    #[cfg(feature = "fixed8")]
+    const LEN: usize = 1;
+
+    #[cfg(not(feature = "fixed8"))]
     const LEN: usize = 1000;
 
     let mut buffer = Vec::new();

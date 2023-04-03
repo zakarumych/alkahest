@@ -159,6 +159,12 @@ impl<'a> Buffer for CheckedFixedBuffer<'a> {
         if self.buf.len() - heap - stack < len {
             return Err(BufferExhausted);
         }
+
+        #[cfg(test)]
+        {
+            let at = self.buf.len() - stack - len;
+            self.buf[at..][..len].fill(0);
+        }
         Ok(())
     }
 
@@ -208,6 +214,12 @@ impl<'a> Buffer for &'a mut [u8] {
     fn pad_stack(&mut self, heap: usize, stack: usize, len: usize) -> Result<(), Infallible> {
         debug_assert!(heap + stack <= self.len());
         assert!(self.len() - heap - stack >= len);
+
+        #[cfg(test)]
+        {
+            let at = self.len() - stack - len;
+            self[at..][..len].fill(0);
+        }
         Ok(())
     }
 
@@ -382,6 +394,12 @@ impl<'a> Buffer for VecBuffer<'a> {
     fn pad_stack(&mut self, heap: usize, stack: usize, len: usize) -> Result<(), Infallible> {
         debug_assert!(heap + stack <= self.buf.len());
         self.reserve(heap, stack, len);
+
+        #[cfg(test)]
+        {
+            let at = self.buf.len() - stack - len;
+            self.buf[at..][..len].fill(0);
+        }
         Ok(())
     }
 
