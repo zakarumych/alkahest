@@ -1,8 +1,8 @@
 use core::{any::type_name, fmt, marker::PhantomData, ops};
 
 use crate::{
-    buffer::*,
-    formula::{reference_size, BareFormula, Formula},
+    buffer::{Buffer, BufferExhausted, CheckedFixedBuffer, DryBuffer, MaybeFixedBuffer, VecBuffer},
+    formula::{reference_size, unwrap_size, BareFormula, Formula},
     size::{FixedUsize, SIZE_STACK},
 };
 
@@ -21,12 +21,14 @@ impl Sizes {
     pub const ZERO: Self = Sizes { heap: 0, stack: 0 };
 
     /// Create new `Sizes` with specified heap size.
+    #[must_use]
     #[inline(always)]
     pub const fn with_heap(heap: usize) -> Self {
         Sizes { heap, stack: 0 }
     }
 
     /// Create new `Sizes` with specified stack size.
+    #[must_use]
     #[inline(always)]
     pub const fn with_stack(stack: usize) -> Self {
         Sizes { heap: 0, stack }
@@ -198,6 +200,10 @@ Names of the formula variants and fields are important for `Serialize` and `Dese
 pub trait Serialize<F: Formula + ?Sized> {
     /// Serializes `self` into the given buffer.
     /// `heap` specifies the size of the buffer's heap occupied prior to this call.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if buffer write fails.
     fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
         Self: Sized,
@@ -296,14 +302,14 @@ where
                 type_name::<F>(),
                 sizes.stack,
                 max_size,
-            )
+            );
         };
     }
 
     match buffer.reserve_heap(0, 0, reference_size)? {
         [] => {}
         reserved => {
-            write_reference::<F, _>(sizes.stack, sizes.heap + sizes.stack, 0, 0, reserved).unwrap()
+            write_reference::<F, _>(sizes.stack, sizes.heap + sizes.stack, 0, 0, reserved).unwrap();
         }
     }
 
@@ -316,6 +322,10 @@ where
 ///
 /// To retrieve the number of bytes required to serialize the value,
 /// use [`serialized_size`] or [`serialize_or_size`].
+///
+/// # Errors
+///
+/// Returns [`BufferExhausted`] if the buffer is too small.
 #[inline(always)]
 pub fn serialize<F, T>(value: T, output: &mut [u8]) -> Result<usize, BufferExhausted>
 where
@@ -366,6 +376,11 @@ impl fmt::Display for BufferSizeRequired {
 /// the exact number of bytes required.
 ///
 /// Use [`serialize`] if this information is not needed.
+///
+/// # Errors
+///
+/// Returns [`BufferSizeRequired`] error if the buffer is too small.
+/// Error contains the exact number of bytes required.
 #[inline(always)]
 pub fn serialize_or_size<F, T>(value: T, output: &mut [u8]) -> Result<usize, BufferSizeRequired>
 where
@@ -437,7 +452,7 @@ where
 
 /// Size hint for serializing a field.
 ///
-/// Use in [`Serialize::size_hint`](Serialize::size_hint) implementation.`
+/// Use in [`Serialize::size_hint`](Serialize::size_hint) implementation.
 #[inline(always)]
 pub fn field_size_hint<F: Formula + ?Sized>(
     value: &impl Serialize<F>,
@@ -464,6 +479,10 @@ pub fn field_size_hint<F: Formula + ?Sized>(
 ///
 /// Use in [`Serialize::serialize`](Serialize::serialize) implementation
 /// after writing value to the heap.
+///
+/// # Errors
+///
+/// Returns error if buffer write fails.
 #[inline(always)]
 pub fn write_reference<F, B>(
     size: usize,
@@ -497,6 +516,10 @@ where
 /// Writes field value into the buffer.
 ///
 /// Use in [`Serialize::serialize`](Serialize::serialize) implementation.
+///
+/// # Errors
+///
+/// Returns error if buffer write fails.
 #[inline(always)]
 pub fn write_field<F, T, B>(
     value: T,
@@ -534,10 +557,7 @@ where
         (Some(max_stack), false, true) => {
             debug_assert!(sizes.stack - old_stack <= max_stack);
         }
-        (Some(max_stack), true, false) => {
-            debug_assert_eq!(sizes.stack - old_stack, max_stack);
-        }
-        (Some(max_stack), true, true) => {
+        (Some(max_stack), true, _) => {
             debug_assert_eq!(sizes.stack - old_stack, max_stack);
         }
     }
@@ -546,9 +566,14 @@ where
 }
 
 /// Write a field with exact size into buffer.
-/// Requires that `F::EXACT_SIZE` is `true`.
+/// Requires that `F::EXACT_SIZE` is `true` and
+/// `F::MAX_STACK_SIZE` is `Some`.
 ///
 /// Use in [`Serialize::serialize`](Serialize::serialize) implementation.
+///
+/// # Errors
+///
+/// Returns error if buffer write fails.
 #[inline(always)]
 pub fn write_exact_size_field<F, T, B>(
     value: T,
@@ -561,15 +586,20 @@ where
     B: Buffer,
 {
     debug_assert!(F::EXACT_SIZE);
+
     let old_stack = sizes.stack;
     <T as Serialize<F>>::serialize(value, sizes, buffer)?;
-    debug_assert_eq!(old_stack + F::MAX_STACK_SIZE.unwrap(), sizes.stack);
+    debug_assert_eq!(old_stack + unwrap_size(F::MAX_STACK_SIZE), sizes.stack);
     Ok(())
 }
 
 /// Write raw bytes to the buffer.
 ///
 /// Use in [`Serialize::serialize`](Serialize::serialize) implementation.
+///
+/// # Errors
+///
+/// Returns error if buffer write fails.
 #[inline(always)]
 pub fn write_bytes<B>(bytes: &[u8], sizes: &mut Sizes, mut buffer: B) -> Result<(), B::Error>
 where
@@ -598,6 +628,10 @@ where
 /// placing value into the heap and reference into the stack.
 ///
 /// Use in [`Serialize::serialize`](Serialize::serialize) implementation.
+///
+/// # Errors
+///
+/// Returns error if buffer write fails.
 #[inline(always)]
 pub fn write_ref<F, T, B>(value: T, sizes: &mut Sizes, mut buffer: B) -> Result<(), B::Error>
 where
@@ -620,7 +654,8 @@ where
                         heap: sizes.heap,
                         stack: 0,
                     };
-                    <T as Serialize<F>>::serialize(value, &mut reserved_sizes, reserved).unwrap();
+                    <T as Serialize<F>>::serialize(value, &mut reserved_sizes, reserved)
+                        .expect("Reserved enough space");
 
                     debug_assert_eq!(reserved_sizes.heap, sizes.heap + promised.heap);
                     debug_assert_eq!(reserved_sizes.stack, promised.stack);
@@ -653,6 +688,10 @@ where
     B: Buffer + ?Sized,
 {
     /// Serialize next element of a slice.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if buffer write fails.
     #[inline(always)]
     pub fn write_elem<T>(&mut self, value: T) -> Result<(), B::Error>
     where
@@ -669,6 +708,10 @@ where
     }
 
     /// Finishes the slice serialization.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if buffer write fails.
     #[inline(always)]
     pub fn finish(self) -> Result<(), B::Error> {
         if let Some(0) = <F as Formula>::MAX_STACK_SIZE {
@@ -704,6 +747,10 @@ where
 /// for slice formulas.
 /// Prefer this over `slice_writer` and manual iteration when
 /// got an iterator.
+///
+/// # Errors
+///
+/// Returns error if buffer write fails.
 #[inline]
 pub fn write_slice<F, T, B>(
     mut iter: impl Iterator<Item = T>,
@@ -719,7 +766,7 @@ where
         debug_assert!(<F as Formula>::HEAPLESS);
         let count = if cfg!(debug_assertions) {
             iter.fold(0, |acc, item| {
-                assert!(serialize::<F, T>(item, &mut []).is_ok());
+                debug_assert!(serialize::<F, T>(item, &mut []).is_ok());
                 acc + 1
             })
         } else {
@@ -738,6 +785,10 @@ where
 /// for slice formulas.
 /// Prefer this over `slice_writer` and manual iteration when
 /// got an iterator.
+///
+/// # Errors
+///
+/// Returns error if buffer write fails.
 #[inline]
 pub fn write_array<F, T, B>(
     mut iter: impl Iterator<Item = T>,
@@ -756,6 +807,7 @@ where
 ///
 /// Use in [`Serialize::size_hint`](Serialize::size_hint) implementation
 /// before manual calculation.
+#[must_use]
 #[inline(always)]
 pub const fn formula_fast_sizes<F>() -> Option<Sizes>
 where

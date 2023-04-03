@@ -48,6 +48,7 @@ pub struct FixedUsize(FixedUsizeType);
 
 impl FixedUsize {
     /// Truncates `usize` to `FixedUsizeType` without checking.
+    #[must_use]
     #[inline(always)]
     pub fn truncate_unchecked(value: usize) -> Self {
         debug_assert!(FixedUsize::try_from(value).is_ok());
@@ -55,12 +56,17 @@ impl FixedUsize {
     }
 
     /// Converts to byte array in little endian.
+    #[must_use]
     #[inline(always)]
     pub fn to_le_bytes(self) -> [u8; size_of::<Self>()] {
         self.0.to_le_bytes()
     }
 
     /// Converts from byte array in little endian.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the byte array does not represent a valid `usize`.
     #[inline(always)]
     pub fn from_le_bytes(bytes: [u8; size_of::<Self>()]) -> Result<Self, TryFromIntError> {
         FixedUsizeType::from_le_bytes(bytes).try_into()
@@ -224,6 +230,7 @@ pub struct FixedIsize(FixedIsizeType);
 
 impl FixedIsize {
     /// Truncates `isize` to `FixedIsizeType` without checking.
+    #[must_use]
     #[inline(always)]
     pub fn truncate_unchecked(value: isize) -> Self {
         debug_assert!(FixedIsize::try_from(value).is_ok());
@@ -231,12 +238,17 @@ impl FixedIsize {
     }
 
     /// Converts to byte array in little endian.
+    #[must_use]
     #[inline(always)]
     pub fn to_le_bytes(self) -> [u8; size_of::<Self>()] {
         self.0.to_le_bytes()
     }
 
     /// Converts from byte array in little endian.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the byte array does not represent a valid `isize`.
     #[inline(always)]
     pub fn from_le_bytes(bytes: [u8; size_of::<Self>()]) -> Result<Self, TryFromIntError> {
         FixedIsizeType::from_le_bytes(bytes).try_into()

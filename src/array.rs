@@ -105,7 +105,7 @@ where
             *slot = Some(de.read_value::<F, T>(false)?);
             Ok(())
         })?;
-        let value = opts.map(|slot| slot.unwrap());
+        let value = opts.map(Option::unwrap);
         Ok(value)
     }
 

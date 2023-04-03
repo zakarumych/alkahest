@@ -179,6 +179,7 @@ pub mod private {
         }
     }
 
+    #[must_use]
     #[inline(always)]
     pub fn with_formula<F: Formula + ?Sized, L: Formula + ?Sized>(
         _: impl FnOnce(&F) -> &L,

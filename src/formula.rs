@@ -126,7 +126,7 @@ pub trait BareFormula: Formula {}
 #[track_caller]
 pub(crate) const fn unwrap_size(a: Option<usize>) -> usize {
     let (arr, idx) = match a {
-        None => ([0], 1), // DeserializeError in both runtime and compile time.
+        None => ([0], 1), // Error in both runtime and compile time.
         Some(a) => ([a], 0),
     };
     arr[idx]
@@ -134,6 +134,7 @@ pub(crate) const fn unwrap_size(a: Option<usize>) -> usize {
 
 /// Function to combine sizes of formulas.
 /// If any of two is `None` then result is `None`.
+#[must_use]
 #[inline(always)]
 #[doc(hidden)]
 pub const fn sum_size(a: Option<usize>, b: Option<usize>) -> Option<usize> {
@@ -147,12 +148,12 @@ pub const fn sum_size(a: Option<usize>, b: Option<usize>) -> Option<usize> {
 /// Order of arguments is not important.
 /// If any argument is `None` then result is `None`.
 /// If both arguments are `Some` then result is maximum of the two.
+#[must_use]
 #[inline(always)]
 #[doc(hidden)]
 pub const fn max_size(a: Option<usize>, b: Option<usize>) -> Option<usize> {
     match (a, b) {
-        (None, _) => None,
-        (Some(_), None) => None,
+        (Some(_), None) | (None, _) => None,
         (Some(a), Some(b)) if a > b => Some(a),
         (Some(_), Some(b)) => Some(b),
     }
@@ -170,6 +171,7 @@ pub(crate) const fn repeat_size(a: Option<usize>, n: usize) -> Option<usize> {
 }
 
 /// Returns size of formula reference.
+#[must_use]
 #[inline(always)]
 pub const fn reference_size<F>() -> usize
 where

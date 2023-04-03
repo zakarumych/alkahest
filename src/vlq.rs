@@ -145,7 +145,7 @@ where
 {
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        size_hint(*self)
+        Some(size_hint(*self))
     }
 
     #[inline(always)]
@@ -177,7 +177,7 @@ where
 }
 
 #[inline(always)]
-fn size_hint<T>(mut value: T) -> Option<Sizes>
+fn size_hint<T>(mut value: T) -> Sizes
 where
     T: VlqType,
 {
@@ -187,11 +187,10 @@ where
             if value.less_eq(0) {
                 break;
             }
-        } else {
-            if value.less_eq(0xF) {
-                break;
-            }
+        } else if value.less_eq(0xF) {
+            break;
         }
+
         if tail == 63 {
             unimplemented!(
                 "Encoding for values that require more than 63 bytes is not implemented yet."
@@ -200,7 +199,7 @@ where
         tail += 1;
         value.shr_byte_assign();
     }
-    Some(Sizes::with_stack(tail + 1))
+    Sizes::with_stack(tail + 1)
 }
 
 #[inline(always)]
@@ -216,15 +215,14 @@ where
         if tail >= 8 {
             if value.less_eq(0) {
                 bytes[usize::from(tail)] = 0x80 | tail;
-                return write_bytes(&bytes[..usize::from(tail) + 1], sizes, buffer);
+                return write_bytes(&bytes[..=usize::from(tail)], sizes, buffer);
             }
-        } else {
-            if value.less_eq(0xF) {
-                let lsb = value.shr_byte_assign();
-                bytes[usize::from(tail)] = (tail << 4) | lsb;
-                return write_bytes(&bytes[..usize::from(tail) + 1], sizes, buffer);
-            }
+        } else if value.less_eq(0xF) {
+            let lsb = value.shr_byte_assign();
+            bytes[usize::from(tail)] = (tail << 4) | lsb;
+            return write_bytes(&bytes[..=usize::from(tail)], sizes, buffer);
         }
+
         if tail == 63 {
             unimplemented!(
                 "Encoding for values that require more than 63 bytes is not implemented yet."

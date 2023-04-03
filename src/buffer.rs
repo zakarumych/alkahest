@@ -19,9 +19,17 @@ pub trait Buffer {
     fn reborrow(&mut self) -> Self::Reborrow<'_>;
 
     /// Writes bytes to the stack.
+    ///
+    /// # Errors
+    ///
+    /// If buffer cannot write bytes, it should return `Err`.
     fn write_stack(&mut self, heap: usize, stack: usize, bytes: &[u8]) -> Result<(), Self::Error>;
 
     /// Add padding bytes to the stack.
+    ///
+    /// # Errors
+    ///
+    /// If buffer cannot add padding bytes, it should return `Err`.
     fn pad_stack(&mut self, heap: usize, stack: usize, len: usize) -> Result<(), Self::Error>;
 
     /// Moves bytes from stack to heap.
@@ -33,6 +41,12 @@ pub trait Buffer {
     /// If buffer cannot reserve heap space, it should return `Ok(None)`.
     /// In this case serializing code should fallback
     /// to using `write_stack` and `move_to_heap`.
+    ///
+    /// # Errors
+    ///
+    /// If buffer cannot reserve heap space, it should return `Err`.
+    /// If nothing needs to be written to the reserved heap,
+    /// it should return `Ok([])`.
     fn reserve_heap(
         &mut self,
         heap: usize,
@@ -84,7 +98,7 @@ impl Buffer for DryBuffer {
     }
 }
 
-/// DeserializeError that may occur during serialization,
+/// Error that may occur during serialization,
 /// if buffer is too small to fit serialized data.
 ///
 /// This type does not contain the size of the buffer required to fit serialized data.
@@ -300,12 +314,11 @@ impl<'a> Buffer for MaybeFixedBuffer<'a> {
             }
         }
 
-        match *self.exhausted {
-            true => Ok(&mut []),
-            false => {
-                let end = heap + len;
-                Ok(&mut self.buf[..end])
-            }
+        if *self.exhausted {
+            Ok(&mut [])
+        } else {
+            let end = heap + len;
+            Ok(&mut self.buf[..end])
         }
     }
 }
@@ -341,7 +354,7 @@ impl VecBuffer<'_> {
     fn reserve(&mut self, heap: usize, stack: usize, additional: usize) {
         let free = self.buf.len() - heap - stack;
         if free < additional {
-            self.do_reserve(heap, stack, additional)
+            self.do_reserve(heap, stack, additional);
         }
     }
 }

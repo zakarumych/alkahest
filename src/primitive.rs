@@ -139,7 +139,7 @@ impl Serialize<bool> for bool {
         Self: Sized,
         B: Buffer,
     {
-        write_bytes(&[self as u8], sizes, buffer)
+        write_bytes(&[u8::from(self)], sizes, buffer)
     }
 
     #[inline(always)]
@@ -157,7 +157,7 @@ impl Serialize<bool> for &bool {
     where
         B: Buffer,
     {
-        <u8 as Serialize<u8>>::serialize(*self.borrow() as u8, sizes, buffer)
+        <u8 as Serialize<u8>>::serialize(u8::from(*self.borrow()), sizes, buffer)
     }
 
     #[inline(always)]

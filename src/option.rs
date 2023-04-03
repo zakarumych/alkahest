@@ -94,17 +94,19 @@ where
     #[inline(always)]
     fn deserialize(mut de: Deserializer<'de>) -> Result<Self, DeserializeError> {
         let is_some: u8 = de.read_bytes(1)?[0];
-        if is_some != 0 {
-            Ok(Some(de.read_value::<F, T>(true)?))
-        } else {
+        if is_some == 0 {
             Ok(None)
+        } else {
+            Ok(Some(de.read_value::<F, T>(true)?))
         }
     }
 
     #[inline(always)]
     fn deserialize_in_place(&mut self, mut de: Deserializer<'de>) -> Result<(), DeserializeError> {
         let is_some: u8 = de.read_bytes(1)?[0];
-        if is_some != 0 {
+        if is_some == 0 {
+            *self = None;
+        } else {
             match self {
                 Some(value) => {
                     de.read_in_place::<F, T>(value, true)?;
@@ -113,8 +115,6 @@ where
                     *self = Some(de.read_value::<F, T>(true)?);
                 }
             }
-        } else {
-            *self = None;
         }
         Ok(())
     }

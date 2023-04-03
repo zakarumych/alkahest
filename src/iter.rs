@@ -712,21 +712,26 @@ where
 }
 
 /// Deserialize `FromIterator` value from slice formula.
-pub fn deserialize_from_iter<'de, A, T>(
+///
+/// # Errors
+///
+/// Returns `DeserializeError` if deserialization fails.
+pub fn deserialize_from_iter<A, T>(
     mut iter: impl Iterator<Item = Result<A, DeserializeError>>,
 ) -> Result<T, DeserializeError>
 where
     T: FromIterator<A>,
 {
     let mut err = None;
-    let value = T::from_iter(core::iter::from_fn(|| match iter.next() {
+    let value = core::iter::from_fn(|| match iter.next() {
         None => None,
         Some(Ok(elem)) => Some(elem),
         Some(Err(e)) => {
             err = Some(e);
             None
         }
-    }));
+    })
+    .collect();
 
     match err {
         None => Ok(value),
@@ -735,8 +740,12 @@ where
 }
 
 /// Deserialize into `Extend` value from slice formula.
+///
+/// # Errors
+///
+/// Returns `DeserializeError` if deserialization fails.
 #[inline(always)]
-pub fn deserialize_extend_iter<'de, A, T>(
+pub fn deserialize_extend_iter<A, T>(
     value: &mut T,
     mut iter: impl Iterator<Item = Result<A, DeserializeError>>,
 ) -> Result<(), DeserializeError>

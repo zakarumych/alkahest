@@ -11,7 +11,7 @@ use crate::{
 
 /// Wrapper for lazy deserialization.
 /// `Lazy<F>` may deserialize data from formula `F`.
-/// Then any it may produce any type `T` that can be deserialized from formula `F`. ```
+/// Then any it may produce any type `T` that can be deserialized from formula `F`.
 #[derive(Clone)]
 pub struct Lazy<'de, F: ?Sized> {
     de: Deserializer<'de>,
@@ -33,6 +33,10 @@ where
     F: BareFormula + ?Sized,
 {
     /// Deserialize the lazy value.
+    ///
+    /// # Errors
+    ///
+    /// Returns `DeserializeError` if deserialization fails.
     #[inline(always)]
     pub fn get<T>(&self) -> Result<T, DeserializeError>
     where
@@ -42,6 +46,10 @@ where
     }
 
     /// Deserialize the lazy value in place.
+    ///
+    /// # Errors
+    ///
+    /// Returns `DeserializeError` if deserialization fails.
     #[inline(always)]
     pub fn get_in_place<T>(&self, place: &mut T) -> Result<(), DeserializeError>
     where
