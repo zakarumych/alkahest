@@ -21,8 +21,11 @@ pub trait Buffer {
     /// Writes bytes to the stack.
     fn write_stack(&mut self, heap: usize, stack: usize, bytes: &[u8]) -> Result<(), Self::Error>;
 
+    /// Add padding bytes to the stack.
+    fn pad_stack(&mut self, heap: usize, stack: usize, len: usize) -> Result<(), Self::Error>;
+
     /// Moves bytes from stack to heap.
-    fn move_to_heap(&mut self, heap: usize, stack: usize, len: usize) -> Result<(), Self::Error>;
+    fn move_to_heap(&mut self, heap: usize, stack: usize, len: usize);
 
     /// Reserves heap space and returns a buffer over it.
     /// Returned buffer is always of `FixedBuffer` type.
@@ -63,9 +66,12 @@ impl Buffer for DryBuffer {
     }
 
     #[inline(always)]
-    fn move_to_heap(&mut self, _heap: usize, _stack: usize, _len: usize) -> Result<(), Infallible> {
+    fn pad_stack(&mut self, _heap: usize, _stack: usize, _len: usize) -> Result<(), Infallible> {
         Ok(())
     }
+
+    #[inline(always)]
+    fn move_to_heap(&mut self, _heap: usize, _stack: usize, _len: usize) {}
 
     #[inline(always)]
     fn reserve_heap(
@@ -124,9 +130,7 @@ impl<'a> Buffer for CheckedFixedBuffer<'a> {
         stack: usize,
         bytes: &[u8],
     ) -> Result<(), BufferExhausted> {
-        if stack + heap > self.buf.len() {
-            return Err(BufferExhausted);
-        }
+        debug_assert!(heap + stack <= self.buf.len());
         if self.buf.len() - heap - stack < bytes.len() {
             return Err(BufferExhausted);
         }
@@ -136,19 +140,20 @@ impl<'a> Buffer for CheckedFixedBuffer<'a> {
     }
 
     #[inline(always)]
-    fn move_to_heap(
-        &mut self,
-        heap: usize,
-        stack: usize,
-        len: usize,
-    ) -> Result<(), BufferExhausted> {
-        if heap + stack > self.buf.len() {
+    fn pad_stack(&mut self, heap: usize, stack: usize, len: usize) -> Result<(), BufferExhausted> {
+        debug_assert!(heap + stack <= self.buf.len());
+        if self.buf.len() - heap - stack < len {
             return Err(BufferExhausted);
         }
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn move_to_heap(&mut self, heap: usize, stack: usize, len: usize) {
+        debug_assert!(heap + stack <= self.buf.len());
         let start = self.buf.len() - stack;
         let end = start + len;
         self.buf.copy_within(start..end, heap);
-        Ok(())
     }
 
     #[inline(always)]
@@ -158,9 +163,7 @@ impl<'a> Buffer for CheckedFixedBuffer<'a> {
         stack: usize,
         len: usize,
     ) -> Result<&mut [u8], BufferExhausted> {
-        if heap + stack > self.buf.len() {
-            return Err(BufferExhausted);
-        }
+        debug_assert!(heap + stack <= self.buf.len());
         if self.buf.len() - heap - stack < len {
             return Err(BufferExhausted);
         }
@@ -181,20 +184,26 @@ impl<'a> Buffer for &'a mut [u8] {
 
     #[inline(always)]
     fn write_stack(&mut self, heap: usize, stack: usize, bytes: &[u8]) -> Result<(), Infallible> {
-        assert!(heap + stack <= self.len());
+        debug_assert!(heap + stack <= self.len());
         let at = self.len() - stack - bytes.len();
         self[at..][..bytes.len()].copy_from_slice(bytes);
         Ok(())
     }
 
     #[inline(always)]
-    fn move_to_heap(&mut self, heap: usize, stack: usize, len: usize) -> Result<(), Infallible> {
+    fn pad_stack(&mut self, heap: usize, stack: usize, len: usize) -> Result<(), Infallible> {
+        debug_assert!(heap + stack <= self.len());
+        assert!(self.len() - heap - stack >= len);
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn move_to_heap(&mut self, heap: usize, stack: usize, len: usize) {
         debug_assert!(stack >= len);
-        assert!(heap + stack <= self.len());
+        debug_assert!(heap + stack <= self.len());
         let start = self.len() - stack;
         let end = start + len;
         self.copy_within(start..end, heap);
-        Ok(())
     }
 
     #[inline(always)]
@@ -204,7 +213,7 @@ impl<'a> Buffer for &'a mut [u8] {
         stack: usize,
         len: usize,
     ) -> Result<&mut [u8], Infallible> {
-        assert!(heap + stack <= self.len());
+        debug_assert!(heap + stack <= self.len());
         let end = heap + len;
         Ok(&mut self[..end])
     }
@@ -242,9 +251,7 @@ impl<'a> Buffer for MaybeFixedBuffer<'a> {
     #[inline(always)]
     fn write_stack(&mut self, heap: usize, stack: usize, bytes: &[u8]) -> Result<(), Infallible> {
         if !*self.exhausted {
-            if heap + stack > self.buf.len() {
-                *self.exhausted = true;
-            }
+            debug_assert!(heap + stack <= self.buf.len());
             if self.buf.len() - heap - stack < bytes.len() {
                 *self.exhausted = true;
             }
@@ -258,19 +265,25 @@ impl<'a> Buffer for MaybeFixedBuffer<'a> {
     }
 
     #[inline(always)]
-    fn move_to_heap(&mut self, heap: usize, stack: usize, len: usize) -> Result<(), Infallible> {
-        debug_assert!(stack >= len);
+    fn pad_stack(&mut self, heap: usize, stack: usize, len: usize) -> Result<(), Infallible> {
         if !*self.exhausted {
-            if heap + stack > self.buf.len() {
+            debug_assert!(heap + stack <= self.buf.len());
+            if self.buf.len() - heap - stack < len {
                 *self.exhausted = true;
             }
         }
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn move_to_heap(&mut self, heap: usize, stack: usize, len: usize) {
+        debug_assert!(stack >= len);
         if !*self.exhausted {
+            debug_assert!(heap + stack <= self.buf.len());
             let start = self.buf.len() - stack;
             let end = start + len;
             self.buf.copy_within(start..end, heap);
         }
-        Ok(())
     }
 
     #[inline(always)]
@@ -281,9 +294,8 @@ impl<'a> Buffer for MaybeFixedBuffer<'a> {
         len: usize,
     ) -> Result<&mut [u8], Infallible> {
         if !*self.exhausted {
-            if heap + stack > self.buf.len() {
-                *self.exhausted = true;
-            } else if self.buf.len() - heap - stack < len {
+            debug_assert!(heap + stack <= self.buf.len());
+            if self.buf.len() - heap - stack < len {
                 *self.exhausted = true;
             }
         }
@@ -317,30 +329,19 @@ impl<'a> VecBuffer<'a> {
 #[cfg(feature = "alloc")]
 impl VecBuffer<'_> {
     #[cold]
-    fn do_reserve(&mut self, heap: usize, stack: usize, stored_stack: usize, additional: usize) {
+    fn do_reserve(&mut self, heap: usize, stack: usize, additional: usize) {
         let old_len = self.buf.len();
         self.buf.resize(heap + stack + additional, 0);
         let new_len = self.buf.len();
         self.buf
-            .copy_within(old_len - stored_stack..old_len, new_len - stored_stack);
+            .copy_within(old_len - stack..old_len, new_len - stack);
     }
-
     /// Ensures that at least `additional` bytes
     /// can be written between first `heap` and last `stack` bytes.
-    #[inline(always)]
     fn reserve(&mut self, heap: usize, stack: usize, additional: usize) {
-        let mut stored_stack = stack;
-        let do_reserve;
-        if stack + heap > self.buf.len() {
-            stored_stack = self.buf.len() - heap;
-            do_reserve = true;
-        } else {
-            let free = self.buf.len() - heap - stack;
-            do_reserve = free < additional;
-        }
-
-        if do_reserve {
-            self.do_reserve(heap, stack, stored_stack, additional);
+        let free = self.buf.len() - heap - stack;
+        if free < additional {
+            self.do_reserve(heap, stack, additional)
         }
     }
 }
@@ -357,22 +358,26 @@ impl<'a> Buffer for VecBuffer<'a> {
 
     #[inline(always)]
     fn write_stack(&mut self, heap: usize, stack: usize, bytes: &[u8]) -> Result<(), Infallible> {
+        debug_assert!(heap + stack <= self.buf.len());
         self.reserve(heap, stack, bytes.len());
-        assert!(heap + stack <= self.buf.len());
-        assert!(self.buf.len() - heap - stack >= bytes.len());
         let at = self.buf.len() - stack - bytes.len();
         self.buf[at..][..bytes.len()].copy_from_slice(bytes);
         Ok(())
     }
 
     #[inline(always)]
-    fn move_to_heap(&mut self, heap: usize, stack: usize, len: usize) -> Result<(), Infallible> {
-        debug_assert!(stack >= len);
-        self.reserve(heap, stack, 0);
+    fn pad_stack(&mut self, heap: usize, stack: usize, len: usize) -> Result<(), Infallible> {
         debug_assert!(heap + stack <= self.buf.len());
+        self.reserve(heap, stack, len);
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn move_to_heap(&mut self, heap: usize, stack: usize, len: usize) {
+        debug_assert!(heap + stack <= self.buf.len());
+        debug_assert!(stack >= len);
         let at = self.buf.len() - stack;
         self.buf.copy_within(at..at + len, heap);
-        Ok(())
     }
 
     #[inline(always)]
@@ -382,8 +387,8 @@ impl<'a> Buffer for VecBuffer<'a> {
         stack: usize,
         len: usize,
     ) -> Result<&mut [u8], Infallible> {
+        debug_assert!(heap + stack <= self.buf.len());
         self.reserve(heap, stack, len);
-        debug_assert!(heap + stack + len <= self.buf.len());
         Ok(&mut self.buf[..heap + len])
     }
 }

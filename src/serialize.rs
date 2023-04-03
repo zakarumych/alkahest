@@ -256,7 +256,7 @@ where
     match promised {
         None => {
             <T as Serialize<F>>::serialize(value, &mut sizes, buffer.reborrow())?;
-            buffer.move_to_heap(sizes.heap, sizes.stack, sizes.stack)?;
+            buffer.move_to_heap(sizes.heap, sizes.stack, sizes.stack);
         }
         Some(promised) => {
             match buffer.reserve_heap(reference_size, 0, promised.heap + promised.stack)? {
@@ -341,7 +341,7 @@ where
     }
 }
 
-/// DeserializeError that may occur during serialization,
+/// Error that may occur during serialization
 /// if buffer is too small to fit serialized data.
 ///
 /// Contains the size of the buffer required to fit serialized data.
@@ -487,8 +487,8 @@ where
             buffer.write_stack(heap, stack, &address.to_le_bytes())?;
         }
         _ => {
-            buffer.write_stack(heap, stack + SIZE_STACK, &address.to_le_bytes())?;
             buffer.write_stack(heap, stack, &size.to_le_bytes())?;
+            buffer.write_stack(heap, stack + SIZE_STACK, &address.to_le_bytes())?;
         }
     }
     Ok(())
@@ -528,6 +528,7 @@ where
         (None, _, true) => {}
         (Some(max_stack), false, false) => {
             debug_assert!(sizes.stack - old_stack <= max_stack);
+            buffer.pad_stack(sizes.heap, sizes.stack, old_stack + max_stack - sizes.stack)?;
             sizes.stack = old_stack + max_stack;
         }
         (Some(max_stack), false, true) => {
@@ -589,7 +590,7 @@ where
     let old_stack = sizes.stack;
     write_field(value, sizes, buffer.reborrow(), true)?;
     let len = sizes.to_heap(old_stack);
-    buffer.move_to_heap(sizes.heap - len, sizes.stack + len, len)?;
+    buffer.move_to_heap(sizes.heap - len, sizes.stack + len, len);
     Ok(len)
 }
 

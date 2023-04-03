@@ -100,18 +100,18 @@ macro_rules! impl_primitive {
         {
             #[inline(always)]
             fn deserialize(mut de: Deserializer) -> Result<Self, DeserializeError> {
-                let input = de.read_bytes(size_of::<$ty>())?;
+                let input = de.read_byte_array::<{size_of::<$ty>()}>()?;
                 // de.finish()?;
-                let mut bytes = [0; size_of::<$ty>()];
-                bytes.copy_from_slice(input);
-                let value = <$ty>::from_le_bytes(bytes);
+                let value = <$ty>::from_le_bytes(input);
                 return Ok(From::from(value));
             }
 
             #[inline(always)]
-            fn deserialize_in_place(&mut self, de: Deserializer) -> Result<(), DeserializeError> {
-                let value = <T as Deserialize<'_, $ty>>::deserialize(de)?;
-                *self = value;
+            fn deserialize_in_place(&mut self, mut de: Deserializer) -> Result<(), DeserializeError> {
+                let input = de.read_byte_array::<{size_of::<$ty>()}>()?;
+                // de.finish()?;
+                let value = <$ty>::from_le_bytes(input);
+                *self = From::from(value);
                 Ok(())
             }
         }
@@ -174,15 +174,15 @@ where
     T: From<bool>,
 {
     #[inline(always)]
-    fn deserialize(de: Deserializer) -> Result<Self, DeserializeError> {
-        let value = <u8 as Deserialize<u8>>::deserialize(de)?;
-        Ok(From::from(value != 0))
+    fn deserialize(mut de: Deserializer) -> Result<Self, DeserializeError> {
+        let byte = de.read_byte()?;
+        Ok(T::from(byte != 0))
     }
 
     #[inline(always)]
-    fn deserialize_in_place(&mut self, de: Deserializer) -> Result<(), DeserializeError> {
-        let value = <u8 as Deserialize<u8>>::deserialize(de)?;
-        *self = From::from(value != 0);
+    fn deserialize_in_place(&mut self, mut de: Deserializer) -> Result<(), DeserializeError> {
+        let byte = de.read_byte()?;
+        *self = From::from(byte != 0);
         Ok(())
     }
 }

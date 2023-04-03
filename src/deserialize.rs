@@ -5,6 +5,12 @@ use crate::{
     size::{FixedIsizeType, FixedUsize, FixedUsizeType, SIZE_STACK},
 };
 
+#[inline(always)]
+#[cold]
+pub(crate) const fn cold_err<T>(e: DeserializeError) -> Result<T, DeserializeError> {
+    Err(e)
+}
+
 /// Error that can occur during deserialization.
 #[derive(Clone, Copy, Debug)]
 pub enum DeserializeError {
@@ -80,7 +86,7 @@ impl<'de> Deserializer<'de> {
     #[inline(always)]
     pub const fn new(stack: usize, input: &'de [u8]) -> Result<Self, DeserializeError> {
         if stack > input.len() {
-            return Err(DeserializeError::OutOfBounds);
+            return cold_err(DeserializeError::OutOfBounds);
         }
         Ok(Self::new_unchecked(stack, input))
     }
@@ -96,7 +102,7 @@ impl<'de> Deserializer<'de> {
     #[track_caller]
     pub(crate) fn sub(&mut self, stack: usize) -> Result<Self, DeserializeError> {
         if self.stack < stack {
-            return Err(DeserializeError::WrongLength);
+            return cold_err(DeserializeError::WrongLength);
         }
 
         let sub = Deserializer::new_unchecked(stack, self.input);
@@ -113,13 +119,49 @@ impl<'de> Deserializer<'de> {
     #[inline(always)]
     pub fn read_bytes(&mut self, len: usize) -> Result<&'de [u8], DeserializeError> {
         if len > self.stack {
-            return Err(DeserializeError::WrongLength);
+            return cold_err(DeserializeError::WrongLength);
         }
         let at = self.input.len() - len;
         let (head, tail) = self.input.split_at(at);
         self.input = head;
         self.stack -= len;
         Ok(tail)
+    }
+
+    /// Reads specified number of bytes from the input buffer.
+    /// Returns slice of bytes.
+    /// Advances the input buffer.
+    #[inline(always)]
+    pub fn read_byte(&mut self) -> Result<u8, DeserializeError> {
+        if self.stack == 0 {
+            return cold_err(DeserializeError::WrongLength);
+        }
+
+        let [head @ .., last] = self.input else {
+            unreachable!();
+        };
+        self.input = head;
+        self.stack -= 1;
+        Ok(*last)
+    }
+
+    /// Reads specified number of bytes from the input buffer.
+    /// Returns slice of bytes.
+    /// Advances the input buffer.
+    #[inline(always)]
+    pub fn read_byte_array<const N: usize>(&mut self) -> Result<[u8; N], DeserializeError> {
+        if N > self.stack {
+            return cold_err(DeserializeError::WrongLength);
+        }
+        let at = self.input.len() - N;
+
+        let (head, tail) = self.input.split_at(at);
+        self.input = head;
+        self.stack -= N;
+
+        let mut array = [0; N];
+        array.copy_from_slice(tail);
+        Ok(array)
     }
 
     /// Reads the rest of the input buffer as bytes.
@@ -161,7 +203,7 @@ impl<'de> Deserializer<'de> {
 
         if self.stack < stack {
             self.stack = 0;
-            return Err(DeserializeError::WrongLength);
+            return cold_err(DeserializeError::WrongLength);
         }
 
         let input_back = &self.input[..self.input.len() - self.stack + stack];
@@ -449,7 +491,7 @@ where
                     Ok(stack) => stack,
                     Err(err) => {
                         self.de.stack = 0;
-                        return f(init, Err(err));
+                        return f(init, cold_err(err));
                     }
                 };
                 let sub = Deserializer::new_unchecked(stack, self.de.input);

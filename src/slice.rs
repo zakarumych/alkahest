@@ -12,9 +12,10 @@ where
 {
     const MAX_STACK_SIZE: Option<usize> = match F::MAX_STACK_SIZE {
         Some(0) => Some(SIZE_STACK),
-        _ => None,
+        Some(_) => None,
+        None => None,
     };
-    const EXACT_SIZE: bool = true;
+    const EXACT_SIZE: bool = matches!(F::MAX_STACK_SIZE, Some(0));
     const HEAPLESS: bool = F::HEAPLESS;
 }
 
