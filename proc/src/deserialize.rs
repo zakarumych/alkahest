@@ -43,20 +43,16 @@ struct Config {
 }
 
 impl Config {
-    fn for_struct(
-        args: Args,
-        data: &syn::DataStruct,
-        generics: &syn::Generics,
-    ) -> syn::Result<Self> {
+    fn for_struct(args: Args, data: &syn::DataStruct, generics: &syn::Generics) -> Self {
         // let non_exhaustive = args.non_exhaustive.is_some();
         match args.deserialize.or(args.common) {
             None => {
                 let mut formula = Formula {
                     path: syn::parse_quote!(Self),
                     generics: syn::Generics {
-                        lt_token: Some(Default::default()),
-                        params: Default::default(),
-                        gt_token: Some(Default::default()),
+                        lt_token: Some(<syn::Token![<]>::default()),
+                        params: syn::punctuated::Punctuated::default(),
+                        gt_token: Some(<syn::Token![>]>::default()),
                         where_clause: None,
                     },
                 };
@@ -77,36 +73,36 @@ impl Config {
                     .predicates
                     .extend(predicates);
 
-                Ok(Config {
+                Config {
                     formula,
                     check_fields: false,
                     // non_exhaustive,
                     de,
-                })
+                }
             }
             Some(mut formula) => {
                 let de = de_lifetime(&mut formula, generics);
 
-                Ok(Config {
+                Config {
                     formula,
                     check_fields: true,
                     // non_exhaustive,
                     de,
-                })
+                }
             }
         }
     }
 
-    fn for_enum(args: Args, data: &syn::DataEnum, generics: &syn::Generics) -> syn::Result<Self> {
+    fn for_enum(args: Args, data: &syn::DataEnum, generics: &syn::Generics) -> Self {
         // let non_exhaustive = args.non_exhaustive.is_some();
         match args.deserialize.or(args.common) {
             None => {
                 let mut formula = Formula {
                     path: syn::parse_quote!(Self),
                     generics: syn::Generics {
-                        lt_token: Some(Default::default()),
-                        params: Default::default(),
-                        gt_token: Some(Default::default()),
+                        lt_token: Some(<syn::Token![<]>::default()),
+                        params: syn::punctuated::Punctuated::default(),
+                        gt_token: Some(<syn::Token![>]>::default()),
                         where_clause: None,
                     },
                 };
@@ -127,27 +123,28 @@ impl Config {
                     .predicates
                     .extend(predicates);
 
-                Ok(Config {
+                Config {
                     formula,
                     check_fields: false,
                     // non_exhaustive,
                     de,
-                })
+                }
             }
             Some(mut formula) => {
                 let de = de_lifetime(&mut formula, generics);
 
-                Ok(Config {
+                Config {
                     formula,
                     check_fields: true,
                     // non_exhaustive,
                     de,
-                })
+                }
             }
         }
     }
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
     let input = syn::parse::<syn::DeriveInput>(input)?;
     let args = parse_attributes(&input.attrs)?;
@@ -160,7 +157,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
             "Deserialize cannot be derived for unions",
         )),
         syn::Data::Struct(data) => {
-            let cfg = Config::for_struct(args, &data, &input.generics)?;
+            let cfg = Config::for_struct(args, &data, &input.generics);
 
             let field_checks = if cfg.check_fields {
                 struct_field_order_checks(&data, None, &input.ident, &cfg.formula.path)
@@ -324,7 +321,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
             })
         }
         syn::Data::Enum(data) => {
-            let cfg = Config::for_enum(args, &data, &input.generics)?;
+            let cfg = Config::for_enum(args, &data, &input.generics);
 
             let field_checks = if cfg.check_fields {
                 enum_field_order_checks(&data, &input.ident, &cfg.formula.path)

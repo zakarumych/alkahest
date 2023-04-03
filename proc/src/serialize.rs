@@ -19,6 +19,7 @@ struct Config {
 }
 
 impl Config {
+    #[allow(clippy::too_many_lines)]
     fn for_struct(
         args: Args,
         data: &syn::DataStruct,
@@ -33,7 +34,7 @@ impl Config {
                 reference: None,
                 owned: Formula {
                     path: syn::parse_quote!(#ident),
-                    generics: Default::default(),
+                    generics: syn::Generics::default(),
                 },
                 variant: None,
                 check_fields: false,
@@ -43,7 +44,7 @@ impl Config {
                     path: syn::parse_quote!(#ident),
                     generics: syn::Generics {
                         lt_token: None,
-                        params: Default::default(),
+                        params: syn::punctuated::Punctuated::default(),
                         gt_token: None,
                         where_clause: None,
                     },
@@ -52,7 +53,7 @@ impl Config {
                     path: syn::parse_quote!(#ident),
                     generics: syn::Generics {
                         lt_token: None,
-                        params: Default::default(),
+                        params: syn::punctuated::Punctuated::default(),
                         gt_token: None,
                         where_clause: None,
                     },
@@ -66,7 +67,7 @@ impl Config {
                 // for fields where generics are involved.
                 let mut generics = syn::Generics {
                     lt_token: None,
-                    params: Default::default(),
+                    params: syn::punctuated::Punctuated::default(),
                     gt_token: None,
                     where_clause: None,
                 };
@@ -74,7 +75,7 @@ impl Config {
                 let mut all_generic_field_types: HashSet<_> =
                     data.fields.iter().map(|f| &f.ty).collect();
                 all_generic_field_types
-                    .retain(|ty| is_generic_ty(ty, filter_type_param(params.iter())));
+                    .retain(|ty| is_generic_ty(ty, &filter_type_param(params.iter())));
 
                 if !all_generic_field_types.is_empty() {
                     let predicates = all_generic_field_types.iter().map(|ty| -> syn::WherePredicate {
@@ -92,7 +93,7 @@ impl Config {
 
                 let mut generics = syn::Generics {
                     lt_token: None,
-                    params: Default::default(),
+                    params: syn::punctuated::Punctuated::default(),
                     gt_token: None,
                     where_clause: None,
                 };
@@ -124,7 +125,7 @@ impl Config {
                 // for fields where generics are involved.
                 let mut generics = syn::Generics {
                     lt_token: None,
-                    params: Default::default(),
+                    params: syn::punctuated::Punctuated::default(),
                     gt_token: None,
                     where_clause: None,
                 };
@@ -132,7 +133,7 @@ impl Config {
                 let mut all_generic_field_types: HashSet<_> =
                     data.fields.iter().map(|f| &f.ty).collect();
                 all_generic_field_types
-                    .retain(|ty| is_generic_ty(ty, filter_type_param(generics.params.iter())));
+                    .retain(|ty| is_generic_ty(ty, &filter_type_param(generics.params.iter())));
 
                 if !all_generic_field_types.is_empty() {
                     let predicates = all_generic_field_types.iter().map(|ty| -> syn::WherePredicate {
@@ -174,6 +175,7 @@ impl Config {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn for_enum(
         args: Args,
         data: &syn::DataEnum,
@@ -189,7 +191,7 @@ impl Config {
                 reference: None,
                 owned: Formula {
                     path: syn::parse_quote!(Self),
-                    generics: Default::default(),
+                    generics: syn::Generics::default(),
                 },
                 variant: None,
                 check_fields: false,
@@ -199,7 +201,7 @@ impl Config {
                     path: syn::parse_quote!(#ident),
                     generics: syn::Generics {
                         lt_token: None,
-                        params: Default::default(),
+                        params: syn::punctuated::Punctuated::default(),
                         gt_token: None,
                         where_clause: None,
                     },
@@ -208,7 +210,7 @@ impl Config {
                     path: syn::parse_quote!(Self),
                     generics: syn::Generics {
                         lt_token: None,
-                        params: Default::default(),
+                        params: syn::punctuated::Punctuated::default(),
                         gt_token: None,
                         where_clause: None,
                     },
@@ -223,14 +225,14 @@ impl Config {
 
                 let mut generics = syn::Generics {
                     lt_token: None,
-                    params: Default::default(),
+                    params: syn::punctuated::Punctuated::default(),
                     gt_token: None,
                     where_clause: None,
                 };
 
                 let mut all_generic_field_types: HashSet<_> = all_fields.map(|f| &f.ty).collect();
                 all_generic_field_types
-                    .retain(|ty| is_generic_ty(ty, filter_type_param(generics.params.iter())));
+                    .retain(|ty| is_generic_ty(ty, &filter_type_param(generics.params.iter())));
 
                 if !all_generic_field_types.is_empty() {
                     let predicates = all_generic_field_types.iter().map(|ty| -> syn::WherePredicate {
@@ -248,7 +250,7 @@ impl Config {
 
                 let mut generics = syn::Generics {
                     lt_token: None,
-                    params: Default::default(),
+                    params: syn::punctuated::Punctuated::default(),
                     gt_token: None,
                     where_clause: None,
                 };
@@ -291,10 +293,10 @@ impl Config {
 
                 let generics = syn::Generics {
                     lt_token: None,
-                    params: Default::default(),
+                    params: syn::punctuated::Punctuated::default(),
                     gt_token: None,
                     where_clause: Some(syn::WhereClause {
-                        where_token: Default::default(),
+                        where_token: <syn::Token![where]>::default(),
                         predicates,
                     }),
                 };
@@ -331,6 +333,7 @@ impl Config {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
     let input = syn::parse::<syn::DeriveInput>(input)?;
     let args = parse_attributes(&input.attrs)?;

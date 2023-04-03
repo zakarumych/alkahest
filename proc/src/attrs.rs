@@ -77,7 +77,7 @@ impl Parse for FormulaRef {
         };
 
         Ok(FormulaRef {
-            params: params.into(),
+            params,
             path,
             where_clause,
         })
@@ -147,6 +147,7 @@ pub struct Formula {
 
 pub struct Args {
     // pub non_exhaustive: Option<non_exhaustive>,
+    #[allow(clippy::option_option)]
     pub owned: Option<Option<Formula>>,
     pub common: Option<Formula>,
     pub serialize: Option<Formula>,
@@ -222,7 +223,7 @@ pub fn parse_attributes(attrs: &[syn::Attribute]) -> syn::Result<Args> {
 pub fn path_make_expr_style(mut path: syn::Path) -> syn::Path {
     for seg in &mut path.segments {
         if let syn::PathArguments::AngleBracketed(ref mut args) = seg.arguments {
-            args.colon2_token = Some(Default::default());
+            args.colon2_token = Some(<syn::Token![::]>::default());
         }
     }
     path

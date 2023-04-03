@@ -45,7 +45,7 @@ pub fn derive_deserialize(input: TokenStream) -> TokenStream {
 
 fn is_generic_path<'a>(
     path: &syn::Path,
-    params: impl Clone + Iterator<Item = &'a syn::TypeParam>,
+    params: &(impl Clone + Iterator<Item = &'a syn::TypeParam>),
 ) -> bool {
     path.segments.iter().any(|seg| {
         if params.clone().any(|p| {
@@ -58,18 +58,16 @@ fn is_generic_path<'a>(
         }
         match &seg.arguments {
             syn::PathArguments::AngleBracketed(args) => args.args.iter().any(|arg| match arg {
-                syn::GenericArgument::Type(ty) => is_generic_ty(ty, params.clone()),
+                syn::GenericArgument::Type(ty) => is_generic_ty(ty, params),
                 _ => false,
             }),
             syn::PathArguments::Parenthesized(args) => {
                 if let syn::ReturnType::Type(_, ty) = &args.output {
-                    if is_generic_ty(ty, params.clone()) {
+                    if is_generic_ty(ty, params) {
                         return true;
                     }
                 }
-                args.inputs
-                    .iter()
-                    .any(|ty| is_generic_ty(ty, params.clone()))
+                args.inputs.iter().any(|ty| is_generic_ty(ty, params))
             }
             syn::PathArguments::None => false,
         }
@@ -91,43 +89,41 @@ fn filter_type_param<'a>(
 
 fn is_generic_ty<'a>(
     ty: &syn::Type,
-    params: impl Clone + Iterator<Item = &'a syn::TypeParam>,
+    params: &(impl Clone + Iterator<Item = &'a syn::TypeParam>),
 ) -> bool {
     match ty {
-        syn::Type::Array(syn::TypeArray { elem, .. }) => is_generic_ty(elem, params),
+        syn::Type::Array(syn::TypeArray { elem, .. })
+        | syn::Type::Group(syn::TypeGroup { elem, .. })
+        | syn::Type::Paren(syn::TypeParen { elem, .. })
+        | syn::Type::Ptr(syn::TypePtr { elem, .. })
+        | syn::Type::Reference(syn::TypeReference { elem, .. })
+        | syn::Type::Slice(syn::TypeSlice { elem, .. }) => is_generic_ty(elem, params),
         syn::Type::BareFn(syn::TypeBareFn { inputs, output, .. }) => {
             if let syn::ReturnType::Type(_, ty) = output {
-                if is_generic_ty(ty, params.clone()) {
+                if is_generic_ty(ty, params) {
                     return true;
                 }
             }
-            inputs
-                .iter()
-                .any(|arg| is_generic_ty(&arg.ty, params.clone()))
+            inputs.iter().any(|arg| is_generic_ty(&arg.ty, params))
         }
-        syn::Type::Group(group) => is_generic_ty(&group.elem, params),
-        syn::Type::Paren(paren) => is_generic_ty(&paren.elem, params),
         syn::Type::Path(syn::TypePath { qself, path }) => {
             if let Some(syn::QSelf { ty, .. }) = qself {
-                if is_generic_ty(&ty, params.clone()) {
+                if is_generic_ty(ty, params) {
                     return true;
                 }
             }
-            is_generic_path(&path, params)
+            is_generic_path(path, params)
         }
-        syn::Type::Ptr(syn::TypePtr { elem, .. }) => is_generic_ty(elem, params),
-        syn::Type::Reference(syn::TypeReference { elem, .. }) => is_generic_ty(elem, params),
-        syn::Type::Slice(syn::TypeSlice { elem, .. }) => is_generic_ty(elem, params),
         syn::Type::TraitObject(syn::TypeTraitObject { bounds, .. }) => {
             bounds.iter().any(|bound| match bound {
                 syn::TypeParamBound::Trait(trait_bound) => {
-                    is_generic_path(&trait_bound.path, params.clone())
+                    is_generic_path(&trait_bound.path, params)
                 }
                 _ => false,
             })
         }
         syn::Type::Tuple(syn::TypeTuple { elems, .. }) => {
-            elems.iter().any(|ty| is_generic_ty(ty, params.clone()))
+            elems.iter().any(|ty| is_generic_ty(ty, params))
         }
         _ => false,
     }
@@ -158,7 +154,7 @@ fn struct_field_order_checks(
             ),
         };
         let f = field.ident.as_ref().unwrap();
-        let error = format!("Field `{}.{}` is out of order with formula's", this, f);
+        let error = format!("Field `{this}.{f}` is out of order with formula's");
         quote::quote_spanned!(f.span() => ::alkahest::private::debug_assert_eq!(#idx, #formula::#order, #error);)
     })
     .collect()
@@ -184,7 +180,7 @@ fn enum_field_order_checks(
                 v.ident,
                 field.ident.as_ref().unwrap(),
             );
-            let error = format!("Field `{}.{}` is out of order with formula's", this, f);
+            let error = format!("Field `{this}.{f}` is out of order with formula's");
             quote::quote_spanned!(f.span() => ::alkahest::private::debug_assert_eq!(#idx, #formula::#order, #error);)
         })
     }).collect()

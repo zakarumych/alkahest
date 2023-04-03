@@ -5,6 +5,7 @@ use syn::spanned::Spanned;
 
 use crate::{attrs::parse_attributes, filter_type_param, is_generic_ty};
 
+#[allow(clippy::too_many_lines)]
 pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
     let input = syn::parse::<syn::DeriveInput>(input)?;
     let ident = &input.ident;
@@ -32,18 +33,16 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
     }
 
     match &input.data {
-        syn::Data::Union(data) => {
-            return Err(syn::Error::new_spanned(
-                data.union_token,
-                "Formula cannot be derived for unions",
-            ))
-        }
+        syn::Data::Union(data) => Err(syn::Error::new_spanned(
+            data.union_token,
+            "Formula cannot be derived for unions",
+        )),
         syn::Data::Struct(data) => {
             let all_field_types: Vec<_> = data.fields.iter().map(|field| &field.ty).collect();
             let last_field_type = all_field_types.last().copied().into_iter();
             let mut all_generic_field_types: HashSet<_> = all_field_types.iter().copied().collect();
             all_generic_field_types
-                .retain(|ty| is_generic_ty(ty, filter_type_param(input.generics.params.iter())));
+                .retain(|ty| is_generic_ty(ty, &filter_type_param(input.generics.params.iter())));
 
             let mut formula_generics = input.generics.clone();
             if !all_generic_field_types.is_empty() {
@@ -152,7 +151,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
             let mut all_generic_field_types: HashSet<_> =
                 all_field_types_flat.iter().copied().collect();
             all_generic_field_types
-                .retain(|ty| is_generic_ty(ty, filter_type_param(input.generics.params.iter())));
+                .retain(|ty| is_generic_ty(ty, &filter_type_param(input.generics.params.iter())));
 
             let mut formula_generics = input.generics.clone();
 
@@ -197,6 +196,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 .map(|v| quote::format_ident!("__ALKAHEST_FORMULA_VARIANT_{}_IDX", v.ident))
                 .collect();
 
+            #[allow(clippy::cast_possible_truncation)]
             let variant_ids: Vec<_> = (0..data.variants.len() as u32).collect();
 
             let (impl_generics, type_generics, where_clause) = input.generics.split_for_impl();
