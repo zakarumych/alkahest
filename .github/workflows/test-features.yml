@@ -16,9 +16,9 @@ jobs:
       matrix:
         rust-toolchain: [stable, nightly]
         fixed: ["fixed8", "fixed16", "fixed32", "fixed64"]
-        alloc: [",alloc", ""]
+        std: [",std", ""]
         derive: [",derive", ""]
-        serde-bincode: [",serde-bincode", ""]
+        bincoded: [",bincoded", ""]
     steps:
     - uses: actions/checkout@v2
     - name: Install stable toolchain
@@ -30,4 +30,4 @@ jobs:
       uses: actions-rs/cargo@v1
       with:
         command: test
-        args: --all --no-default-features --features=${{ matrix.fixed }}${{ matrix.alloc }}${{ matrix.derive }}${{ matrix.serde-bincode }}
+        args: --all --no-default-features --features=${{ matrix.fixed }}${{ matrix.std }}${{ matrix.derive }}${{ matrix.bincoded }}
