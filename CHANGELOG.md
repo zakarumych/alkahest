@@ -7,7 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 * Reimplement with no unsafe code.
-* Fuse deserialization with cheap direct access using `Lazy` and `DeIter`.
+* Fuse deserialization with cheap direct access and lazy deserialization
+  using `Lazy` and `DeIter`.
 * Add support for unsized formulas.
 * Derive macro doesn't generate new types anymore.
 * Derive `Serialize` for a type to serialize it into specified formula,
