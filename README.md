@@ -22,7 +22,42 @@ This benchmark that mimics some game networking protocol.
 
 See also [benchmark results](./benches/BENCHMARKS.md) from <https://github.com/djkoloski/rust_serialization_benchmark> (in draft until 0.2 release).
 
-## How it works
+## Features
+
+* **Schema-based serialization**.
+  Alkahest uses data schemas called `Formula`s to serialize and deserialize data.
+  Thus controlling data layout independently from data types that are serialized
+  or deserialized.
+
+* **Support wide variety of formulas**.
+  Integers, floats, booleans, tuples, arrays, slices, strings and
+  user-defined formulas with custom data layout using `derive` macro
+  that works for structs and enums of any complexity and supports generics.
+
+* **Zero-overhead serialization of sequences**.
+  Alkahest support serializing iterators directly into slice formulas.
+  No more allocation of a `Vec` to serialize and drop immediately.
+
+* **Lazy deserialization**.
+  Alkahest provides `Lazy<F>` type to deserialize any formula `F` lazily.
+  `Lazy` can be used later to perform actual deserialization.\
+  `Lazy<[F]>` can also produce iterator that deserializes elements on demand.\
+  Laziness is controlled on type level and can be applied to any element
+  of a larger formula.
+
+* **Infallible serialization**.
+  Given large enough or growing buffer any value that implements `Serialize`
+  can be serialized without error.
+  No more unnecessary unwraps or puzzles "what to do if serialization fails?".
+  The only error condition for serialization is "data doesn't fit".
+
+### Planned features
+
+* Serializable formula descriptors
+* Compatibility rules
+* External tool for code-generation for formula descriptors for C and Rust.
+
+## How it works. In more details
 
 *Alkahest* separates data schema definition (aka `Formula`) from
 serialization and deserialization code.
@@ -46,7 +81,7 @@ And larger footprint of serialized data than some other binary formats.
 Question about support of dense data packing is open.
 It may be desireable to control on type level.
 
-## Errors and panics
+### Errors and panics
 
 The API is designed with following principles:
 Any value can be serialized successfully given large enough buffer.
@@ -55,7 +90,7 @@ Data can't cause panic, incorrect implementation of a trait can.
 There is *zero* unsafe code in the library on any code it generates.
 No UB is possible given that `std` is not unsound.
 
-## Forward and backward compatibility
+### Forward and backward compatibility
 
 No data schemas stays the same.
 New fields and variants are added,
@@ -223,46 +258,40 @@ formula, naturally it will be serialized using `bincode` crate.
 # Usage example
 
 ```rust
+// This requires two default features - "alloc" and "derive".
 #[cfg(all(feature = "derive", feature = "alloc"))]
 fn main() {
-use alkahest::{Formula, Serialize, Deserialize, serialize, serialized_size, deserialize};
+  use alkahest::{Formula, Serialize, Deserialize, serialize_to_vec, deserialize};
 
-// Define simple formula. Make it self-serializable.
-#[derive(Clone, Debug, PartialEq, Eq, Formula, Serialize, Deserialize)]
-struct MyDataType {
-  a: u32,
-  b: Vec<u8>,
+  // Define simple formula. Make it self-serializable.
+  #[derive(Clone, Debug, PartialEq, Eq, Formula, Serialize, Deserialize)]
+  struct MyDataType {
+    a: u32,
+    b: Vec<u8>,
+  }
+
+  // Prepare data to serialize.
+  let value = MyDataType {
+    a: 1,
+    b: vec![2, 3],
+  };
+
+  // Use infallible serialization to `Vec`.
+  let mut data = Vec::new();
+
+  // Note that this value can be serialized by reference.
+  // This is default behavior for `Serialized` derive macro.
+  // Some types required ownership transfer for serialization.
+  // Notable example is iterators.
+  let size = serialize_to_vec::<MyDataType, _>(&value, &mut data);
+
+  let (de, de_size) = deserialize::<MyDataType, MyDataType>(&data).unwrap();
+  assert_eq!(de_size, size);
+  assert_eq!(de, value);
 }
 
-// Prepare data to serialize.
-let value = MyDataType {
-  a: 1,
-  b: vec![2, 3],
-};
-
-// Find out how much space is required.
-// Note that this value is ref-serializable,
-// not every type can be serialized by reference,
-// notably types with iterators can't.
-// Currently size is calculated using serialization process with
-// writes to buffer omitted.
-let size = serialized_size::<MyDataType, _>(&value);
-
-// Prepare bytes buffer.
-let mut buffer = vec![0u8; size];
-
-let actual_size = serialize::<MyDataType, _>(&value, &mut buffer).expect("Buffer is large enough");
-
-// Calculated size must be exactly what is serialized.
-// If not, then some `Serialize` impl is incorrect.
-assert_eq!(actual_size, size, "thought so");
-
-let (deserialized, deserialized_size) = deserialize::<MyDataType, MyDataType>(&buffer).unwrap();
-assert_eq!(deserialized_size, size);
-assert_eq!(deserialized, value);
-}
-
-#[cfg(not(all(feature = "derive", feature = "alloc")))] fn main() {}
+#[cfg(not(all(feature = "derive", feature = "alloc")))]
+fn main() {}
 ```
 
 # Benchmarking
