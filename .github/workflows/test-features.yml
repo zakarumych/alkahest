@@ -2,9 +2,7 @@ name: Test features
 
 on:
   pull_request:
-    types: [ labeled ]
-    branches: [ main ]
-    paths: 
+    paths:
       - '**.rs'
       - '**/Cargo.toml'
 
