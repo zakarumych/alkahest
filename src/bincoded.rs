@@ -2,6 +2,7 @@ use std::{io::Cursor, marker::PhantomData, mem::size_of};
 
 use crate::{
     buffer::Buffer,
+    bytes::Bytes,
     deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::{reference_size, Formula},
     serialize::{write_reference, Serialize, Sizes},
@@ -17,7 +18,7 @@ use crate::{
 pub struct Bincode;
 
 impl Formula for Bincode {
-    const MAX_STACK_SIZE: Option<usize> = Some(size_of::<[FixedUsizeType; 2]>());
+    const MAX_STACK_SIZE: Option<usize> = Some(reference_size::<Bytes>());
     const EXACT_SIZE: bool = true;
     const HEAPLESS: bool = false;
 }
@@ -60,8 +61,8 @@ where
         }
 
         sizes.heap += size;
-        write_reference::<Bincode, B>(size, sizes.heap, sizes.heap, sizes.stack, buffer)?;
-        sizes.stack += reference_size::<Bincode>();
+        write_reference::<Bytes, B>(size, sizes.heap, sizes.heap, sizes.stack, buffer)?;
+        sizes.stack += reference_size::<Bytes>();
         Ok(())
     }
 
@@ -80,7 +81,7 @@ where
     where
         Self: Sized,
     {
-        let de = de.deref::<Bincode>()?;
+        let de = de.deref::<Bytes>()?;
 
         let options = bincode::config::DefaultOptions::new();
         let mut de = bincode::de::Deserializer::from_slice(de.read_all_bytes(), options);
@@ -93,7 +94,7 @@ where
 
     #[inline]
     fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), DeserializeError> {
-        let de = de.deref::<Bincode>()?;
+        let de = de.deref::<Bytes>()?;
 
         let options = bincode::config::DefaultOptions::new();
         let mut de = bincode::de::Deserializer::from_slice(de.read_all_bytes(), options);
