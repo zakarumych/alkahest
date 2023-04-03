@@ -1,4 +1,4 @@
-name: Check multiple toolchains
+name: Test features
 
 on:
   pull_request:
@@ -10,21 +10,24 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  check-toolchains:
-    if: ${{ github.event.label.name == 'ready-to-merge' }}
+  test:
     runs-on: ubuntu-latest
     strategy:
       matrix:
         rust-toolchain: [stable, nightly]
+        fixed: ["fixed8", "fixed16", "fixed32", "fixed64"]
+        std: [",std", ""]
+        derive: [",derive", ""]
+        bincoded: [",bincoded", ""]
     steps:
     - uses: actions/checkout@v2
-    - name: Install ${{ matrix.rust-toolchain }} toolchain
+    - name: Install stable toolchain
       uses: actions-rs/toolchain@v1
       with:
         profile: minimal
         toolchain: ${{ matrix.rust-toolchain }}
-    - name: Run cargo check
+    - name: Run cargo test
       uses: actions-rs/cargo@v1
       with:
-        command: check
-        args: --all --features=bincoded,derive
+        command: test
+        args: --all --no-default-features --features=${{ matrix.fixed }}${{ matrix.std }}${{ matrix.derive }}${{ matrix.bincoded }}

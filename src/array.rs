@@ -1,93 +1,146 @@
-use crate::schema::{Pack, Packed, Schema, SchemaUnpack, Unpacked};
+use crate::{
+    buffer::Buffer,
+    deserialize::{Deserialize, DeserializeError, Deserializer},
+    formula::{repeat_size, BareFormula, Formula},
+    iter::{owned_iter_fast_sizes, ref_iter_fast_sizes},
+    serialize::{write_array, write_slice, Serialize, Sizes},
+};
 
-impl<'a, T, const N: usize> SchemaUnpack<'a> for [T; N]
+impl<F, const N: usize> Formula for [F; N]
 where
-    T: Schema,
+    F: Formula,
 {
-    type Unpacked = [<T as SchemaUnpack<'a>>::Unpacked; N];
+    const MAX_STACK_SIZE: Option<usize> = repeat_size(F::MAX_STACK_SIZE, N);
+    const EXACT_SIZE: bool = true; // All elements are padded.
+    const HEAPLESS: bool = F::HEAPLESS;
 }
 
-impl<T, const N: usize> Schema for [T; N]
-where
-    T: Schema,
-{
-    type Packed = [T::Packed; N];
+impl<F, const N: usize> BareFormula for [F; N] where F: Formula {}
 
-    fn align() -> usize {
-        T::align()
+impl<F, T, const N: usize> Serialize<[F; N]> for [T; N]
+where
+    F: Formula,
+    T: Serialize<F>,
+{
+    #[inline(always)]
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
+    where
+        B: Buffer,
+    {
+        write_array(self.into_iter(), sizes, buffer)
     }
 
-    #[inline]
-    fn unpack<'a>(packed: [T::Packed; N], input: &'a [u8]) -> Unpacked<'a, Self> {
-        packed.map(|packed| T::unpack(packed, input))
-    }
-}
-
-impl<T, U, const N: usize> Pack<[T; N]> for [U; N]
-where
-    T: Schema,
-    U: Pack<T>,
-{
-    #[inline]
-    fn pack(self, offset: usize, output: &mut [u8]) -> (Packed<[T; N]>, usize) {
-        debug_assert_eq!(
-            output.as_ptr() as usize % <[T; N] as Schema>::align(),
-            0,
-            "Output buffer is not aligned"
-        );
-
-        debug_assert_eq!(
-            offset % <[T; N] as Schema>::align(),
-            0,
-            "Offset is not aligned"
-        );
-
-        let item_align_mask = <T>::align() - 1;
-
-        let mut used = 0;
-
-        let packed = self.map(|pack| {
-            let aligned = (used + item_align_mask) & !item_align_mask;
-            let (packed, size) = pack.pack(offset + aligned, &mut output[aligned..]);
-            used = aligned + size;
-            packed
-        });
-        (packed, used)
+    #[inline(always)]
+    fn size_hint(&self) -> Option<Sizes> {
+        ref_array_fast_sizes::<F, _, _>(self.iter())
     }
 }
 
-impl<T, U, const N: usize> Pack<[T; N]> for &'_ [U; N]
+impl<'ser, F, T, const N: usize> Serialize<[F; N]> for &'ser [T; N]
 where
-    T: Schema,
-    for<'a> &'a U: Pack<T>,
+    F: Formula,
+    &'ser T: Serialize<F>,
 {
-    #[inline]
-    fn pack(self, offset: usize, output: &mut [u8]) -> (Packed<[T; N]>, usize) {
-        debug_assert_eq!(
-            output.as_ptr() as usize % <[T; N] as Schema>::align(),
-            0,
-            "Output buffer is not aligned"
-        );
+    #[inline(always)]
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
+    where
+        B: Buffer,
+    {
+        write_array(self.iter(), sizes, buffer)
+    }
 
-        debug_assert_eq!(
-            offset % <[T; N] as Schema>::align(),
-            0,
-            "Offset is not aligned"
-        );
+    #[inline(always)]
+    fn size_hint(&self) -> Option<Sizes> {
+        owned_array_fast_sizes::<F, _, _>(self.iter())
+    }
+}
 
-        let mut storage: Packed<[T; N]> = bytemuck::Zeroable::zeroed();
+impl<F, T, const N: usize> Serialize<[F]> for [T; N]
+where
+    F: Formula,
+    T: Serialize<F>,
+{
+    #[inline(always)]
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
+    where
+        B: Buffer,
+    {
+        write_slice(self.into_iter(), sizes, buffer)
+    }
 
-        let item_align_mask = <T>::align() - 1;
+    #[inline(always)]
+    fn size_hint(&self) -> Option<Sizes> {
+        ref_iter_fast_sizes::<F, _, _>(self.iter())
+    }
+}
 
-        let mut used = 0;
+impl<'ser, F, T, const N: usize> Serialize<[F]> for &'ser [T; N]
+where
+    F: Formula,
+    &'ser T: Serialize<F>,
+{
+    #[inline(always)]
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
+    where
+        B: Buffer,
+    {
+        write_slice(self.iter(), sizes, buffer)
+    }
 
-        for i in 0..N {
-            let aligned = (used + item_align_mask) & !item_align_mask;
-            let (packed, size) = (&self[i]).pack(offset + aligned, &mut output[aligned..]);
-            used = aligned + size;
-            storage[i] = packed;
-        }
+    #[inline(always)]
+    fn size_hint(&self) -> Option<Sizes> {
+        owned_iter_fast_sizes::<F, _, _>(self.iter())
+    }
+}
 
-        (storage, used)
+impl<'de, F, T, const N: usize> Deserialize<'de, [F; N]> for [T; N]
+where
+    F: Formula,
+    T: Deserialize<'de, F>,
+{
+    #[inline(always)]
+    fn deserialize(mut de: Deserializer<'de>) -> Result<Self, DeserializeError> {
+        let mut opts = [(); N].map(|_| None);
+        opts.iter_mut().try_for_each(|slot| {
+            *slot = Some(de.read_value::<F, T>(false)?);
+            Ok(())
+        })?;
+        let value = opts.map(Option::unwrap);
+        Ok(value)
+    }
+
+    #[inline(always)]
+    fn deserialize_in_place(&mut self, mut de: Deserializer<'de>) -> Result<(), DeserializeError> {
+        self.iter_mut()
+            .try_for_each(|elem| de.read_in_place::<F, T>(elem, false))?;
+        Ok(())
+    }
+}
+
+/// Returns the size of the serialized data if it can be determined fast.
+#[inline(always)]
+pub fn owned_array_fast_sizes<F, I, T>(iter: I) -> Option<Sizes>
+where
+    F: Formula + ?Sized,
+    I: Iterator<Item = T>,
+    T: Serialize<F>,
+{
+    match (F::HEAPLESS, F::MAX_STACK_SIZE) {
+        (true, Some(0)) => Some(Sizes::ZERO),
+        _ => owned_iter_fast_sizes::<F, I, T>(iter),
+    }
+}
+
+/// Returns the size of the serialized data if it can be determined fast.
+#[inline(always)]
+pub fn ref_array_fast_sizes<'a, F, I, T: 'a>(iter: I) -> Option<Sizes>
+where
+    F: Formula + ?Sized,
+    I: Iterator<Item = &'a T>,
+    T: Serialize<F>,
+{
+    match (F::HEAPLESS, F::MAX_STACK_SIZE) {
+        (true, Some(0)) => Some(Sizes::ZERO),
+        _ => ref_iter_fast_sizes::<F, I, T>(iter),
     }
 }

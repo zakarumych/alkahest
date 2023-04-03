@@ -1,223 +1,187 @@
 extern crate proc_macro;
 
-mod schema;
+mod attrs;
+mod deserialize;
+mod formula;
+mod serialize;
 
 use proc_macro::TokenStream;
 
-/// Proc-macro to derive `Schema` trait for user-defined type.
+/// Proc-macro to derive `Formula` trait for user-defined type.
 ///
 /// This macro requires that type is either `struct` or `enum`.
-/// All fields must implement `Schema`. If fields are of generic type, proper bounds must be added.
-/// Type must not have any lifetimes.
-///
-/// Macro generates a number auxiliary types along with trait implementation.\
-/// Private type for [`Packed`] associated type named `<InputTypeName>Packed`.\
-/// Type for [`Unpacked`] associated type with same visibility as input type named `<InputTypeName>Unpacked`.\
-/// Type for with [`Pack`] implementation with same visibility as input type named `<InputTypeName>Pack`.\
-/// For enums [`Pack`] implementation is generated for each variant instead named `<InputTypeName><VariantName>Pack`.
-///
-/// [`Packed`]: ../alkahest/trait.Schema.html#associatedtype.Packed
-/// [`Unpacked`]: ../alkahest/trait.SchemaUnpack.html#associatedtype.Unpacked
-/// [`Pack`]: ../alkahest/trait.Pack.html
-#[proc_macro_derive(Schema, attributes(alkahest))]
-pub fn derive_schema(input: TokenStream) -> TokenStream {
-    let input = syn::parse_macro_input!(input as syn::DeriveInput);
-    match schema::derive_schema(input) {
+/// All fields must implement `Formula`.
+#[proc_macro_derive(Formula, attributes(alkahest))]
+pub fn derive_formula(input: TokenStream) -> TokenStream {
+    match formula::derive(input) {
         Ok(tokens) => tokens.into(),
-        Err(err) => err.into_compile_error().into(),
+        Err(err) => err.to_compile_error().into(),
     }
 }
 
-mod kw {
-    // syn::custom_keyword!(alkahest);
-    // syn::custom_keyword!(schema);
-    // syn::custom_keyword!(owned);
+/// Proc-macro to derive `Serialize` trait for user-defined type.
+///
+/// This macro requires that type is either `struct` or `enum`.
+/// All fields must implement `Serialize`.
+#[proc_macro_derive(Serialize, attributes(alkahest))]
+pub fn derive_serialize(input: TokenStream) -> TokenStream {
+    match serialize::derive(input) {
+        Ok(tokens) => tokens.into(),
+        Err(err) => err.to_compile_error().into(),
+    }
 }
 
-enum AlkahestAttr {
-    Bounds(syn::WhereClause),
-    // Schema {
-    //     schema: kw::schema,
-    //     clause: syn::WhereClause,
-    // },
-    // Owned {
-    //     owned: kw::owned,
-    //     clause: Option<syn::WhereClause>,
-    // },
+/// Proc-macro to derive `Deserialize` trait for user-defined type.
+///
+/// This macro requires that type is either `struct` or `enum`.
+/// All fields must implement `Deserialize`.
+#[proc_macro_derive(Deserialize, attributes(alkahest))]
+pub fn derive_deserialize(input: TokenStream) -> TokenStream {
+    match deserialize::derive(input) {
+        Ok(tokens) => tokens.into(),
+        Err(err) => err.to_compile_error().into(),
+    }
 }
 
-impl syn::parse::Parse for AlkahestAttr {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        if input.peek(syn::Token![where]) {
-            let clause = input.parse::<syn::WhereClause>()?;
-            Ok(AlkahestAttr::Bounds(clause))
-        } else {
-            // if input.peek(kw::schema) {
-            //     let schema = input.parse::<kw::schema>()?;
-            //     let bounds;
-            //     syn::parenthesized!(bounds in input);
-            //     let clause = bounds.parse::<syn::WhereClause>()?;
-            //     Ok(AlkahestAttr::Schema { schema, clause })
-            // } else if input.peek(kw::owned) {
-            //     let owned = input.parse::<kw::owned>()?;
-            //     if input.peek(syn::token::Paren) {
-            //         let bounds;
-            //         syn::parenthesized!(bounds in input);
-            //         let clause = bounds.parse::<syn::WhereClause>()?;
-            //         Ok(AlkahestAttr::Owned {
-            //             owned,
-            //             clause: Some(clause),
-            //         })
-            //     } else {
-            //         Ok(AlkahestAttr::Owned {
-            //             owned,
-            //             clause: None,
-            //         })
-            //     }
-            // } else {
-            Err(input.error("Expected where clause, `schema` with where clause, or `owner` ident with optional where clause"))
+fn is_generic_path<'a>(
+    path: &syn::Path,
+    params: &(impl Clone + Iterator<Item = &'a syn::TypeParam>),
+) -> bool {
+    path.segments.iter().any(|seg| {
+        if params.clone().any(|p| {
+            // if p.ident == "T" {
+            //     panic!();
             // }
+            p.ident == seg.ident
+        }) {
+            return true;
         }
-    }
-}
-
-fn parse_attrs<'a>(
-    attrs: impl Iterator<Item = &'a syn::Attribute>,
-) -> syn::Result<Vec<AlkahestAttr>> {
-    let mut result = Vec::new();
-
-    for attr in attrs {
-        if attr.path.is_ident("alkahest") {
-            result.extend(attr.parse_args_with(|stream: syn::parse::ParseStream| {
-                stream.parse_terminated::<_, syn::token::Comma>(syn::parse::Parse::parse)
-            })?);
-        }
-    }
-
-    Ok(result)
-}
-
-struct AlkahestConfig {
-    schema_bounds: syn::WhereClause,
-    // owned_bounds: syn::WhereClause,
-    // derive_owned: bool,
-}
-
-impl AlkahestConfig {
-    fn from_input(input: &syn::DeriveInput) -> syn::Result<Self> {
-        let attrs = parse_attrs(input.attrs.iter())?;
-        Self::new(&attrs, &input.generics)
-    }
-
-    fn new(attrs: &[AlkahestAttr], generics: &syn::Generics) -> syn::Result<Self> {
-        let mut common_bounds = None;
-        let schema_bounds = None;
-        // let mut owned_bounds = None;
-        // let mut derive_owned = false;
-
-        for attr in attrs {
-            match attr {
-                AlkahestAttr::Bounds(clause) => {
-                    if common_bounds.is_some() {
-                        return Err(syn::Error::new_spanned(
-                            clause,
-                            "Duplicate where clause for alkahest derive",
-                        ));
-                    }
-                    // if schema_bounds.is_some() {
-                    //     return Err(syn::Error::new_spanned(
-                    //         clause,
-                    //         "Redundant where clause for alkahest derive when `Schema` specific is already provided",
-                    //     ));
-                    // }
-                    // if owned_bounds.is_some() {
-                    //     return Err(syn::Error::new_spanned(
-                    //         clause,
-                    //         "Redundant where clause for alkahest derive when `SchemaOwned` specific is already provided",
-                    //     ));
-                    // }
-                    common_bounds = Some(clause);
-                } // AlkahestAttr::Schema { schema, clause } => {
-                  //     if common_bounds.is_some() {
-                  //         return Err(syn::Error::new_spanned(
-                  //             schema,
-                  //             "Redundant where clause for `alkahest::Schema` derive when common one is already provided",
-                  //         ));
-                  //     }
-                  //     if schema_bounds.is_some() {
-                  //         return Err(syn::Error::new_spanned(
-                  //             schema,
-                  //             "Duplicate where clause for `alkahest::Schema` derive",
-                  //         ));
-                  //     }
-
-                  //     schema_bounds = Some(clause);
-                  // }
-                  // AlkahestAttr::Owned { owned, clause } => {
-                  //     if derive_owned {
-                  //         return Err(syn::Error::new_spanned(
-                  //             owned,
-                  //             "Redundant `owned` attribute",
-                  //         ));
-                  //     }
-
-                  //     derive_owned = true;
-
-                  //     if let Some(clause) = clause {
-                  //         if common_bounds.is_some() {
-                  //             return Err(syn::Error::new_spanned(
-                  //                 owned,
-                  //                 "Redundant where clause for `alkahest::Owned` derive when common one is already provided",
-                  //             ));
-                  //         }
-                  //         if owned_bounds.is_some() {
-                  //             return Err(syn::Error::new_spanned(
-                  //                 owned,
-                  //                 "Duplicate where clause for `alkahest::Owned` derive",
-                  //             ));
-                  //         }
-                  //         owned_bounds = Some(clause);
-                  //     }
-                  // }
-            }
-        }
-
-        Ok(AlkahestConfig {
-            // derive_owned,
-            schema_bounds: schema_bounds.or(common_bounds).cloned().unwrap_or_else(|| {
-                syn::WhereClause {
-                    where_token: Default::default(),
-                    predicates: generics
-                        .params
-                        .iter()
-                        .filter_map(|param| -> Option<syn::WherePredicate> {
-                            if let syn::GenericParam::Type(param) = param {
-                                let ident = &param.ident;
-                                Some(syn::parse_quote!(#ident : ::alkahest::Schema))
-                            } else {
-                                None
-                            }
-                        })
-                        .collect(),
-                }
+        match &seg.arguments {
+            syn::PathArguments::AngleBracketed(args) => args.args.iter().any(|arg| match arg {
+                syn::GenericArgument::Type(ty) => is_generic_ty(ty, params),
+                _ => false,
             }),
-            // owned_bounds: owned_bounds.or(common_bounds).cloned().unwrap_or_else(|| {
-            //     syn::WhereClause {
-            //         where_token: Default::default(),
-            //         predicates: generics
-            //             .params
-            //             .iter()
-            //             .filter_map(|param| -> Option<syn::WherePredicate> {
-            //                 if let syn::GenericParam::Type(param) = param {
-            //                     let ident = &param.ident;
-            //                     Some(syn::parse_quote!(#ident : ::alkahest::SchemaOwned))
-            //                 } else {
-            //                     None
-            //                 }
-            //             })
-            //             .collect(),
-            //     }
-            // }),
-        })
+            syn::PathArguments::Parenthesized(args) => {
+                if let syn::ReturnType::Type(_, ty) = &args.output {
+                    if is_generic_ty(ty, params) {
+                        return true;
+                    }
+                }
+                args.inputs.iter().any(|ty| is_generic_ty(ty, params))
+            }
+            syn::PathArguments::None => false,
+        }
+    })
+}
+
+// fn has_type_param<'a>(mut params: impl Iterator<Item = &'a syn::GenericParam>) -> bool {
+//     params.any(|param| matches!(param, syn::GenericParam::Type(_)))
+// }
+
+fn filter_type_param<'a>(
+    params: impl Clone + Iterator<Item = &'a syn::GenericParam>,
+) -> impl Clone + Iterator<Item = &'a syn::TypeParam> {
+    params.filter_map(|param| match param {
+        syn::GenericParam::Type(param) => Some(param),
+        _ => None,
+    })
+}
+
+fn is_generic_ty<'a>(
+    ty: &syn::Type,
+    params: &(impl Clone + Iterator<Item = &'a syn::TypeParam>),
+) -> bool {
+    match ty {
+        syn::Type::Array(syn::TypeArray { elem, .. })
+        | syn::Type::Group(syn::TypeGroup { elem, .. })
+        | syn::Type::Paren(syn::TypeParen { elem, .. })
+        | syn::Type::Ptr(syn::TypePtr { elem, .. })
+        | syn::Type::Reference(syn::TypeReference { elem, .. })
+        | syn::Type::Slice(syn::TypeSlice { elem, .. }) => is_generic_ty(elem, params),
+        syn::Type::BareFn(syn::TypeBareFn { inputs, output, .. }) => {
+            if let syn::ReturnType::Type(_, ty) = output {
+                if is_generic_ty(ty, params) {
+                    return true;
+                }
+            }
+            inputs.iter().any(|arg| is_generic_ty(&arg.ty, params))
+        }
+        syn::Type::Path(syn::TypePath { qself, path }) => {
+            if let Some(syn::QSelf { ty, .. }) = qself {
+                if is_generic_ty(ty, params) {
+                    return true;
+                }
+            }
+            is_generic_path(path, params)
+        }
+        syn::Type::TraitObject(syn::TypeTraitObject { bounds, .. }) => {
+            bounds.iter().any(|bound| match bound {
+                syn::TypeParamBound::Trait(trait_bound) => {
+                    is_generic_path(&trait_bound.path, params)
+                }
+                _ => false,
+            })
+        }
+        syn::Type::Tuple(syn::TypeTuple { elems, .. }) => {
+            elems.iter().any(|ty| is_generic_ty(ty, params))
+        }
+        _ => false,
     }
+}
+
+fn struct_field_order_checks(
+    data: &syn::DataStruct,
+    variant: Option<&syn::Ident>,
+    this: &syn::Ident,
+    formula: &syn::Path,
+) -> proc_macro2::TokenStream {
+    let no_named_fields = syn::punctuated::Punctuated::<syn::Field, syn::Token![,]>::new();
+
+    match &data.fields {
+        syn::Fields::Named(fields) => fields.named.iter(),
+        _ => no_named_fields.iter(),
+    }.enumerate()
+    .map(|(idx, field)| {
+        let order = match variant {
+            None => quote::format_ident!(
+                "__ALKAHEST_FORMULA_FIELD_{}_IDX",
+                field.ident.as_ref().unwrap(),
+            ),
+            Some(v) => quote::format_ident!(
+                "__ALKAHEST_FORMULA_VARIANT_{}_FIELD_{}_IDX",
+                v,
+                field.ident.as_ref().unwrap(),
+            ),
+        };
+        let f = field.ident.as_ref().unwrap();
+        let error = format!("Field `{this}.{f}` is out of order with formula's");
+        quote::quote_spanned!(f.span() => ::alkahest::private::debug_assert_eq!(#idx, #formula::#order, #error);)
+    })
+    .collect()
+}
+
+fn enum_field_order_checks(
+    data: &syn::DataEnum,
+    this: &syn::Ident,
+    formula: &syn::Path,
+) -> proc_macro2::TokenStream {
+    let no_named_fields = syn::punctuated::Punctuated::<syn::Field, syn::Token![,]>::new();
+
+    data.variants.iter().flat_map(|v| {
+        match &v.fields {
+            syn::Fields::Named(fields) => fields.named.iter(),
+            _ => no_named_fields.iter(),
+        }
+        .enumerate()
+        .map(move |(idx, field)| {
+            let f = field.ident.as_ref().unwrap();
+            let order = quote::format_ident!(
+                "__ALKAHEST_FORMULA_VARIANT_{}_FIELD_{}_IDX",
+                v.ident,
+                field.ident.as_ref().unwrap(),
+            );
+            let error = format!("Field `{this}.{f}` is out of order with formula's");
+            quote::quote_spanned!(f.span() => ::alkahest::private::debug_assert_eq!(#idx, #formula::#order, #error);)
+        })
+    }).collect()
 }

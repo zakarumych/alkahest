@@ -1,92 +1,191 @@
+#![doc = include_str!("../README.md")]
 //!
-//! *Alkahest* is serialization library aimed for packet writing and reading in hot path.
-//! For this purpose *Alkahest* avoids allocations and reads data only on demand.
-//!
-//! Key differences of *Alkahest* from other popular serialization crates is zero-overhead serialization and zero-copy lazy deserialization.\
-//! For example to serialize value sequence it is not necessary to construct expensive type with allocations such as vectors.\
-//! Instead sequences are serialized directly from iterators. On deserialization an iterator is returned to the user, which does not parse any element before it is requested.
-//! Which means that data that is not accessed - not parsed either.
-//!
-//! *Alkahest* works similarly to *FlatBuffers*,\
-//! but does not require using another language for data scheme definition and running external tool,\
-//! and supports generic schemas.
-//!
+//! The root module exports public API sufficient for most use cases.
+//! Except manual implementation and direct usage of `Buffer`, `Formula`,
+//! `Serialize` and `Deserialize` traits and `Deserializer` type.
+//! For those use cases, see `advanced` module.
 
-#![no_std]
-#![deny(unsafe_code)]
+#![cfg_attr(not(feature = "std"), no_std)]
+#![forbid(unsafe_code)]
+#![deny(missing_docs)]
 
-#[cfg(feature = "nightly")]
+#[cfg(test)]
+extern crate self as alkahest;
+
+#[cfg(feature = "alloc")]
+extern crate alloc;
+
 mod array;
+mod r#as;
+mod buffer;
 mod bytes;
+mod deserialize;
+mod formula;
+mod iter;
+mod lazy;
 mod option;
 mod primitive;
-mod schema;
-mod seq;
+mod reference;
+mod serialize;
+mod size;
+mod skip;
+mod slice;
 mod str;
 mod tuple;
+mod vlq;
 
-use core::mem::size_of;
+#[cfg(test)]
+mod tests;
 
-pub use self::{
+#[cfg(feature = "alloc")]
+mod vec;
+
+#[cfg(feature = "alloc")]
+mod vec_deque;
+
+#[cfg(feature = "alloc")]
+mod string;
+
+#[cfg(feature = "bincoded")]
+mod bincoded;
+
+pub use crate::{
+    buffer::BufferExhausted,
     bytes::Bytes,
-    schema::{Pack, Packed, Schema, SchemaUnpack, Unpacked},
-    seq::{Seq, SeqUnpacked},
-    str::Str,
+    deserialize::{
+        deserialize, deserialize_in_place, value_size, DeIter, Deserialize, DeserializeError,
+    },
+    formula::Formula,
+    iter::SerIter,
+    lazy::Lazy,
+    r#as::As,
+    reference::Ref,
+    serialize::{
+        serialize, serialize_or_size, serialize_unchecked, serialized_size, BufferSizeRequired,
+        Serialize,
+    },
+    size::{FixedIsize, FixedUsize},
+    skip::Skip,
+    vlq::Vlq,
 };
 
+#[cfg(feature = "alloc")]
+pub use crate::serialize::serialize_to_vec;
+
 #[cfg(feature = "derive")]
-pub use alkahest_proc::Schema;
+pub use alkahest_proc::{Deserialize, Formula, Serialize};
 
-// Exports for proc-macro.
-#[doc(hidden)]
-pub use bytemuck::{Pod, Zeroable};
+#[cfg(feature = "bincoded")]
+pub use bincoded::{Bincode, Bincoded};
 
-/// Writes data into bytes slice.
-/// Returns number of bytes written.
-///
-/// # Panics
-///
-/// Panics if value doesn't fit into bytes.
-pub fn write<'a, T, P>(bytes: &'a mut [u8], packable: P) -> usize
-where
-    T: Schema,
-    P: Pack<T>,
-{
-    let align_mask = T::align() - 1;
-    debug_assert_eq!(
-        bytes.as_ptr() as usize & align_mask,
-        0,
-        "Output is not aligned to {}",
-        align_mask + 1
-    );
+/// This module contains types and functions for manual implementations of
+/// `Serialize` and `Deserialize` traits.
+pub mod advanced {
+    pub use crate::{
+        buffer::{Buffer, CheckedFixedBuffer, MaybeFixedBuffer},
+        deserialize::Deserializer,
+        formula::{reference_size, BareFormula},
+        iter::{default_iter_fast_sizes, deserialize_extend_iter, deserialize_from_iter},
+        serialize::{
+            field_size_hint, formula_fast_sizes, slice_writer, write_array, write_bytes,
+            write_exact_size_field, write_field, write_ref, write_reference, write_slice, Sizes,
+            SliceWriter,
+        },
+        size::{FixedIsize, FixedIsizeType},
+    };
 
-    let packed_size = size_of::<T::Packed>();
-    let aligned = (packed_size + align_mask) & !align_mask;
-    let (packed, used) = packable.pack(aligned, &mut bytes[aligned..]);
-    bytes[..packed_size].copy_from_slice(bytemuck::bytes_of(&packed));
-    aligned + used
+    #[cfg(feature = "alloc")]
+    pub use crate::buffer::VecBuffer;
 }
 
-/// Reads and unpacks package from raw bytes.
-///
-/// # Panics
-///
-/// This function or returned value's methods may panic
-/// if `bytes` slice does not contain data written with same schema.
-pub fn read<'a, T>(bytes: &'a [u8]) -> Unpacked<'a, T>
-where
-    T: Schema,
-{
-    match bytemuck::try_from_bytes(&bytes[..size_of::<T::Packed>()]) {
-        Ok(value) => T::unpack(*value, bytes),
-        Err(err) => {
-            panic!("Unpack failed due to error: {:#?}", err);
+/// Private module for macros to use.
+/// Changes here are not considered breaking.
+#[doc(hidden)]
+pub mod private {
+    pub use {
+        bool,
+        core::{convert::Into, debug_assert_eq, option::Option, result::Result},
+        u32, u8, usize,
+    };
+
+    pub use crate::{
+        buffer::Buffer,
+        deserialize::{Deserialize, DeserializeError, Deserializer},
+        formula::{max_size, sum_size, BareFormula, Formula},
+        serialize::{formula_fast_sizes, write_exact_size_field, write_field, Serialize, Sizes},
+    };
+
+    use core::marker::PhantomData;
+
+    pub const VARIANT_SIZE: usize = core::mem::size_of::<u32>();
+    pub const VARIANT_SIZE_OPT: Option<usize> = Some(VARIANT_SIZE);
+
+    pub struct WithFormula<F: Formula + ?Sized> {
+        marker: PhantomData<fn(&F) -> &F>,
+    }
+
+    impl<F> WithFormula<F>
+    where
+        F: Formula + ?Sized,
+    {
+        #[inline(always)]
+        pub fn write_field<T, B>(
+            self,
+            value: T,
+            sizes: &mut Sizes,
+            buffer: B,
+            last: bool,
+        ) -> Result<(), B::Error>
+        where
+            B: Buffer,
+            T: Serialize<F>,
+        {
+            crate::serialize::write_field(value, sizes, buffer, last)
+        }
+
+        #[inline(always)]
+        pub fn read_field<'de, T>(
+            self,
+            de: &mut Deserializer<'de>,
+            last: bool,
+        ) -> Result<T, DeserializeError>
+        where
+            F: Formula,
+            T: Deserialize<'de, F>,
+        {
+            de.read_value::<F, T>(last)
+        }
+
+        #[inline(always)]
+        pub fn read_in_place<'de, T>(
+            self,
+            place: &mut T,
+            de: &mut Deserializer<'de>,
+            last: bool,
+        ) -> Result<(), DeserializeError>
+        where
+            F: Formula,
+            T: Deserialize<'de, F>,
+        {
+            de.read_in_place::<F, T>(place, last)
+        }
+
+        #[inline(always)]
+        pub fn size_hint<T>(self, value: &T, last: bool) -> Option<Sizes>
+        where
+            T: Serialize<F>,
+        {
+            crate::serialize::field_size_hint::<F>(value, last)
+        }
+    }
+
+    #[must_use]
+    #[inline(always)]
+    pub fn with_formula<F: Formula + ?Sized, L: Formula + ?Sized>(
+        _: impl FnOnce(&F) -> &L,
+    ) -> WithFormula<L> {
+        WithFormula {
+            marker: PhantomData,
         }
     }
 }
-
-/// Type used to represent sizes and offsets in alkahest packages.
-/// This places limitation on sequence sizes which practically is never hit.
-/// `usize` itself is not portable and cannot be written into alkahest package.
-#[doc(hidden)]
-pub type FixedUsize = u32;

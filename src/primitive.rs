@@ -1,84 +1,188 @@
-use {
-    crate::schema::{Pack, Schema, SchemaUnpack},
-    core::mem::align_of,
+use core::{borrow::Borrow, mem::size_of};
+
+use crate::{
+    buffer::Buffer,
+    deserialize::{Deserialize, DeserializeError, Deserializer},
+    formula::{BareFormula, Formula},
+    serialize::{write_bytes, Serialize, Sizes},
 };
 
 macro_rules! impl_primitive {
-    ($head:ty $(, $tail:ty)+ $(,)?) => {
-        impl_primitive!($head);
-        impl_primitive!($($tail),+);
+    () => {};
+
+    ([$($head:ident)+] $([$($tail:ident)+])*) => {
+        impl_primitive!(@ < $($head)+);
+        impl_primitive!($([$($tail)+])*);
     };
-    ($ty:ty) => {
-        impl<'a> SchemaUnpack<'a> for $ty {
-            type Unpacked = Self;
+
+    (@ $($head:ident)* <) => {};
+    (@ $($head:ident)* < $cursor:ident $($tail:ident)*) => {
+        impl_primitive!{! $($head)* < $cursor < $($tail)* }
+        impl_primitive!{@ $($head)* $cursor < $($tail)* }
+    };
+
+    (! $($from:ident)* < $ty:ident < $($to:ident)*) => {
+        impl Formula for $ty {
+            const MAX_STACK_SIZE: Option<usize> = Some(size_of::<$ty>());
+            const EXACT_SIZE: bool = true;
+            const HEAPLESS: bool = true;
         }
 
-        impl Schema for $ty {
-            type Packed = Self;
+        impl BareFormula for $ty {}
 
+        impl Serialize<$ty> for $ty {
             #[inline(always)]
-            fn align() -> usize {
-                align_of::<$ty>()
+            fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
+            where
+                B: Buffer,
+            {
+                write_bytes(&self.to_le_bytes(), sizes, buffer)
             }
 
             #[inline(always)]
-            #[cfg(target_endian = "little")]
-            fn unpack<'a>(packed: $ty, _bytes: &'a [u8]) -> $ty {
-                packed
-            }
-
-            #[inline(always)]
-            #[cfg(not(target_endian = "little"))]
-            fn unpack<'a>(packed: $ty, _bytes: &'a [u8]) -> $ty {
-                <$ty>::from_le(packed)
+            fn size_hint(&self) -> Option<Sizes> {
+                Some(Sizes{ heap: 0, stack: size_of::<$ty>()})
             }
         }
 
-        impl<T> Pack<$ty> for T
+        $(
+            impl Serialize<$ty> for $from {
+                #[inline(always)]
+                fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
+                where
+                    B: Buffer,
+                {
+                    write_bytes(&$ty::from(self).to_le_bytes(), sizes, buffer)
+                }
+
+                #[inline(always)]
+                fn size_hint(&self) -> Option<Sizes> {
+                    Some(Sizes{ heap: 0, stack: size_of::<$ty>()})
+                }
+            }
+        )*
+
+        impl Serialize<$ty> for &$ty {
+            #[inline(always)]
+            fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
+            where
+                B: Buffer,
+            {
+                write_bytes(&self.to_le_bytes(), sizes, buffer)
+            }
+
+            #[inline(always)]
+            fn size_hint(&self) -> Option<Sizes> {
+                Some(Sizes{ heap: 0, stack: size_of::<$ty>()})
+            }
+        }
+
+        $(
+            impl Serialize<$ty> for &$from {
+                #[inline(always)]
+                fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
+                where
+                    B: Buffer,
+                {
+                    write_bytes(&$ty::from(*self).to_le_bytes(), sizes, buffer)
+                }
+
+                #[inline(always)]
+                fn size_hint(&self) -> Option<Sizes> {
+                    Some(Sizes{ heap: 0, stack: size_of::<$ty>()})
+                }
+            }
+        )*
+
+        impl<T> Deserialize<'_, $ty> for T
         where
-            T: core::borrow::Borrow<$ty>,
+            T: From<$ty>,
         {
             #[inline(always)]
-            #[cfg(target_endian = "little")]
-            fn pack(self, _offset: usize, _bytes: &mut [u8]) -> ($ty, usize) {
-                (*self.borrow(), 0)
+            fn deserialize(mut de: Deserializer) -> Result<Self, DeserializeError> {
+                let input = de.read_byte_array::<{size_of::<$ty>()}>()?;
+                // de.finish()?;
+                let value = <$ty>::from_le_bytes(input);
+                return Ok(From::from(value));
             }
 
             #[inline(always)]
-            #[cfg(not(target_endian = "little"))]
-            fn pack(self, _offset: usize, _bytes: &mut [u8]) -> ($ty, usize) {
-                (<$ty>::to_le(*self.borrow()), 0)
+            fn deserialize_in_place(&mut self, mut de: Deserializer) -> Result<(), DeserializeError> {
+                let input = de.read_byte_array::<{size_of::<$ty>()}>()?;
+                // de.finish()?;
+                let value = <$ty>::from_le_bytes(input);
+                *self = From::from(value);
+                Ok(())
             }
         }
     };
 }
 
-impl_primitive!(u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64);
-
-impl<'a> SchemaUnpack<'a> for bool {
-    type Unpacked = bool;
+impl_primitive! {
+    [u8 u16 u32 u64 u128]
+    [i8 i16 i32 i64 i128]
+    [f32 f64]
 }
 
-impl Schema for bool {
-    type Packed = u8;
+impl Formula for bool {
+    const MAX_STACK_SIZE: Option<usize> = Some(1);
+    const EXACT_SIZE: bool = true;
+    const HEAPLESS: bool = true;
+}
 
+impl BareFormula for bool {}
+
+impl Serialize<bool> for bool {
     #[inline(always)]
-    fn align() -> usize {
-        align_of::<u8>()
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
+    where
+        Self: Sized,
+        B: Buffer,
+    {
+        write_bytes(&[u8::from(self)], sizes, buffer)
     }
 
     #[inline(always)]
-    fn unpack<'a>(packed: u8, _bytes: &'a [u8]) -> bool {
-        packed != 0
+    fn size_hint(&self) -> Option<Sizes> {
+        Some(Sizes {
+            heap: 0,
+            stack: size_of::<u8>(),
+        })
     }
 }
 
-impl<T> Pack<bool> for T
+impl Serialize<bool> for &bool {
+    #[inline(always)]
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
+    where
+        B: Buffer,
+    {
+        <u8 as Serialize<u8>>::serialize(u8::from(*self.borrow()), sizes, buffer)
+    }
+
+    #[inline(always)]
+    fn size_hint(&self) -> Option<Sizes> {
+        Some(Sizes {
+            heap: 0,
+            stack: size_of::<u8>(),
+        })
+    }
+}
+
+impl<T> Deserialize<'_, bool> for T
 where
-    T: core::borrow::Borrow<bool>,
+    T: From<bool>,
 {
     #[inline(always)]
-    fn pack(self, _offset: usize, _bytes: &mut [u8]) -> (u8, usize) {
-        (*self.borrow() as u8, 0)
+    fn deserialize(mut de: Deserializer) -> Result<Self, DeserializeError> {
+        let byte = de.read_byte()?;
+        Ok(T::from(byte != 0))
+    }
+
+    #[inline(always)]
+    fn deserialize_in_place(&mut self, mut de: Deserializer) -> Result<(), DeserializeError> {
+        let byte = de.read_byte()?;
+        *self = From::from(byte != 0);
+        Ok(())
     }
 }

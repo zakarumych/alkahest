@@ -1,52 +1,46 @@
-use {
-    crate::{
-        schema::{Pack, Schema, SchemaUnpack},
-        FixedUsize,
-    },
-    core::{convert::TryFrom, mem::align_of},
+use crate::{
+    buffer::Buffer,
+    deserialize::{Deserialize, DeserializeError, Deserializer},
+    formula::{BareFormula, Formula},
+    serialize::{write_bytes, Serialize, Sizes},
 };
 
-/// `Schema` for runtime sized bytes array.
-/// Should be used for bytes and strings alike.
-///
-/// Packed from `impl `[`AsRef`]`<[u8]>`.
-/// Unpacks into `&[`[`u8`]`]`.
-///
-/// Serialized exactly as [`Seq<u8>`].
-///
-/// [`Seq<u8>`]: crate::Seq
-pub enum Bytes {}
+/// A formula for a raw byte slices.
+/// Serializable from anything that implements `AsRef<[u8]>`.
+pub struct Bytes;
 
-impl<'a> SchemaUnpack<'a> for Bytes {
-    type Unpacked = &'a [u8];
+impl Formula for Bytes {
+    const MAX_STACK_SIZE: Option<usize> = None;
+    const EXACT_SIZE: bool = true;
+    const HEAPLESS: bool = true;
 }
 
-impl Schema for Bytes {
-    type Packed = [FixedUsize; 2];
+impl BareFormula for Bytes {}
 
-    fn align() -> usize {
-        align_of::<[FixedUsize; 2]>()
+impl Serialize<Bytes> for &[u8] {
+    #[inline(always)]
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
+    where
+        B: Buffer,
+    {
+        write_bytes(self, sizes, buffer)
     }
 
-    fn unpack<'a>(packed: [FixedUsize; 2], bytes: &'a [u8]) -> &'a [u8] {
-        let len = usize::try_from(packed[0]).expect("Slice is too large");
-        let offset = usize::try_from(packed[1]).expect("Package is too large");
-        &bytes[offset..][..len]
+    #[inline(always)]
+    fn size_hint(&self) -> Option<Sizes> {
+        Some(Sizes::with_stack(self.len()))
     }
 }
 
-impl<T> Pack<Bytes> for T
-where
-    T: AsRef<[u8]>,
-{
-    #[inline]
-    fn pack(self, offset: usize, output: &mut [u8]) -> ([FixedUsize; 2], usize) {
-        let bytes = self.as_ref();
+impl<'de, 'fe: 'de> Deserialize<'fe, Bytes> for &'de [u8] {
+    #[inline(always)]
+    fn deserialize(de: Deserializer<'fe>) -> Result<Self, DeserializeError> {
+        Ok(de.read_all_bytes())
+    }
 
-        let len32 = u32::try_from(bytes.len()).expect("Slice is too large");
-        let offset32 = u32::try_from(offset).expect("Offset is too large");
-
-        output[..bytes.len()].copy_from_slice(bytes);
-        ([len32, offset32], bytes.len())
+    #[inline(always)]
+    fn deserialize_in_place(&mut self, de: Deserializer<'fe>) -> Result<(), DeserializeError> {
+        *self = de.read_all_bytes();
+        Ok(())
     }
 }

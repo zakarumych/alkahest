@@ -1,139 +1,223 @@
-use crate::{Pack, Schema, SchemaUnpack, Unpacked};
+use crate::{
+    buffer::Buffer,
+    deserialize::{Deserialize, DeserializeError, Deserializer},
+    formula::{sum_size, BareFormula, Formula},
+    serialize::{field_size_hint, write_field, Serialize, Sizes},
+    size::SIZE_STACK,
+};
 
-impl<'a> SchemaUnpack<'a> for () {
-    type Unpacked = ();
+impl Formula for () {
+    const MAX_STACK_SIZE: Option<usize> = Some(0);
+    const EXACT_SIZE: bool = true;
+    const HEAPLESS: bool = true;
 }
 
-impl Schema for () {
-    type Packed = ();
+impl BareFormula for () {}
 
+impl Serialize<()> for () {
     #[inline(always)]
-    fn align() -> usize {
-        1
+    fn serialize<B>(self, _sizes: &mut Sizes, _buffer: B) -> Result<(), B::Error>
+    where
+        B: Buffer,
+    {
+        Ok(())
     }
 
     #[inline(always)]
-    fn unpack<'a>((): (), _input: &'a [u8]) {}
-}
-
-impl Pack<()> for () {
-    #[inline(always)]
-    fn pack(self, _offset: usize, _output: &mut [u8]) -> ((), usize) {
-        ((), 0)
+    fn size_hint(&self) -> Option<Sizes> {
+        Some(Sizes::ZERO)
     }
 }
 
-impl Pack<()> for &'_ () {
+impl Serialize<()> for &'_ () {
     #[inline(always)]
-    fn pack(self, _offset: usize, _output: &mut [u8]) -> ((), usize) {
-        ((), 0)
+    fn serialize<B>(self, _sizes: &mut Sizes, _buffer: B) -> Result<(), B::Error>
+    where
+        B: Buffer,
+    {
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn size_hint(&self) -> Option<Sizes> {
+        Some(Sizes::ZERO)
     }
 }
 
-macro_rules! impl_for_tuple {
-    ($packed_tuple:ident, [$($a:ident),+ $(,)?] [$($b:ident),+ $(,)?]) => {
-        impl<'a, $($a),+> SchemaUnpack<'a> for ($($a,)+)
+impl Deserialize<'_, ()> for () {
+    #[inline(always)]
+    fn deserialize(_de: Deserializer) -> Result<(), DeserializeError> {
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn deserialize_in_place(&mut self, _de: Deserializer) -> Result<(), DeserializeError> {
+        Ok(())
+    }
+}
+
+macro_rules! for_tuple_2 {
+    ($macro:ident) => {
+        for_tuple_2!($macro for
+            AA AB AC AD AE AF AG AH AI AJ AK AL AM AN AO AP,
+            BA BB BC BD BE BF BG BH BI BJ BK BL BM BN BO BP
+        );
+    };
+    ($macro:ident for ,) => {
+        $macro!(,);
+    };
+    ($macro:ident for $a_head:ident $($a_tail:ident)*, $b_head:ident $($b_tail:ident)*) => {
+        for_tuple_2!($macro for $($a_tail)*, $($b_tail)*);
+
+        $macro!($a_head $($a_tail)*, $b_head $($b_tail)*);
+    };
+}
+
+macro_rules! formula_serialize {
+    (,) => {};
+    ($at:ident $($a:ident)* , $bt:ident $($b:ident)*) => {
+        impl<$($a,)* $at> Formula for ($($a,)* $at,)
         where
-            $($a: Schema,)+
+            $($a: Formula,)*
+            $at: Formula + ?Sized,
         {
-            type Unpacked = ($(Unpacked<'a, $a>,)+);
+            const MAX_STACK_SIZE: Option<usize> = {
+                let mut size = Some(0);
+                $(size = sum_size(size, <$a as Formula>::MAX_STACK_SIZE);)*
+                size = sum_size(size, <$at as Formula>::MAX_STACK_SIZE);
+                size
+            };
+
+            const EXACT_SIZE: bool = <$at as Formula>::EXACT_SIZE;
+            const HEAPLESS: bool = $(<$a as Formula>::HEAPLESS &&)* <$at as Formula>::HEAPLESS;
         }
 
-        #[derive(Copy)]
-        #[repr(C, packed)]
-        pub struct $packed_tuple<$($a),+>($($a,)+);
+        impl<$($a,)* $at> BareFormula for ($($a,)* $at,)
+        where
+            $($a: Formula,)*
+            $at: Formula + ?Sized,
+        {
+        }
 
-        impl<$($a: Copy),+> Clone for $packed_tuple<$($a,)+> {
+
+        impl<$($a,)* $at, $($b,)* $bt> Serialize<($($a,)* $at,)> for ($($b,)* $bt,)
+        where
+            $(
+                $a: Formula,
+                $b: Serialize<$a>,
+            )*
+            $at: Formula + ?Sized,
+            $bt: Serialize<$at>,
+        {
             #[inline(always)]
-            fn clone(&self) -> Self {
-                *self
+            fn serialize<B>(self, sizes: &mut Sizes, mut buffer: B) -> Result<(), B::Error>
+            where
+                B: Buffer,
+            {
+                #![allow(non_snake_case, unused_mut)]
+
+                let ($($b,)* $bt,) = self;
+                $(
+                    write_field::<$a, $b, _>($b, sizes, buffer.reborrow(), false)?;
+                )*
+                write_field::<$at, $bt, _>($bt, sizes, buffer, true)
+            }
+
+            #[inline(always)]
+            fn size_hint(&self) -> Option<Sizes> {
+                #![allow(non_snake_case, unused_mut)]
+                let mut sizes = Sizes::ZERO;
+                let ($($b,)* $bt,) = self;
+                $(
+                    if $a::MAX_STACK_SIZE.is_none() {
+                        sizes.add_stack(SIZE_STACK);
+                    }
+                    sizes += field_size_hint::<$a>($b, false)?;
+                )*
+                sizes += field_size_hint::<$at>($bt, true)?;
+                Some(sizes)
             }
         }
 
-        // `bytemuck` must be able to derive those safely. See https://github.com/Lokathor/bytemuck/issues/70
-        #[allow(unsafe_code)]
-        unsafe impl<$($a: bytemuck::Zeroable),+> bytemuck::Zeroable for $packed_tuple<$($a,)+> {}
-
-        #[allow(unsafe_code)]
-        unsafe impl<$($a: bytemuck::Pod),+> bytemuck::Pod for $packed_tuple<$($a,)+> {}
-
-        impl<$($a),+> Schema for ($($a,)+)
+        impl<'ser, $($a,)* $at, $($b,)* $bt,> Serialize<($($a,)* $at,)> for &'ser ($($b,)* $bt,)
         where
-            $($a: Schema,)+
+            $(
+                $a: Formula,
+                &'ser $b: Serialize<$a>,
+            )*
+            $at: Formula + ?Sized,
+            &'ser $bt: Serialize<$at>,
+            $bt: ?Sized,
         {
-            type Packed = $packed_tuple<$($a::Packed,)+>;
-
             #[inline(always)]
-            fn align() -> usize {
-                1 + ($(($a::align() - 1))|+)
+            fn serialize<B>(self, sizes: &mut Sizes, mut buffer: B) -> Result<(), B::Error>
+            where
+                B: Buffer,
+            {
+                #![allow(non_snake_case, unused_mut)]
+                let ($($b,)* $bt,) = self;
+                $(
+                    write_field::<$a, &$b, _>($b, sizes, buffer.reborrow(), false)?;
+                )*
+                write_field::<$at, &$bt, _>($bt, sizes, buffer, true)
             }
 
             #[inline(always)]
-            fn unpack<'a>(packed: $packed_tuple<$($a::Packed,)+>, input: &'a [u8]) -> ($(Unpacked<'a, $a>,)+) {
+            fn size_hint(&self) -> Option<Sizes> {
+                #![allow(non_snake_case, unused_mut)]
+                let mut sizes = Sizes::ZERO;
+                let ($($b,)* $bt,) = self;
+                $(
+                    if $a::MAX_STACK_SIZE.is_none() {
+                        sizes.add_stack(SIZE_STACK);
+                    }
+                    sizes += field_size_hint::<$a>(&$b, false)?;
+                )*
+
+                sizes += field_size_hint::<$at>(&$bt, true)?;
+
+                Some(sizes)
+            }
+        }
+
+        impl<'de, $($a,)* $at, $($b,)* $bt> Deserialize<'de, ($($a,)* $at,)> for ($($b,)* $bt,)
+        where
+            $(
+                $a: Formula,
+                $b: Deserialize<'de, $a>,
+            )*
+            $at: Formula + ?Sized,
+            $bt: Deserialize<'de, $at>,
+        {
+            #[inline(always)]
+            fn deserialize(mut de: Deserializer<'de>) -> Result<($($b,)* $bt,), DeserializeError> {
+                #![allow(non_snake_case)]
+                $(
+                    let $b = de.read_value::<$a, $b>(false)?;
+                )*
+                let $bt = de.read_value::<$at, $bt>(true)?;
+                // de.finish()?;
+
+                let value = ($($b,)* $bt,);
+                Ok(value)
+            }
+
+            #[inline(always)]
+            fn deserialize_in_place(&mut self, mut de: Deserializer<'de>) -> Result<(), DeserializeError> {
                 #![allow(non_snake_case)]
 
-                let $packed_tuple($($a,)+) = packed;
-                ($(<$a>::unpack($a, input),)+)
-            }
-        }
+                let ($($b,)* $bt,) = self;
 
-        impl<$($a),+ , $($b),+> Pack<($($a,)+)> for ($($b,)+)
-        where
-            $($a: Schema, $b: Pack<$a>,)+
-        {
-            #[inline]
-            fn pack(self, offset: usize, output: &mut [u8]) -> ($packed_tuple<$($a::Packed,)+>, usize) {
-                #![allow(non_snake_case)]
+                $(
+                    de.read_in_place::<$a, $b>($b, false)?;
+                )*
+                de.read_in_place::<$at, $bt>($bt, true)?;
+                // de.finish()?;
 
-                debug_assert_eq!(
-                    output.as_ptr() as usize % <($($a,)+) as Schema>::align(),
-                    0,
-                    "Output buffer is not aligned"
-                );
-                debug_assert_eq!(
-                    offset % <($($a,)+) as Schema>::align(),
-                    0,
-                    "Offset is not aligned"
-                );
-
-                let ($($b,)+) = self;
-                let mut used = 0;
-                let packed = $packed_tuple( $( {
-                    let aligned = (used + (<$a>::align() - 1)) & !(<$a>::align() - 1);
-                    let (packed, size) = $b.pack(offset + aligned, &mut output[aligned..]);
-                    used = aligned + size;
-                    packed
-                },)+ );
-                (packed, used)
-            }
-        }
-
-        impl<'a, $($a),+ , $($b),+> Pack<($($a,)+)> for &'a ($($b,)+)
-        where
-            $($a: Schema, &'a $b: Pack<$a>,)+
-        {
-            #[inline]
-            fn pack(self, offset: usize, output: &mut [u8]) -> ($packed_tuple<$($a::Packed,)+>, usize) {
-                #![allow(non_snake_case)]
-
-                let ($($b,)+) = self;
-                let mut used = 0;
-                let packed = $packed_tuple( $( {
-                    let (packed, size) = $b.pack(offset + used, &mut output[used..]);
-                    used += size;
-                    packed
-                },)+ );
-                (packed, used)
+                Ok(())
             }
         }
     };
 }
 
-impl_for_tuple!(PackedTuple1, [A][B]);
-impl_for_tuple!(PackedTuple2, [A, B][C, D]);
-impl_for_tuple!(PackedTuple3, [A, B, C][D, E, F]);
-impl_for_tuple!(PackedTuple4, [A, B, C, D][E, F, G, H]);
-impl_for_tuple!(PackedTuple5, [A, B, C, D, E][F, G, H, I, J]);
-impl_for_tuple!(PackedTuple6, [A, B, C, D, E, F][G, H, I, J, K, L]);
-impl_for_tuple!(PackedTuple7, [A, B, C, D, E, F, G][H, I, J, K, L, M, N]);
-impl_for_tuple!(PackedTuple8, [A, B, C, D, E, F, G, H][I, J, K, L, M, N, O, P]);
+for_tuple_2!(formula_serialize);

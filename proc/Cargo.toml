@@ -1,6 +1,6 @@
 [package]
 name = "alkahest-proc"
-version = "0.1.4"
+version = "0.2.0-rc.9"
 authors = ["Zakarum <zakarumych@ya.ru>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
@@ -15,5 +15,6 @@ proc-macro = true
 
 [dependencies]
 proc-macro2 = "1.0"
-syn = { version = "1.0", features = ["derive", "printing"] }
+syn = { version = "2.0", features = ["derive"] }
 quote = "1.0"
+proc-easy = { version = "0.3.0" }

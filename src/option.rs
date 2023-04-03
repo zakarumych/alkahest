@@ -1,78 +1,121 @@
-use crate::schema::{Pack, Packed, Schema, SchemaUnpack, Unpacked};
+use crate::{
+    buffer::Buffer,
+    deserialize::{Deserialize, DeserializeError, Deserializer},
+    formula::{sum_size, BareFormula, Formula},
+    serialize::{field_size_hint, write_bytes, write_field, Serialize, Sizes},
+};
 
-impl<'a, T> SchemaUnpack<'a> for Option<T>
+impl<F> Formula for Option<F>
 where
-    T: Schema,
+    F: Formula,
 {
-    type Unpacked = Option<Unpacked<'a, T>>;
+    const MAX_STACK_SIZE: Option<usize> = sum_size(Some(1), F::MAX_STACK_SIZE);
+    const EXACT_SIZE: bool = matches!(F::MAX_STACK_SIZE, Some(0));
+    const HEAPLESS: bool = F::HEAPLESS;
 }
 
-#[derive(Copy)]
-#[repr(C, packed)]
-pub struct PackedOption<T: bytemuck::Pod> {
-    some: u8,
-    value: T,
-}
+impl<F> BareFormula for Option<F> where F: Formula {}
 
-impl<T: bytemuck::Pod> Clone for PackedOption<T> {
+impl<F, T> Serialize<Option<F>> for Option<T>
+where
+    F: Formula,
+    T: Serialize<F>,
+{
     #[inline(always)]
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-// `bytemuck` must be able to derive those safely. See https://github.com/Lokathor/bytemuck/issues/70
-#[allow(unsafe_code)]
-unsafe impl<T: bytemuck::Pod> bytemuck::Zeroable for PackedOption<T> {}
-#[allow(unsafe_code)]
-unsafe impl<T: bytemuck::Pod> bytemuck::Pod for PackedOption<T> {}
-
-impl<T> Schema for Option<T>
-where
-    T: Schema,
-{
-    type Packed = PackedOption<T::Packed>;
-
-    #[inline]
-    fn align() -> usize {
-        T::align()
-    }
-
-    #[inline]
-    fn unpack<'a>(packed: PackedOption<T::Packed>, input: &'a [u8]) -> Unpacked<'a, Self> {
-        if packed.some != 0 {
-            Some(T::unpack(packed.value, input))
-        } else {
-            None
-        }
-    }
-}
-
-impl<T, U> Pack<Option<T>> for Option<U>
-where
-    T: Schema,
-    U: Pack<T>,
-{
-    #[inline]
-    fn pack(self, offset: usize, output: &mut [u8]) -> (Packed<Option<T>>, usize) {
+    fn serialize<B>(self, sizes: &mut Sizes, mut buffer: B) -> Result<(), B::Error>
+    where
+        B: Buffer,
+    {
         match self {
-            None => (
-                PackedOption {
-                    some: 0,
-                    value: bytemuck::Zeroable::zeroed(),
-                },
-                0,
-            ),
+            None => write_bytes(&[0u8], sizes, buffer),
             Some(value) => {
-                let (packed, used) = value.pack(offset, output);
-                (
-                    PackedOption {
-                        some: 1,
-                        value: packed,
-                    },
-                    used,
-                )
+                write_bytes(&[1u8], sizes, buffer.reborrow())?;
+                write_field::<F, T, _>(value, sizes, buffer, true)
             }
         }
+    }
+
+    #[inline(always)]
+    fn size_hint(&self) -> Option<Sizes> {
+        match self {
+            None => {
+                let stack = <Option<F>>::MAX_STACK_SIZE?;
+                Some(Sizes::with_stack(stack))
+            }
+            Some(value) => {
+                let mut sizes = field_size_hint::<F>(value, true)?;
+                sizes.add_stack(1);
+                Some(sizes)
+            }
+        }
+    }
+}
+
+impl<'ser, F, T> Serialize<Option<F>> for &'ser Option<T>
+where
+    F: Formula,
+    &'ser T: Serialize<F>,
+{
+    #[inline(always)]
+    fn serialize<B>(self, sizes: &mut Sizes, mut buffer: B) -> Result<(), B::Error>
+    where
+        B: Buffer,
+    {
+        match self {
+            None => write_bytes(&[0u8], sizes, buffer),
+            Some(value) => {
+                write_bytes(&[1u8], sizes, buffer.reborrow())?;
+                write_field::<F, &T, _>(value, sizes, buffer, true)
+            }
+        }
+    }
+
+    #[inline(always)]
+    fn size_hint(&self) -> Option<Sizes> {
+        match *self {
+            None => {
+                let stack = <Option<F>>::MAX_STACK_SIZE?;
+                Some(Sizes::with_stack(stack))
+            }
+            Some(value) => {
+                let mut sizes = field_size_hint::<F>(&value, true)?;
+                sizes.add_stack(1);
+                Some(sizes)
+            }
+        }
+    }
+}
+
+impl<'de, F, T> Deserialize<'de, Option<F>> for Option<T>
+where
+    F: Formula,
+    T: Deserialize<'de, F>,
+{
+    #[inline(always)]
+    fn deserialize(mut de: Deserializer<'de>) -> Result<Self, DeserializeError> {
+        let is_some: u8 = de.read_bytes(1)?[0];
+        if is_some == 0 {
+            Ok(None)
+        } else {
+            Ok(Some(de.read_value::<F, T>(true)?))
+        }
+    }
+
+    #[inline(always)]
+    fn deserialize_in_place(&mut self, mut de: Deserializer<'de>) -> Result<(), DeserializeError> {
+        let is_some: u8 = de.read_bytes(1)?[0];
+        if is_some == 0 {
+            *self = None;
+        } else {
+            match self {
+                Some(value) => {
+                    de.read_in_place::<F, T>(value, true)?;
+                }
+                None => {
+                    *self = Some(de.read_value::<F, T>(true)?);
+                }
+            }
+        }
+        Ok(())
     }
 }

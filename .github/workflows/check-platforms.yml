@@ -2,7 +2,9 @@ name: Check multiple platforms
 
 on:
   pull_request:
-    types: [ labeled ]
+    paths:
+      - '**.rs'
+      - '**/Cargo.toml'
 
 env:
   CARGO_TERM_COLOR: always
@@ -25,4 +27,4 @@ jobs:
       uses: actions-rs/cargo@v1
       with:
         command: check
-        args: --all --features=derive
+        args: --all --features=bincoded,derive

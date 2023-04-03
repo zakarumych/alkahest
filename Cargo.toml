@@ -1,7 +1,7 @@
 [package]
 name = "alkahest"
-version = "0.1.5"
-edition = "2018"
+version = "0.2.0-rc.9"
+edition = "2021"
 authors = ["Zakarum <zakarumych@ya.ru>"]
 license = "MIT OR Apache-2.0"
 documentation = "https://docs.rs/alkahest"
@@ -11,28 +11,31 @@ readme = "README.md"
 description = "Fantastic serialization library with zero-overhead serialization and zero-copy deserialization"
 
 [features]
+alloc = [] # enables impls for types from `alloc` crate.
+std = ["alloc"]
 derive = ["alkahest-proc"]
-nightly = []
+
+## TODO: Control on value or type level?
+## Keep features for defaults?
+fixed8 = [] # sets size of `FixedUsize` and `FixedIsize` to 8 bits.
+fixed16 = [] # sets size of `FixedUsize` and `FixedIsize` to 16 bits.
+fixed32 = [] # sets size of `FixedUsize` and `FixedIsize` to 32 bits. Default.
+fixed64 = [] # sets size of `FixedUsize` and `FixedIsize` to 64 bits.
+default = ["alloc", "fixed32"]
+
+bincoded = ["bincode", "serde", "std"]
 
 [dependencies]
-bytemuck = { version = "1.0", default-features = false, features = ["min_const_generics"] }
-alkahest-proc = { version = "=0.1.4", path = "proc", optional = true }
+alkahest-proc = { version = "=0.2.0-rc.9", path = "proc", optional = true }
+bincode = { version = "1.3", optional = true }
+serde = { version = "1.0", optional = true }
 
 [dev-dependencies]
-criterion = "0.3"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-bincode = "1.3"
-rkyv = "0.7"
+rand = { version = "0.8", features = ["small_rng"] }
 
 [[example]]
 name = "test"
-required-features = ["derive"]
-
-[[bench]]
-name = "benchmark"
-harness = false
-required-features = ["derive"]
+required-features = ["derive", "alloc"]
 
 [workspace]
-members = ["proc"]
+members = ["proc", "benchmark"]
