@@ -296,7 +296,10 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
                 for message in packet.game_messages.iter() {
                     match message {
-                        GameMessageRead::Client(ClientMessageRead::ClientData { nickname, clan }) => {
+                        GameMessageRead::Client(ClientMessageRead::ClientData {
+                            nickname,
+                            clan,
+                        }) => {
                             black_box(nickname);
                             black_box(clan);
                         }
@@ -306,7 +309,10 @@ pub fn criterion_benchmark(c: &mut Criterion) {
                         GameMessageRead::Server(ServerMessageRead::ServerData(data)) => {
                             black_box(data);
                         }
-                        GameMessageRead::Server(ServerMessageRead::ClientChat { client_id, message }) => {
+                        GameMessageRead::Server(ServerMessageRead::ClientChat {
+                            client_id,
+                            message,
+                        }) => {
                             black_box(client_id);
                             black_box(message);
                         }
