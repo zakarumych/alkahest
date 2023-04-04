@@ -92,7 +92,6 @@ pub struct NetPacketWrite<G> {
 }
 
 #[derive(Debug, Deserialize)]
-#[cfg_attr(feature = "speedy", derive(speedy::Readable))]
 #[alkahest(NetPacket<G> where G: Formula)]
 pub struct NetPacketRead<'de, G> {
     pub game_messages: Lazy<'de, [G]>,
