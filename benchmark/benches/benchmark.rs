@@ -33,6 +33,7 @@ pub enum GameMessage {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "speedy", derive(speedy::Readable))]
 #[alkahest(GameMessage)]
 pub enum GameMessageRead<'de> {
     Client(ClientMessageRead<'de>),
@@ -50,6 +51,7 @@ pub enum ClientMessage {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "speedy", derive(speedy::Readable))]
 #[alkahest(ClientMessage)]
 pub enum ClientMessageRead<'de> {
     ClientData { nickname: &'de str, clan: &'de str },
@@ -67,6 +69,7 @@ pub enum ServerMessage {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "speedy", derive(speedy::Readable))]
 #[alkahest(ServerMessage)]
 pub enum ServerMessageRead<'de> {
     ServerData(u64),
@@ -89,6 +92,7 @@ pub struct NetPacketWrite<G> {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "speedy", derive(speedy::Readable))]
 #[alkahest(NetPacket<G> where G: Formula)]
 pub struct NetPacketRead<'de, G> {
     pub game_messages: Lazy<'de, [G]>,
@@ -287,22 +291,22 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("read", |b| {
             b.iter(|| {
                 let packet =
-                    <NetPacket<GameMessage> as speedy::Readable<_>>::read_from_buffer(&buffer)
+                    <NetPacket<GameMessageRead> as speedy::Readable<_>>::read_from_buffer(&buffer)
                         .unwrap();
 
                 for message in packet.game_messages.iter() {
                     match message {
-                        GameMessage::Client(ClientMessage::ClientData { nickname, clan }) => {
+                        GameMessageRead::Client(ClientMessageRead::ClientData { nickname, clan }) => {
                             black_box(nickname);
                             black_box(clan);
                         }
-                        GameMessage::Client(ClientMessage::Chat(message)) => {
+                        GameMessageRead::Client(ClientMessageRead::Chat(message)) => {
                             black_box(message);
                         }
-                        GameMessage::Server(ServerMessage::ServerData(data)) => {
+                        GameMessageRead::Server(ServerMessageRead::ServerData(data)) => {
                             black_box(data);
                         }
-                        GameMessage::Server(ServerMessage::ClientChat { client_id, message }) => {
+                        GameMessageRead::Server(ServerMessageRead::ClientChat { client_id, message }) => {
                             black_box(client_id);
                             black_box(message);
                         }
