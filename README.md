@@ -17,8 +17,9 @@ This benchmark that mimics some game networking protocol.
 
 |                 | `alkahest`               | `bincode`                       | `rkyv`                          | `speedy`                         |
 |:----------------|:-------------------------|:--------------------------------|:--------------------------------|:-------------------------------- |
-| **`serialize`** | `10.73 us` (✅ **1.00x**) | `10.96 us` (✅ **1.02x slower**) | `12.21 us` (❌ *1.14x slower*)   | `10.76 us` (✅ **1.00x slower**)  |
-| **`read`**      | `1.43 us` (✅ **1.00x**)  | `9.26 us` (❌ *6.49x slower*)    | `2.13 us` (❌ *1.49x slower*)    | `8.01 us` (❌ *5.62x slower*)     |
+| **`serialize`** | `10.75 us` (✅ **1.00x**) | `10.95 us` (✅ **1.02x slower**) | `12.24 us` (❌ *1.14x slower*)   | `11.03 us` (✅ **1.03x slower**)  |
+| **`read`**      | `1.43 us` (✅ **1.00x**)  | `9.27 us` (❌ *6.47x slower*)    | `2.13 us` (❌ *1.49x slower*)    | `1.54 us` (✅ **1.07x slower**)   |
+
 
 See also [benchmark results](./benches/BENCHMARKS.md) from <https://github.com/djkoloski/rust_serialization_benchmark> (in draft until 0.2 release).
 
