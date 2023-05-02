@@ -8,7 +8,7 @@ use crate::{
     buffer::Buffer,
     deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::{reference_size, BareFormula, Formula},
-    serialize::{field_size_hint, write_ref, Serialize, Sizes},
+    serialize::{field_size_hint, write_ref, write_reference, Serialize, Sizes},
 };
 
 /// `Ref` is a formula wrapper.
@@ -37,11 +37,14 @@ where
     T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, mut buffer: B) -> Result<(), B::Error>
     where
         B: Buffer,
     {
-        write_ref::<F, T, _>(self, sizes, buffer)
+        let size = write_ref::<F, T, _>(self, sizes, buffer.reborrow())?;
+        write_reference::<F, B>(size, sizes.heap, sizes.heap, sizes.stack, buffer)?;
+        sizes.stack += reference_size::<F>();
+        Ok(())
     }
 
     #[inline(always)]

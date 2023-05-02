@@ -2,20 +2,20 @@ use crate::{
     buffer::Buffer,
     deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::{BareFormula, Formula},
-    serialize::{write_bytes, Serialize, Sizes},
+    serialize::{write_bytes, SerializeRef, Sizes},
 };
 
 impl Formula for str {
     const MAX_STACK_SIZE: Option<usize> = None;
-    const EXACT_SIZE: bool = true;
+    const EXACT_SIZE: bool = false;
     const HEAPLESS: bool = true;
 }
 
 impl BareFormula for str {}
 
-impl Serialize<str> for &str {
+impl SerializeRef<str> for str {
     #[inline(always)]
-    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
+    fn serialize<B>(&self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
         B: Buffer,
     {

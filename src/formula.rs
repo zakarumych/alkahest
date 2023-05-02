@@ -59,26 +59,26 @@ use crate::size::SIZE_STACK;
     feature = "derive",
     doc = r#"
 
-When "derive" feature is enabled, `derive(Formula)` is also available.
+When "derive" feature is enabled, proc-macro `alkahest(Formula)` is also available.
 
 ```
 # use alkahest::*;
 
 /// Formula for serializing unit structures.
-#[derive(Formula)]
+#[alkahest(Formula)]
 struct UnitFormula;
 
 
 # #[cfg(feature = "alloc")]
 /// Formula for serializing tuple structures with fields
 /// that are serializable with `u8` and `String` formulas.
-#[derive(Formula)]
+#[alkahest(Formula)]
 struct TupleFormula(u8, String);
 
 # #[cfg(feature = "alloc")]
 /// Formula for serializing structures with fields
 /// that are serializable with `TupleFormula` and `Vec<usize>` formulas.
-#[derive(Formula)]
+#[alkahest(Formula)]
 struct StructFormula {
     a: TupleFormula,
     b: Vec<u32>,
@@ -87,7 +87,7 @@ struct StructFormula {
 
 # #[cfg(feature = "alloc")]
 /// Formula for serializing enums.
-#[derive(Formula)]
+#[alkahest(Formula)]
 enum EnumFormula {
     A,
     B(StructFormula),
@@ -95,7 +95,7 @@ enum EnumFormula {
 }
 ```
 
-Names of the formula variants and fields are important for `Serialize` and `Deserialize` derive macros.
+Names of the formula variants and fields are important for `Serialize` and `Deserialize` proc-macros.
 "#
 )]
 pub trait Formula {
@@ -177,9 +177,9 @@ pub const fn reference_size<F>() -> usize
 where
     F: Formula + ?Sized,
 {
-    match (F::MAX_STACK_SIZE, F::EXACT_SIZE) {
-        (Some(0), _) => 0,
-        (Some(_), true) => SIZE_STACK,
-        _ => SIZE_STACK * 2,
+    if F::EXACT_SIZE {
+        SIZE_STACK
+    } else {
+        SIZE_STACK * 2
     }
 }

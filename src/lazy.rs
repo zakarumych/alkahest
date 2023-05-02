@@ -97,8 +97,8 @@ where
     /// # use alkahest::*;
     /// let mut buffer = [0u8; 1024];
     ///
-    /// serialize::<[u32], _>([1u8, 2, 3], &mut buffer).unwrap();
-    /// let (lazy, _) = deserialize::<[u32], Lazy<[u32]>>(&buffer).unwrap();
+    /// let (size, root) = serialize::<[u32], _>([1u8, 2, 3], &mut buffer).unwrap();
+    /// let lazy = deserialize_with_size::<[u32], Lazy<[u32]>>(&buffer[..size], root).unwrap();
     /// let mut iter = lazy.sized_iter::<u32>();
     /// assert_eq!(iter.next().unwrap().unwrap(), 1);
     /// assert_eq!(iter.next().unwrap().unwrap(), 2);
@@ -136,8 +136,8 @@ where
     /// # use alkahest::*;
     /// let mut buffer = [0u8; 1024];
     ///
-    /// serialize::<[u32], _>([1u8, 2, 3], &mut buffer).unwrap();
-    /// let (lazy, _) = deserialize::<[u32], Lazy<[u32]>>(&buffer).unwrap();
+    /// let (size, root) = serialize::<[u32], _>([1u8, 2, 3], &mut buffer).unwrap();
+    /// let lazy = deserialize_with_size::<[u32], Lazy<[u32]>>(&buffer[..size], root).unwrap();
     /// let mut iter = lazy.iter::<u32>();
     /// assert_eq!(iter.next().unwrap().unwrap(), 1);
     /// assert_eq!(iter.next().unwrap().unwrap(), 2);
@@ -151,8 +151,8 @@ where
     /// # use alkahest::*;
     /// let mut buffer = [0u8; 1024];
     ///
-    /// serialize::<[As<str>], _>(["qwe", "rty"], &mut buffer).unwrap();
-    /// let (seq, _) = deserialize::<[As<str>], Lazy<[As<str>]>>(&buffer).unwrap();
+    /// let (size, root) = serialize::<[As<str>], _>(["qwe", "rty"], &mut buffer).unwrap();
+    /// let seq = deserialize_with_size::<[As<str>], Lazy<[As<str>]>>(&buffer[..size], root).unwrap();
     /// let mut iter = seq.iter::<&str>();
     /// assert_eq!(iter.next().unwrap().unwrap(), "qwe");
     /// assert_eq!(iter.next().unwrap().unwrap(), "rty");

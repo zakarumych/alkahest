@@ -7,7 +7,7 @@ use crate::{
     formula::{reference_size, Formula},
     iter::{deserialize_extend_iter, owned_iter_fast_sizes, ref_iter_fast_sizes},
     reference::Ref,
-    serialize::{write_bytes, write_ref, write_slice, Serialize, Sizes},
+    serialize::{write_bytes, write_ref, write_reference, write_slice, Serialize, Sizes},
 };
 
 impl<F> Formula for Vec<F>
@@ -25,11 +25,14 @@ where
     T: Serialize<[F]>,
 {
     #[inline(always)]
-    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, mut buffer: B) -> Result<(), B::Error>
     where
         B: Buffer,
     {
-        write_ref::<[F], T, B>(self, sizes, buffer)
+        let size = write_ref::<[F], T, _>(self, sizes, buffer.reborrow())?;
+        write_reference::<[F], B>(size, sizes.heap, sizes.heap, sizes.stack, buffer)?;
+        sizes.stack += reference_size::<[F]>();
+        Ok(())
     }
 
     #[inline(always)]

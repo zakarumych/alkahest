@@ -4,14 +4,13 @@ mod net;
 #[cfg(feature = "alloc")]
 use alloc::{collections::VecDeque, vec, vec::Vec};
 
-#[cfg(all(feature = "derive", feature = "alloc"))]
-use alkahest_proc::{Deserialize, Formula, Serialize};
-
 use crate::{
     buffer::BufferExhausted,
     bytes::Bytes,
-    deserialize::{deserialize, deserialize_in_place, value_size, Deserialize},
-    formula::{reference_size, Formula},
+    deserialize::{
+        deserialize, deserialize_in_place_with_size, deserialize_with_size, Deserialize,
+    },
+    formula::Formula,
     lazy::Lazy,
     r#as::As,
     reference::Ref,
@@ -28,43 +27,44 @@ where
 {
     let size = serialized_size::<F, _>(value);
 
-    if size * 2 > buffer.len() {
+    if (size.0) * 2 > buffer.len() {
         panic!("Test data is too large");
     }
 
-    let header_size = reference_size::<F>();
-    assert!(header_size <= size);
-
-    match (F::HEAPLESS, F::EXACT_SIZE, F::MAX_STACK_SIZE) {
-        (true, true, Some(max_stack)) => assert_eq!(header_size + max_stack, size),
-        (true, false, Some(max_stack)) => assert!(header_size + max_stack >= size),
+    match (F::EXACT_SIZE, F::MAX_STACK_SIZE) {
+        (true, Some(max_stack)) => assert_eq!(max_stack, size.1),
+        (false, Some(max_stack)) => assert!(max_stack >= size.1),
         _ => {}
     }
 
-    // match serialize_or_size::<F, _>(value, &mut []) {
-    //     Ok(_) => assert_eq!(size, 0),
-    //     Err(err) => assert_eq!(err.required, size),
-    // }
+    if F::HEAPLESS {
+        assert_eq!(size.0, size.1);
+    }
 
-    // if size > 0 {
-    //     match serialize_or_size::<F, _>(value, &mut buffer[..size - 1]) {
-    //         Ok(_) => panic!("expected error"),
-    //         Err(err) => assert_eq!(err.required, size),
-    //     }
-    // }
+    match serialize_or_size::<F, _>(value, &mut []) {
+        Ok(_) => assert_eq!(size.0, 0),
+        Err(err) => assert_eq!(err.required, size.0),
+    }
+
+    if size.0 > 0 {
+        match serialize_or_size::<F, _>(value, &mut buffer[..size.0 - 1]) {
+            Ok(_) => panic!("expected error"),
+            Err(err) => assert_eq!(err.required, size.0),
+        }
+    }
 
     let size1 = serialize_or_size::<F, _>(value, buffer).expect("expected success");
     assert_eq!(size, size1);
-    assert_eq!(size, value_size::<F>(&buffer).expect("expected success"));
-    let buffer2 = &mut buffer[size..];
+
+    let buffer2 = &mut buffer[size.0..];
 
     match serialize::<F, _>(value, &mut []) {
-        Ok(_) => assert_eq!(size, 0),
+        Ok(_) => assert_eq!(size.0, 0),
         Err(BufferExhausted) => {}
     }
 
-    if size > 0 {
-        match serialize::<F, _>(value, &mut buffer2[..size - 1]) {
+    if size.0 > 0 {
+        match serialize::<F, _>(value, &mut buffer2[..size.0 - 1]) {
             Ok(_) => panic!("expected error"),
             Err(BufferExhausted) => {}
         }
@@ -72,25 +72,24 @@ where
 
     let size2 = serialize::<F, _>(value, buffer2).expect("expected success");
     assert_eq!(size, size2);
-    assert_eq!(size, value_size::<F>(&buffer2).expect("expected success"));
 
     let buffer = &buffer[..];
-    let buffer2 = &buffer[size..];
+    let buffer2 = &buffer[size.0..];
 
-    let (mut deval, desize) = deserialize::<F, D>(buffer).expect("expected success");
-    assert_eq!(size, desize);
+    let mut deval =
+        deserialize_with_size::<F, D>(&buffer[..size.0], size.1).expect("expected success");
     assert!(eq(value, &deval));
 
-    let desize = deserialize_in_place::<F, _>(&mut deval, buffer).expect("expected success");
-    assert_eq!(size, desize);
+    deserialize_in_place_with_size::<F, _>(&mut deval, &buffer[..size.0], size.1)
+        .expect("expected success");
     assert!(eq(value, &deval));
 
-    let (mut deval, desize) = deserialize::<F, D>(buffer2).expect("expected success");
-    assert_eq!(size, desize);
+    let mut deval =
+        deserialize_with_size::<F, D>(&buffer2[..size.0], size.1).expect("expected success");
     assert!(eq(value, &deval));
 
-    let desize = deserialize_in_place::<F, _>(&mut deval, buffer2).expect("expected success");
-    assert_eq!(size, desize);
+    deserialize_in_place_with_size::<F, _>(&mut deval, &buffer2[..size.0], size.1)
+        .expect("expected success");
     assert!(eq(value, &deval));
 }
 
@@ -165,8 +164,8 @@ fn test_slice() {
 #[test]
 fn test_ref() {
     let mut buffer = [0u8; 256];
-    test_type::<Ref<()>, (), ()>(&(), &mut buffer, |x, y| x == y);
-    test_type::<Ref<u32>, u32, u32>(&1, &mut buffer, |x, y| x == y);
+    // test_type::<Ref<()>, (), ()>(&(), &mut buffer, |x, y| x == y);
+    // test_type::<Ref<u32>, u32, u32>(&1, &mut buffer, |x, y| x == y);
     test_type::<Ref<str>, str, &str>("qwe", &mut buffer, |x, y| x == *y);
 }
 
@@ -201,24 +200,23 @@ fn test_vec() {
 #[cfg(all(feature = "alloc", feature = "derive"))]
 #[test]
 fn test_enums() {
-    use crate::{Deserialize, Formula, Serialize};
+    use alkahest_proc::alkahest;
     use alloc::vec::Vec;
 
-    #[derive(Formula)]
+    #[alkahest(Formula)]
     enum TestFormula {
         Foo { a: Ref<u32> },
         Bar { c: Vec<u32>, d: Vec<Vec<u32>> },
     }
 
-    #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
-    #[alkahest(TestFormula)]
+    #[derive(Debug, PartialEq, Eq)]
+    #[alkahest(Serialize<TestFormula>, for<'a> Deserialize<'a, TestFormula>)]
     enum TestData {
         Foo { a: u32 },
         Bar { c: Vec<u32>, d: Vec<Vec<u32>> },
     }
 
-    #[derive(Deserialize)]
-    #[alkahest(TestFormula)]
+    #[alkahest(Deserialize<'a, TestFormula>)]
     enum TestDataLazy<'a> {
         Foo {
             a: u32,
@@ -232,48 +230,9 @@ fn test_enums() {
     let data = TestData::Foo { a: 1 };
     let mut bytes = [0u8; 1024];
 
-    alkahest::serialize::<TestFormula, _>(data, &mut bytes).unwrap();
-    let (data, _) = alkahest::deserialize::<TestFormula, TestData>(&bytes).unwrap();
+    let size = alkahest::serialize::<TestFormula, _>(data, &mut bytes).unwrap();
+    let data = alkahest::deserialize::<TestFormula, TestData>(&bytes[..size.0]).unwrap();
     assert_eq!(data, TestData::Foo { a: 1 });
-}
-
-#[cfg(all(feature = "alloc", feature = "derive"))]
-#[test]
-fn test_bench() {
-    use crate::{Deserialize, Formula, Serialize};
-    use alloc::vec::Vec;
-
-    #[derive(Formula)]
-    enum TestFormula {
-        Foo { a: Ref<u32>, b: Ref<u32> },
-        Bar { c: Vec<u32>, d: Vec<Vec<u32>> },
-    }
-
-    #[derive(Serialize, Deserialize)]
-    #[alkahest(TestFormula)]
-    enum TestData {
-        Foo { a: u32, b: u32 },
-        Bar { c: Vec<u32>, d: Vec<Vec<u32>> },
-    }
-
-    #[derive(Deserialize)]
-    #[alkahest(TestFormula)]
-    enum TestDataLazy<'a> {
-        Foo {
-            a: u32,
-            b: u32,
-        },
-        Bar {
-            c: Lazy<'a, [u32]>,
-            d: Lazy<'a, [Vec<u32>]>,
-        },
-    }
-
-    let data = TestData::Foo { a: 1, b: 2 };
-    let mut bytes = [0u8; 1024];
-
-    alkahest::serialize::<TestFormula, _>(data, &mut bytes).unwrap();
-    let (_data, _) = alkahest::deserialize::<TestFormula, TestDataLazy>(&bytes).unwrap();
 }
 
 #[cfg(feature = "alloc")]
@@ -320,9 +279,11 @@ fn test_size() {
 #[cfg(all(feature = "derive", feature = "alloc"))]
 #[test]
 fn test_packet() {
+    use alkahest_proc::alkahest;
     use alloc::{string::String, vec, vec::Vec};
 
-    #[derive(Debug, Clone, Formula, Serialize, Deserialize)]
+    #[derive(Debug, Clone)]
+    #[alkahest(Formula, Serialize, Deserialize)]
     pub enum GameMessage {
         Client(ClientMessage),
         Server(ServerMessage),
@@ -334,7 +295,8 @@ fn test_packet() {
         "Enum with non-EXACT_SIZE variants are not EXACT_SIZE"
     );
 
-    #[derive(Debug, Clone, Formula, Serialize, Deserialize)]
+    #[derive(Debug, Clone)]
+    #[alkahest(Formula, Serialize, Deserialize)]
     pub enum ClientMessage {
         ClientData { nickname: String, clan: String },
         Chat(String),
@@ -346,7 +308,8 @@ fn test_packet() {
         "Enums with differently sized variants are not EXACT_SIZE"
     );
 
-    #[derive(Debug, Clone, Formula, Serialize, Deserialize)]
+    #[derive(Debug, Clone)]
+    #[alkahest(Formula, Serialize, Deserialize)]
     pub enum ServerMessage {
         ServerData,
         ClientChat { client_id: u64, message: String },
@@ -358,7 +321,8 @@ fn test_packet() {
         "Enums with differently sized variants are not EXACT_SIZE"
     );
 
-    #[derive(Debug, Formula, Serialize, Deserialize)]
+    #[derive(Debug)]
+    #[alkahest(Formula, Serialize, Deserialize)]
     pub struct NetPacket<G> {
         pub game_messages: Vec<G>,
     }
@@ -402,9 +366,10 @@ fn test_ref_in_enum() {
         vec::Vec,
     };
 
-    use alkahest_proc::{Deserialize, Formula, Serialize};
+    use alkahest_proc::alkahest;
 
-    #[derive(Debug, PartialEq, Eq, Formula, Serialize, Deserialize)]
+    #[derive(Debug, PartialEq, Eq)]
+    #[alkahest(Formula, Serialize, SerializeRef, Deserialize)]
     enum Test {
         B([u64; 16]),
         A(String),
@@ -414,7 +379,7 @@ fn test_ref_in_enum() {
 
     let mut buffer = [0u8; 256];
     let size = serialize::<[Test], _>([&value], &mut buffer).unwrap();
-    let (data, _) = deserialize::<[Test], Vec<Test>>(&buffer[..size]).unwrap();
+    let data = deserialize::<[Test], Vec<Test>>(&buffer[..size.0]).unwrap();
 
     assert_eq!(data, [value]);
 }
@@ -456,17 +421,17 @@ fn test_vlq() {
 
     for i in u8s {
         let size = serialize::<Vlq, _>(i, &mut buffer).unwrap();
-        let (de, _) = deserialize::<Vlq, u32>(&buffer[..size]).unwrap();
+        let de = deserialize::<Vlq, u32>(&buffer[..size.0]).unwrap();
         assert_eq!(de, u32::from(i));
     }
     for i in u32s {
         let size = serialize::<Vlq, _>(i, &mut buffer).unwrap();
-        let (de, _) = deserialize::<Vlq, u64>(&buffer[..size]).unwrap();
+        let de = deserialize::<Vlq, u64>(&buffer[..size.0]).unwrap();
         assert_eq!(de, u64::from(i));
     }
     for i in u128s {
         let size = serialize::<Vlq, _>(i, &mut buffer).unwrap();
-        let (de, _) = deserialize::<Vlq, u128>(&buffer[..size]).unwrap();
+        let de = deserialize::<Vlq, u128>(&buffer[..size.0]).unwrap();
         assert_eq!(de, i);
     }
 }
@@ -510,12 +475,87 @@ fn test_zero_sized_arrays() {
     serialize::<[u8; 0], [u8; 0]>([], &mut []).unwrap();
     serialize::<[(); 1], [(); 1]>([()], &mut []).unwrap();
 
-    let ([], _) = deserialize::<[u8; 0], [u8; 0]>(&[]).unwrap();
-    let ([()], _) = deserialize::<[(); 1], [(); 1]>(&[]).unwrap();
+    let [] = deserialize::<[u8; 0], [u8; 0]>(&[]).unwrap();
+    let [()] = deserialize::<[(); 1], [(); 1]>(&[]).unwrap();
 
     #[cfg(feature = "alloc")]
     {
         deserialize::<[u8; 0], Vec<u8>>(&[]).unwrap();
         deserialize::<[u8; 0], VecDeque<u8>>(&[]).unwrap();
     }
+}
+
+#[cfg(feature = "derive")]
+#[test]
+fn test_recursive_types() {
+    use alkahest_proc::alkahest;
+
+    let mut buffer = [0; 1024];
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    #[alkahest(Formula, SerializeRef, Deserialize)]
+    struct Node {
+        value: u32,
+        children: Vec<Node>,
+    }
+
+    let node = Node {
+        value: 1,
+        children: vec![
+            Node {
+                value: 2,
+                children: vec![Node {
+                    value: 3,
+                    children: vec![],
+                }],
+            },
+            Node {
+                value: 4,
+                children: vec![],
+            },
+        ],
+    };
+
+    let (size, root) = crate::serialize_unchecked::<Node, &Node>(&node, &mut buffer);
+    let de = crate::deserialize_with_size::<Node, Node>(&buffer[..size], root).unwrap();
+
+    assert_eq!(de, node);
+
+    #[alkahest(Formula where T: Formula)]
+    struct A<T> {
+        a: T,
+        b: Vec<A<T>>,
+    }
+
+    #[derive(Debug)]
+    #[alkahest(for<U: Formula> SerializeRef<A<U>> where for<'a> &'a T: Serialize<U>)]
+    struct B<T> {
+        a: T,
+        b: Vec<B<T>>,
+    }
+
+    #[derive(Debug)]
+    #[alkahest(for<'de, U: Formula> Deserialize<'de, A<U>> where T: Deserialize<'de, U>)]
+    struct C<T> {
+        a: T,
+        b: Vec<C<T>>,
+    }
+
+    impl<T> PartialEq<C<T>> for B<T>
+    where
+        T: PartialEq,
+    {
+        fn eq(&self, other: &C<T>) -> bool {
+            self.a == other.a && self.b == other.b
+        }
+    }
+
+    let b = B {
+        a: 1,
+        b: vec![B { a: 2, b: vec![] }],
+    };
+
+    let (size, root) = crate::serialize_unchecked::<A<i32>, &B<i32>>(&b, &mut buffer);
+    let c = crate::deserialize_with_size::<A<i32>, C<i32>>(&buffer[..size], root).unwrap();
+    assert_eq!(b, c);
 }

@@ -2,7 +2,7 @@ use crate::{
     buffer::Buffer,
     deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::{BareFormula, Formula},
-    serialize::{write_bytes, Serialize, Sizes},
+    serialize::{write_bytes, SerializeRef, Sizes},
 };
 
 /// A formula for a raw byte slices.
@@ -11,15 +11,15 @@ pub struct Bytes;
 
 impl Formula for Bytes {
     const MAX_STACK_SIZE: Option<usize> = None;
-    const EXACT_SIZE: bool = true;
+    const EXACT_SIZE: bool = false;
     const HEAPLESS: bool = true;
 }
 
 impl BareFormula for Bytes {}
 
-impl Serialize<Bytes> for &[u8] {
+impl SerializeRef<Bytes> for [u8] {
     #[inline(always)]
-    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
+    fn serialize<B>(&self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
         B: Buffer,
     {

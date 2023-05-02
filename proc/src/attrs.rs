@@ -1,223 +1,212 @@
-use proc_easy::{EasyArgument, EasyAttributes, EasyPeek, EasyToken};
-use proc_macro2::{Span, TokenStream};
-use quote::ToTokens;
-use syn::{
-    parse::{Lookahead1, Parse, ParseStream},
-    spanned::Spanned,
-};
-
-proc_easy::easy_token!(owned);
-proc_easy::easy_token!(serialize);
-proc_easy::easy_token!(deserialize);
-// proc_easy::easy_token!(non_exhaustive);
+proc_easy::easy_token!(Formula);
+proc_easy::easy_token!(Serialize);
+proc_easy::easy_token!(SerializeRef);
+proc_easy::easy_token!(Deserialize);
 
 proc_easy::easy_parse! {
-    struct FormulaParams {
+    struct Params {
         token: syn::Token![for],
         generics: syn::Generics,
     }
 }
 
-struct FormulaRef {
-    params: Option<FormulaParams>,
-    path: syn::Path,
-    where_clause: Option<syn::WhereClause>,
-}
-
-impl From<FormulaRef> for Formula {
-    fn from(formula: FormulaRef) -> Self {
-        let mut generics = formula
-            .params
-            .map(|params| params.generics)
-            .unwrap_or_default();
-
-        if let Some(where_clause) = formula.where_clause {
-            generics.make_where_clause().predicates = where_clause.predicates;
-        }
-
-        Formula {
-            path: path_make_expr_style(formula.path),
-            generics,
-        }
+proc_easy::easy_parse! {
+    struct Variant {
+        at: syn::Token![@],
+        ident: syn::Ident,
     }
 }
 
-impl EasyToken for FormulaRef {
-    fn display() -> &'static str {
-        "Formula type"
+proc_easy::easy_parse! {
+    struct SerializeParams {
+        lt_token: syn::Token![<],
+        formula: syn::Path,
+        variant: proc_easy::EasyMaybe<Variant>,
+        gt_token: syn::Token![>],
     }
 }
 
-impl EasyPeek for FormulaRef {
-    fn peek_stream(stream: ParseStream) -> bool {
-        stream.peek(syn::Token![for]) || stream.peek(syn::Token![<]) || stream.peek(syn::Ident)
-    }
-
-    fn peek(lookahead1: &Lookahead1) -> bool {
-        lookahead1.peek(syn::Token![for])
-            || lookahead1.peek(syn::Token![<])
-            || lookahead1.peek(syn::Ident)
+proc_easy::easy_parse! {
+    struct DeserializeParams {
+        lt_token: syn::Token![<],
+        lifetime: syn::Lifetime,
+        comma_token: syn::Token![,],
+        formula: syn::Path,
+        gt_token: syn::Token![>],
     }
 }
 
-impl Parse for FormulaRef {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        let params = if input.peek(syn::Token![for]) {
-            Some(input.parse()?)
-        } else {
-            None
-        };
+proc_easy::easy_parse! {
+    enum ImplTrait {
+        Formula(Formula),
+        Serialize(Serialize, proc_easy::EasyMaybe<SerializeParams>),
+        SerializeRef(SerializeRef, proc_easy::EasyMaybe<SerializeParams>),
+        Deserialize(Deserialize, proc_easy::EasyMaybe<DeserializeParams>),
+    }
+}
 
-        let path = input.parse()?;
+proc_easy::easy_parse! {
+    struct ImplBlock {
+        params: proc_easy::EasyMaybe<Params>,
+        impl_trait: ImplTrait,
+        where_clause: Option<syn::WhereClause>,
+    }
+}
 
-        let where_clause = if input.peek(syn::Token![where]) {
-            Some(input.parse()?)
-        } else {
-            None
-        };
+struct ImplBlocks {
+    blocks: syn::punctuated::Punctuated<ImplBlock, syn::Token![,]>,
+}
 
-        Ok(FormulaRef {
-            params,
-            path,
-            where_clause,
+impl syn::parse::Parse for ImplBlocks {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        Ok(ImplBlocks {
+            blocks: syn::punctuated::Punctuated::parse_separated_nonempty(input)?,
         })
     }
 }
 
-impl ToTokens for FormulaRef {
-    fn to_tokens(&self, tokens: &mut TokenStream) {
-        if let Some(params) = &self.params {
-            params.token.to_tokens(tokens);
-            params.generics.to_tokens(tokens);
+impl ImplBlock {
+    fn split(self) -> (ImplTrait, Option<syn::Generics>) {
+        let mut generics = match self.params {
+            proc_easy::EasyMaybe::Nothing => None,
+            proc_easy::EasyMaybe::Just(params) => Some(params.generics),
+        };
+
+        if let Some(where_clause) = self.where_clause {
+            generics
+                .get_or_insert_with(syn::Generics::default)
+                .make_where_clause()
+                .predicates
+                .extend(where_clause.predicates);
         }
-        self.path.to_tokens(tokens);
-        if let Some(where_clause) = &self.where_clause {
-            where_clause.to_tokens(tokens);
-        }
+
+        (self.impl_trait, generics)
     }
 }
 
-proc_easy::easy_argument! {
-    struct Variant {
-        token: syn::Token![@],
-        variant: syn::Ident,
+pub struct FormulaArgs {
+    pub generics: Option<syn::Generics>,
+}
+
+impl FormulaArgs {
+    pub fn empty() -> Self {
+        FormulaArgs { generics: None }
     }
 }
 
-proc_easy::easy_argument_tuple! {
-    struct NoReferenceRef {
-        token: owned,
-        formula: Option<FormulaRef>,
-    }
-}
-
-proc_easy::easy_argument_tuple! {
-    struct SerializeArg {
-        token: serialize,
-        owned: Option<NoReferenceRef>,
-        formula: Option<FormulaRef>,
-    }
-}
-
-proc_easy::easy_argument_tuple! {
-    struct DeserializeArg {
-        token: deserialize,
-        formula: Option<FormulaRef>,
-        // non_exhaustive: Option<non_exhaustive>,
-    }
-}
-
-proc_easy::easy_attributes! {
-    @(alkahest)
-    struct Attrs {
-        // non_exhaustive: Option<non_exhaustive>,
-        owned: Option<NoReferenceRef>,
-        serialize: Vec<SerializeArg>,
-        deserialize: Vec<DeserializeArg>,
-        variant: Option<Variant>,
-        formula: Option<FormulaRef>,
-    }
-}
-
-#[derive(Clone)]
-pub struct Formula {
-    pub path: syn::Path,
-    pub generics: syn::Generics,
-}
-
-pub struct Args {
-    // pub non_exhaustive: Option<non_exhaustive>,
-    #[allow(clippy::option_option)]
-    pub owned: Option<Option<Formula>>,
-    pub common: Option<Formula>,
-    pub serialize: Option<Formula>,
-    pub deserialize: Option<Formula>,
+pub struct SerializeArgs {
+    pub formula: Option<syn::Path>,
+    pub generics: Option<syn::Generics>,
     pub variant: Option<syn::Ident>,
 }
 
-pub fn parse_attributes(attrs: &[syn::Attribute]) -> syn::Result<Args> {
-    let attrs = Attrs::parse(attrs, Span::call_site())?;
-
-    let mut serialize_opt = None;
-    let mut deserialize_opt = None;
-    let common_opt = attrs.formula.map(Formula::from);
-    // let mut non_exhaustive_opt = attrs.non_exhaustive;
-    let mut owned_opt = attrs.owned;
-
-    for serialize in attrs.serialize {
-        if let Some(formula) = serialize.formula {
-            if common_opt.is_some() {
-                return Err(syn::Error::new(
-                    formula.span(),
-                    "Common formula reference already specified",
-                ));
-            }
-            serialize_opt = Some(Formula::from(formula));
-        }
-
-        if let Some(owned) = serialize.owned {
-            if owned_opt.is_some() {
-                return Err(syn::Error::new(
-                    owned.name_span(),
-                    "Reference already specified",
-                ));
-            }
-
-            owned_opt = Some(owned);
+impl SerializeArgs {
+    pub fn empty() -> Self {
+        SerializeArgs {
+            formula: None,
+            generics: None,
+            variant: None,
         }
     }
+}
 
-    for deserialize in attrs.deserialize {
-        if let Some(formula) = deserialize.formula {
-            if common_opt.is_some() {
-                return Err(syn::Error::new(
-                    formula.span(),
-                    "Common formula reference already specified",
-                ));
+pub struct DeserializeArgs {
+    pub formula: Option<syn::Path>,
+    pub generics: Option<syn::Generics>,
+    pub lifetime: Option<syn::Lifetime>,
+}
+
+impl DeserializeArgs {
+    pub fn empty() -> Self {
+        DeserializeArgs {
+            formula: None,
+            generics: None,
+            lifetime: None,
+        }
+    }
+}
+
+pub struct Args {
+    pub formula: Option<FormulaArgs>,
+    pub serialize: Option<SerializeArgs>,
+    pub serialize_ref: Option<SerializeArgs>,
+    pub deserialize: Option<DeserializeArgs>,
+}
+
+impl Args {
+    pub fn parse_attributes(attrs: proc_macro2::TokenStream) -> syn::Result<Self> {
+        let blocks: ImplBlocks = syn::parse2(attrs)?;
+
+        let mut formula: Option<FormulaArgs> = None;
+        let mut serialize: Option<SerializeArgs> = None;
+        let mut serialize_ref: Option<SerializeArgs> = None;
+        let mut deserialize: Option<DeserializeArgs> = None;
+
+        for block in blocks.blocks {
+            let (impl_trait, generics) = block.split();
+            match impl_trait {
+                ImplTrait::Formula(_) => formula = Some(FormulaArgs { generics }),
+                ImplTrait::Serialize(_, params) => {
+                    let (formula, variant) = match params {
+                        proc_easy::EasyMaybe::Just(params) => (
+                            Some(path_make_expr_style(params.formula)),
+                            match params.variant {
+                                proc_easy::EasyMaybe::Just(variant) => Some(variant.ident),
+                                proc_easy::EasyMaybe::Nothing => None,
+                            },
+                        ),
+                        proc_easy::EasyMaybe::Nothing => (None, None),
+                    };
+
+                    serialize = Some(SerializeArgs {
+                        formula,
+                        generics,
+                        variant,
+                    });
+                }
+                ImplTrait::SerializeRef(_, params) => {
+                    let (formula, variant) = match params {
+                        proc_easy::EasyMaybe::Just(params) => (
+                            Some(path_make_expr_style(params.formula)),
+                            match params.variant {
+                                proc_easy::EasyMaybe::Just(variant) => Some(variant.ident),
+                                proc_easy::EasyMaybe::Nothing => None,
+                            },
+                        ),
+                        proc_easy::EasyMaybe::Nothing => (None, None),
+                    };
+
+                    serialize_ref = Some(SerializeArgs {
+                        formula,
+                        generics,
+                        variant,
+                    });
+                }
+                ImplTrait::Deserialize(_, params) => {
+                    let (formula, lifetime) = match params {
+                        proc_easy::EasyMaybe::Just(params) => (
+                            Some(path_make_expr_style(params.formula)),
+                            Some(params.lifetime),
+                        ),
+                        proc_easy::EasyMaybe::Nothing => (None, None),
+                    };
+
+                    deserialize = Some(DeserializeArgs {
+                        formula,
+                        generics,
+                        lifetime,
+                    });
+                }
             }
-            deserialize_opt = Some(Formula::from(formula));
         }
 
-        // if let Some(non_exhaustive) = deserialize.non_exhaustive {
-        //     if non_exhaustive_opt.is_some() {
-        //         return Err(syn::Error::new(
-        //             non_exhaustive.span(),
-        //             "Non-exhaustive already specified",
-        //         ));
-        //     }
-
-        //     non_exhaustive_opt = Some(non_exhaustive);
-        // }
+        Ok(Args {
+            formula,
+            serialize,
+            serialize_ref,
+            deserialize,
+        })
     }
-
-    Ok(Args {
-        common: common_opt,
-        serialize: serialize_opt,
-        deserialize: deserialize_opt,
-        // non_exhaustive: non_exhaustive_opt,
-        owned: owned_opt.map(|owned| owned.formula.map(Formula::from)),
-        variant: attrs.variant.map(|v| v.variant),
-    })
 }
 
 pub fn path_make_expr_style(mut path: syn::Path) -> syn::Path {

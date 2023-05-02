@@ -2,7 +2,7 @@ use crate::{
     buffer::Buffer,
     deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::{sum_size, BareFormula, Formula},
-    serialize::{field_size_hint, write_field, Serialize, Sizes},
+    serialize::{field_size_hint, write_field, Serialize, SerializeRef, Sizes},
     size::SIZE_STACK,
 };
 
@@ -29,9 +29,9 @@ impl Serialize<()> for () {
     }
 }
 
-impl Serialize<()> for &'_ () {
+impl SerializeRef<()> for () {
     #[inline(always)]
-    fn serialize<B>(self, _sizes: &mut Sizes, _buffer: B) -> Result<(), B::Error>
+    fn serialize<B>(&self, _sizes: &mut Sizes, _buffer: B) -> Result<(), B::Error>
     where
         B: Buffer,
     {
@@ -88,7 +88,7 @@ macro_rules! formula_serialize {
                 size
             };
 
-            const EXACT_SIZE: bool = <$at as Formula>::EXACT_SIZE;
+            const EXACT_SIZE: bool = $(<$a as Formula>::EXACT_SIZE &&)* <$at as Formula>::EXACT_SIZE;
             const HEAPLESS: bool = $(<$a as Formula>::HEAPLESS &&)* <$at as Formula>::HEAPLESS;
         }
 
@@ -98,7 +98,6 @@ macro_rules! formula_serialize {
             $at: Formula + ?Sized,
         {
         }
-
 
         impl<$($a,)* $at, $($b,)* $bt> Serialize<($($a,)* $at,)> for ($($b,)* $bt,)
         where
@@ -139,18 +138,18 @@ macro_rules! formula_serialize {
             }
         }
 
-        impl<'ser, $($a,)* $at, $($b,)* $bt,> Serialize<($($a,)* $at,)> for &'ser ($($b,)* $bt,)
+        impl<$($a,)* $at, $($b,)* $bt,> SerializeRef<($($a,)* $at,)> for ($($b,)* $bt,)
         where
             $(
                 $a: Formula,
-                &'ser $b: Serialize<$a>,
+                for<'ser> &'ser $b: Serialize<$a>,
             )*
             $at: Formula + ?Sized,
-            &'ser $bt: Serialize<$at>,
+            for<'ser> &'ser $bt: Serialize<$at>,
             $bt: ?Sized,
         {
             #[inline(always)]
-            fn serialize<B>(self, sizes: &mut Sizes, mut buffer: B) -> Result<(), B::Error>
+            fn serialize<B>(&self, sizes: &mut Sizes, mut buffer: B) -> Result<(), B::Error>
             where
                 B: Buffer,
             {

@@ -4,7 +4,7 @@ use crate::{
     buffer::Buffer,
     deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::{BareFormula, Formula},
-    serialize::{write_bytes, Serialize, Sizes},
+    serialize::{write_bytes, Serialize, SerializeRef, Sizes},
 };
 
 macro_rules! impl_primitive {
@@ -62,9 +62,9 @@ macro_rules! impl_primitive {
             }
         )*
 
-        impl Serialize<$ty> for &$ty {
+        impl SerializeRef<$ty> for $ty {
             #[inline(always)]
-            fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
+            fn serialize<B>(&self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
             where
                 B: Buffer,
             {
@@ -78,9 +78,9 @@ macro_rules! impl_primitive {
         }
 
         $(
-            impl Serialize<$ty> for &$from {
+            impl SerializeRef<$ty> for $from {
                 #[inline(always)]
-                fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
+                fn serialize<B>(&self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
                 where
                     B: Buffer,
                 {

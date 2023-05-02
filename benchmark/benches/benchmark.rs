@@ -11,7 +11,7 @@ extern crate rkyv;
 #[cfg(feature = "speedy")]
 extern crate speedy;
 
-use alkahest::{Deserialize, Formula, Lazy, Ref, SerIter, Serialize};
+use alkahest::{alkahest, Deserialize, Formula, Lazy, Ref, SerIter, Serialize};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 #[cfg(feature = "rkyv")]
@@ -32,9 +32,9 @@ pub enum GameMessage {
     Server(ServerMessage),
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 #[cfg_attr(feature = "speedy", derive(speedy::Readable))]
-#[alkahest(GameMessage)]
+#[alkahest(Deserialize<'de, GameMessage>)]
 pub enum GameMessageRead<'de> {
     Client(ClientMessageRead<'de>),
     Server(ServerMessageRead<'de>),
@@ -50,9 +50,9 @@ pub enum ClientMessage {
     Chat(String),
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 #[cfg_attr(feature = "speedy", derive(speedy::Readable))]
-#[alkahest(ClientMessage)]
+#[alkahest(Deserialize<'de, ClientMessage>)]
 pub enum ClientMessageRead<'de> {
     ClientData { nickname: &'de str, clan: &'de str },
     Chat(&'de str),
@@ -68,9 +68,9 @@ pub enum ServerMessage {
     ClientChat { client_id: u64, message: String },
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 #[cfg_attr(feature = "speedy", derive(speedy::Readable))]
-#[alkahest(ServerMessage)]
+#[alkahest(Deserialize<'de, ServerMessage>)]
 pub enum ServerMessageRead<'de> {
     ServerData(u64),
     ClientChat { client_id: u64, message: &'de str },
@@ -85,14 +85,14 @@ pub struct NetPacket<G> {
     pub game_messages: Vec<G>,
 }
 
-#[derive(Debug, Serialize)]
-#[alkahest(owned(for<X: Formula> NetPacket<X> where G: Serialize<[X]>))]
+#[derive(Debug)]
+#[alkahest(for<X: Formula> Serialize<NetPacket<X>> where G: Serialize<[X]>)]
 pub struct NetPacketWrite<G> {
     pub game_messages: G,
 }
 
-#[derive(Debug, Deserialize)]
-#[alkahest(NetPacket<G> where G: Formula)]
+#[derive(Debug)]
+#[alkahest(Deserialize<'de, NetPacket<G>> where G: Formula)]
 pub struct NetPacketRead<'de, G> {
     pub game_messages: Lazy<'de, [G]>,
 }
@@ -126,26 +126,28 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     let mut rng = SmallRng::seed_from_u64(42);
 
     const LEN: usize = 200;
+    let mut size = 0;
 
     {
         let mut group = c.benchmark_group("net-packet/alkahest");
         group.bench_function("serialize", |b| {
             b.iter(|| {
-                alkahest::serialize_to_vec::<NetPacket<GameMessage>, _>(
+                size = alkahest::serialize_to_vec::<NetPacket<GameMessage>, _>(
                     NetPacketWrite {
                         game_messages: SerIter(messages(rng.clone(), black_box(LEN))),
                     },
                     &mut buffer,
-                );
+                )
+                .0;
             })
         });
 
         group.bench_function("read", |b| {
             b.iter(|| {
-                let (packet, _) = alkahest::deserialize::<
+                let packet = alkahest::deserialize::<
                     NetPacket<GameMessage>,
                     NetPacketRead<GameMessage>,
-                >(&buffer[..])
+                >(&buffer[..size])
                 .unwrap();
 
                 for message in packet.game_messages.iter::<GameMessageRead>() {

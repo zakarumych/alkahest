@@ -1,16 +1,22 @@
+use std::collections::HashSet;
+
 use proc_macro2::TokenStream;
 
 use crate::{
-    attrs::{parse_attributes, Args, Formula},
-    enum_field_order_checks, struct_field_order_checks,
+    attrs::DeserializeArgs, enum_field_order_checks, filter_type_param, is_generic_ty,
+    struct_field_order_checks,
 };
 
 fn default_de_lifetime() -> syn::Lifetime {
     syn::Lifetime::new("'__de", proc_macro2::Span::call_site())
 }
 
-fn de_lifetime(formula: &mut Formula, generics: &syn::Generics) -> syn::Lifetime {
-    match formula.generics.lifetimes().next() {
+fn de_lifetime(
+    lifetime: Option<syn::Lifetime>,
+    formula_generics: &mut syn::Generics,
+    generics: &syn::Generics,
+) -> syn::Lifetime {
+    match lifetime {
         None => {
             let lifetime = default_de_lifetime();
             let bounds: syn::punctuated::Punctuated<_, syn::Token![+]> =
@@ -21,15 +27,18 @@ fn de_lifetime(formula: &mut Formula, generics: &syn::Generics) -> syn::Lifetime
                 colon_token: (!bounds.is_empty()).then(Default::default),
                 bounds,
             };
-            formula.generics.params.push(de.into());
+            formula_generics
+                .params
+                .push(syn::GenericParam::Lifetime(de));
             lifetime
         }
-        Some(first) => first.lifetime.clone(),
+        Some(lifetime) => lifetime,
     }
 }
 
 struct Config {
-    formula: Formula,
+    formula: syn::Path,
+    generics: syn::Generics,
 
     /// Signals if fields should be checked to match on formula.
     /// `false` if `formula` is inferred to `Self`.
@@ -43,100 +52,106 @@ struct Config {
 }
 
 impl Config {
-    fn for_struct(args: Args, data: &syn::DataStruct, generics: &syn::Generics) -> Self {
-        // let non_exhaustive = args.non_exhaustive.is_some();
-        match args.deserialize.or(args.common) {
-            None => {
-                let mut formula = Formula {
-                    path: syn::parse_quote!(Self),
-                    generics: syn::Generics {
-                        lt_token: Some(<syn::Token![<]>::default()),
-                        params: syn::punctuated::Punctuated::default(),
-                        gt_token: Some(<syn::Token![>]>::default()),
-                        where_clause: None,
-                    },
+    fn for_type(args: DeserializeArgs, data: &syn::Data, generics: &syn::Generics) -> Self {
+        match (args.formula, args.generics) {
+            (None, None) => {
+                let mut formula_generics = syn::Generics {
+                    lt_token: Some(<syn::Token![<]>::default()),
+                    params: syn::punctuated::Punctuated::default(),
+                    gt_token: Some(<syn::Token![>]>::default()),
+                    where_clause: None,
                 };
 
-                let de = de_lifetime(&mut formula, generics);
+                let de = de_lifetime(args.lifetime, &mut formula_generics, generics);
 
                 // Add predicates that fields implement
                 // `Formula + Deserialize<'__de, #field_type>`
                 // Except that last one if `non_exhaustive` is not set.
-                let predicates = data.fields.iter().map(|field| -> syn::WherePredicate {
-                        let ty = &field.ty;
-                        syn::parse_quote! { #ty: ::alkahest::private::Formula + ::alkahest::private::Deserialize<#de, #ty> }
-                    });
+                match data {
+                    syn::Data::Union(_) => unreachable!(),
+                    syn::Data::Struct(data) => {
+                        let mut all_generic_field_types: HashSet<_> =
+                            data.fields.iter().map(|f| &f.ty).collect();
+                        all_generic_field_types.retain(|ty| {
+                            is_generic_ty(ty, &filter_type_param(generics.params.iter()))
+                        });
 
-                formula
-                    .generics
-                    .make_where_clause()
-                    .predicates
-                    .extend(predicates);
+                        if !all_generic_field_types.is_empty() {
+                            let predicates = all_generic_field_types.iter().map(|&ty| -> syn::WherePredicate {
+                                syn::parse_quote! { #ty: ::alkahest::private::Formula + ::alkahest::private::Deserialize<#de, #ty> }
+                            });
+
+                            formula_generics
+                                .make_where_clause()
+                                .predicates
+                                .extend(predicates);
+                        }
+                    }
+                    syn::Data::Enum(data) => {
+                        let all_fields = data.variants.iter().flat_map(|v| v.fields.iter());
+
+                        let mut all_generic_field_types: HashSet<_> =
+                            all_fields.map(|f| &f.ty).collect();
+                        all_generic_field_types.retain(|ty| {
+                            is_generic_ty(ty, &filter_type_param(generics.params.iter()))
+                        });
+
+                        if !all_generic_field_types.is_empty() {
+                            let predicates = all_generic_field_types.iter().map(|&ty| -> syn::WherePredicate {
+                                syn::parse_quote! { #ty: ::alkahest::private::Formula + ::alkahest::private::Deserialize<#de, #ty> }
+                            });
+
+                            formula_generics
+                                .make_where_clause()
+                                .predicates
+                                .extend(predicates);
+                        }
+                    }
+                }
 
                 Config {
-                    formula,
+                    formula: syn::parse_quote! { Self },
+                    generics: formula_generics,
                     check_fields: false,
                     // non_exhaustive,
                     de,
                 }
             }
-            Some(mut formula) => {
-                let de = de_lifetime(&mut formula, generics);
+            (None, Some(mut formula_generics)) => {
+                let de = de_lifetime(args.lifetime, &mut formula_generics, generics);
 
                 Config {
-                    formula,
-                    check_fields: true,
-                    // non_exhaustive,
-                    de,
-                }
-            }
-        }
-    }
-
-    fn for_enum(args: Args, data: &syn::DataEnum, generics: &syn::Generics) -> Self {
-        // let non_exhaustive = args.non_exhaustive.is_some();
-        match args.deserialize.or(args.common) {
-            None => {
-                let mut formula = Formula {
-                    path: syn::parse_quote!(Self),
-                    generics: syn::Generics {
-                        lt_token: Some(<syn::Token![<]>::default()),
-                        params: syn::punctuated::Punctuated::default(),
-                        gt_token: Some(<syn::Token![>]>::default()),
-                        where_clause: None,
-                    },
-                };
-
-                let de = de_lifetime(&mut formula, generics);
-
-                // Add predicates that fields implement
-                // `Formula + Deserialize<'__de, #field_type>`
-                // Except that last one if `non_exhaustive` is not set.
-                let predicates = data.variants.iter().flat_map(|v| v.fields.iter().map(|field| -> syn::WherePredicate {
-                        let ty = &field.ty;
-                        syn::parse_quote! { #ty: ::alkahest::private::Formula + ::alkahest::private::Deserialize<#de, #ty> }
-                    }));
-
-                formula
-                    .generics
-                    .make_where_clause()
-                    .predicates
-                    .extend(predicates);
-
-                Config {
-                    formula,
+                    formula: syn::parse_quote! { Self },
+                    generics: formula_generics,
                     check_fields: false,
                     // non_exhaustive,
                     de,
                 }
             }
-            Some(mut formula) => {
-                let de = de_lifetime(&mut formula, generics);
+            (Some(formula), None) => {
+                let mut formula_generics = syn::Generics {
+                    lt_token: Some(<syn::Token![<]>::default()),
+                    params: syn::punctuated::Punctuated::default(),
+                    gt_token: Some(<syn::Token![>]>::default()),
+                    where_clause: None,
+                };
+
+                let de = de_lifetime(args.lifetime, &mut formula_generics, generics);
 
                 Config {
                     formula,
+                    generics: formula_generics,
+                    check_fields: false,
+                    de,
+                }
+            }
+            (Some(formula), Some(mut formula_generics)) => {
+                let de = de_lifetime(args.lifetime, &mut formula_generics, generics);
+
+                Config {
+                    formula,
+                    generics: formula_generics,
                     check_fields: true,
-                    // non_exhaustive,
                     de,
                 }
             }
@@ -145,43 +160,36 @@ impl Config {
 }
 
 #[allow(clippy::too_many_lines)]
-pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
-    let input = syn::parse::<syn::DeriveInput>(input)?;
-    let args = parse_attributes(&input.attrs)?;
-
+pub fn derive(args: DeserializeArgs, input: &syn::DeriveInput) -> syn::Result<TokenStream> {
     let ident = &input.ident;
 
-    match input.data {
+    let cfg = Config::for_type(args, &input.data, &input.generics);
+
+    match &input.data {
         syn::Data::Union(_) => Err(syn::Error::new_spanned(
             input,
             "Deserialize cannot be derived for unions",
         )),
         syn::Data::Struct(data) => {
-            let cfg = Config::for_struct(args, &data, &input.generics);
-
             let field_checks = if cfg.check_fields {
-                struct_field_order_checks(&data, None, &input.ident, &cfg.formula.path)
+                struct_field_order_checks(&data, None, &input.ident, &cfg.formula)
             } else {
                 TokenStream::new()
             };
 
-            let formula_path = &cfg.formula.path;
+            let formula_path = &cfg.formula;
 
             let de = cfg.de;
 
             let mut deserialize_generics = input.generics.clone();
 
-            deserialize_generics.lt_token = deserialize_generics
-                .lt_token
-                .or(cfg.formula.generics.lt_token);
-            deserialize_generics.gt_token = deserialize_generics
-                .gt_token
-                .or(cfg.formula.generics.gt_token);
+            deserialize_generics.lt_token = deserialize_generics.lt_token.or(cfg.generics.lt_token);
+            deserialize_generics.gt_token = deserialize_generics.gt_token.or(cfg.generics.gt_token);
             deserialize_generics
                 .params
-                .extend(cfg.formula.generics.params.into_iter());
+                .extend(cfg.generics.params.into_iter());
 
-            if let Some(where_clause) = cfg.formula.generics.where_clause {
+            if let Some(where_clause) = cfg.generics.where_clause {
                 deserialize_generics
                     .make_where_clause()
                     .predicates
@@ -321,31 +329,25 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
             })
         }
         syn::Data::Enum(data) => {
-            let cfg = Config::for_enum(args, &data, &input.generics);
-
             let field_checks = if cfg.check_fields {
-                enum_field_order_checks(&data, &input.ident, &cfg.formula.path)
+                enum_field_order_checks(&data, &input.ident, &cfg.formula)
             } else {
                 TokenStream::new()
             };
 
-            let formula_path = &cfg.formula.path;
+            let formula_path = &cfg.formula;
 
             let de = cfg.de;
 
             let mut deserialize_generics = input.generics.clone();
 
-            deserialize_generics.lt_token = deserialize_generics
-                .lt_token
-                .or(cfg.formula.generics.lt_token);
-            deserialize_generics.gt_token = deserialize_generics
-                .gt_token
-                .or(cfg.formula.generics.gt_token);
+            deserialize_generics.lt_token = deserialize_generics.lt_token.or(cfg.generics.lt_token);
+            deserialize_generics.gt_token = deserialize_generics.gt_token.or(cfg.generics.gt_token);
             deserialize_generics
                 .params
-                .extend(cfg.formula.generics.params.into_iter());
+                .extend(cfg.generics.params.into_iter());
 
-            if let Some(where_clause) = cfg.formula.generics.where_clause {
+            if let Some(where_clause) = cfg.generics.where_clause {
                 deserialize_generics
                     .make_where_clause()
                     .predicates

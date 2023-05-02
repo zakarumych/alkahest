@@ -2,7 +2,7 @@ use crate::{
     buffer::Buffer,
     deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::{sum_size, BareFormula, Formula},
-    serialize::{field_size_hint, write_bytes, write_field, Serialize, Sizes},
+    serialize::{field_size_hint, write_bytes, write_field, Serialize, SerializeRef, Sizes},
 };
 
 impl<F> Formula for Option<F>
@@ -51,13 +51,13 @@ where
     }
 }
 
-impl<'ser, F, T> Serialize<Option<F>> for &'ser Option<T>
+impl<F, T> SerializeRef<Option<F>> for Option<T>
 where
     F: Formula,
-    &'ser T: Serialize<F>,
+    for<'ser> &'ser T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<B>(self, sizes: &mut Sizes, mut buffer: B) -> Result<(), B::Error>
+    fn serialize<B>(&self, sizes: &mut Sizes, mut buffer: B) -> Result<(), B::Error>
     where
         B: Buffer,
     {
@@ -72,7 +72,7 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        match *self {
+        match self {
             None => {
                 let stack = <Option<F>>::MAX_STACK_SIZE?;
                 Some(Sizes::with_stack(stack))

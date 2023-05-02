@@ -3,34 +3,69 @@ use std::collections::HashSet;
 use proc_macro2::TokenStream;
 use syn::spanned::Spanned;
 
-use crate::{attrs::parse_attributes, filter_type_param, is_generic_ty};
+use crate::{attrs::FormulaArgs, filter_type_param, is_generic_ty};
+
+struct Config {
+    formula_generics: syn::Generics,
+}
+
+impl Config {
+    pub fn from_args(args: FormulaArgs, generics: &syn::Generics, data: &syn::Data) -> Self {
+        let formula_generics = match args.generics {
+            None => {
+                let all_field_types: Vec<_> = match data {
+                    syn::Data::Struct(data) => data.fields.iter().map(|field| &field.ty).collect(),
+                    syn::Data::Enum(data) => data
+                        .variants
+                        .iter()
+                        .flat_map(|variant| variant.fields.iter().map(|field| &field.ty))
+                        .collect(),
+                    syn::Data::Union(_) => {
+                        panic!("Alkahest does not support unions");
+                    }
+                };
+
+                let mut all_generic_field_types: HashSet<_> =
+                    all_field_types.iter().copied().collect();
+
+                all_generic_field_types
+                    .retain(|ty| is_generic_ty(ty, &filter_type_param(generics.params.iter())));
+
+                let mut formula_generics = generics.clone();
+                if !all_generic_field_types.is_empty() {
+                    let predicates = all_generic_field_types
+                    .iter()
+                    .map(|ty| -> syn::WherePredicate {
+                        syn::parse_quote_spanned! { ty.span() => #ty: ::alkahest::private::Formula }
+                    });
+                    let where_clause = formula_generics.make_where_clause();
+                    where_clause.predicates.extend(predicates);
+                };
+
+                formula_generics
+            }
+            Some(args_generics) => {
+                let mut formula_generics = generics.clone();
+                formula_generics.params.extend(args_generics.params);
+                if let Some(where_clause) = args_generics.where_clause {
+                    formula_generics
+                        .make_where_clause()
+                        .predicates
+                        .extend(where_clause.predicates);
+                }
+                formula_generics
+            }
+        };
+
+        Config { formula_generics }
+    }
+}
 
 #[allow(clippy::too_many_lines)]
-pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
-    let input = syn::parse::<syn::DeriveInput>(input)?;
+pub fn derive(args: FormulaArgs, input: &syn::DeriveInput) -> syn::Result<TokenStream> {
     let ident = &input.ident;
 
-    let args = parse_attributes(&input.attrs)?;
-    // let non_exhaustive = args.non_exhaustive.is_some();
-
-    if let Some(formula) = args
-        .serialize
-        .or(args.deserialize)
-        .or(args.common)
-        .or(args.owned.flatten())
-    {
-        return Err(syn::Error::new_spanned(
-            formula.path,
-            "Formula type should not be specified for `Serialize` and `Deserialize` when type is also `Formula`",
-        ));
-    }
-
-    if args.variant.is_some() {
-        return Err(syn::Error::new_spanned(
-            input,
-            "Variant should not be specified for `Serialize` when type is also `Formula`",
-        ));
-    }
+    let config = Config::from_args(args, &input.generics, &input.data);
 
     match &input.data {
         syn::Data::Union(data) => Err(syn::Error::new_spanned(
@@ -40,20 +75,6 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
         syn::Data::Struct(data) => {
             let all_field_types: Vec<_> = data.fields.iter().map(|field| &field.ty).collect();
             let last_field_type = all_field_types.last().copied().into_iter();
-            let mut all_generic_field_types: HashSet<_> = all_field_types.iter().copied().collect();
-            all_generic_field_types
-                .retain(|ty| is_generic_ty(ty, &filter_type_param(input.generics.params.iter())));
-
-            let mut formula_generics = input.generics.clone();
-            if !all_generic_field_types.is_empty() {
-                let predicates = all_generic_field_types
-                    .iter()
-                    .map(|ty| -> syn::WherePredicate {
-                        syn::parse_quote_spanned! { ty.span() => #ty: ::alkahest::private::Formula }
-                    });
-                let where_clause = formula_generics.make_where_clause();
-                where_clause.predicates.extend(predicates);
-            }
 
             let field_names_order = match &data.fields {
                 syn::Fields::Named(fields) => fields
@@ -72,7 +93,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
             let field_ids: Vec<_> = (0..data.fields.len()).collect();
 
             let (formula_impl_generics, formula_type_generics, formula_where_clause) =
-                formula_generics.split_for_impl();
+                config.formula_generics.split_for_impl();
 
             let touch_fields = match &data.fields {
                 syn::Fields::Unit => quote::quote! {},
@@ -142,29 +163,6 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
                 .map(|variants| variants.last().copied().into_iter().collect())
                 .collect();
 
-            let all_field_types_flat: Vec<&syn::Type> = data
-                .variants
-                .iter()
-                .flat_map(|variant| variant.fields.iter().map(|field| &field.ty))
-                .collect();
-
-            let mut all_generic_field_types: HashSet<_> =
-                all_field_types_flat.iter().copied().collect();
-            all_generic_field_types
-                .retain(|ty| is_generic_ty(ty, &filter_type_param(input.generics.params.iter())));
-
-            let mut formula_generics = input.generics.clone();
-
-            if !all_generic_field_types.is_empty() {
-                let predicates = all_generic_field_types
-                    .iter()
-                    .map(|ty| -> syn::WherePredicate {
-                        syn::parse_quote_spanned! { ty.span() => #ty: ::alkahest::private::Formula }
-                    });
-                let where_clause = formula_generics.make_where_clause();
-                where_clause.predicates.extend(predicates);
-            }
-
             let field_names_order: Vec<Vec<syn::Ident>> = data
                 .variants
                 .iter()
@@ -202,7 +200,7 @@ pub fn derive(input: proc_macro::TokenStream) -> syn::Result<TokenStream> {
             let (impl_generics, type_generics, where_clause) = input.generics.split_for_impl();
 
             let (formula_impl_generics, formula_type_generics, formula_where_clause) =
-                formula_generics.split_for_impl();
+                config.formula_generics.split_for_impl();
 
             // let expand_size = if non_exhaustive {
             //     quote::quote! {

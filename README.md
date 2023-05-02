@@ -17,11 +17,14 @@ This benchmark that mimics some game networking protocol.
 
 |                 | `alkahest`               | `bincode`                       | `rkyv`                          | `speedy`                         |
 |:----------------|:-------------------------|:--------------------------------|:--------------------------------|:-------------------------------- |
-| **`serialize`** | `10.75 us` (✅ **1.00x**) | `10.95 us` (✅ **1.02x slower**) | `12.24 us` (❌ *1.14x slower*)   | `11.03 us` (✅ **1.03x slower**)  |
-| **`read`**      | `1.43 us` (✅ **1.00x**)  | `9.27 us` (❌ *6.47x slower*)    | `2.13 us` (❌ *1.49x slower*)    | `1.54 us` (✅ **1.07x slower**)   |
+| **`serialize`** | `10.69 us` (✅ **1.00x**) | `11.08 us` (✅ **1.04x slower**) | `12.43 us` (❌ *1.16x slower*)   | `11.13 us` (✅ **1.04x slower**)  |
+| **`read`**      | `1.19 us` (✅ **1.00x**)  | `9.19 us` (❌ *7.74x slower*)    | `2.10 us` (❌ *1.77x slower*)    | `1.54 us` (❌ *1.30x slower*)     |
+
+---
+Made with [criterion-table](https://github.com/nu11ptr/criterion-table)
 
 
-See also [benchmark results](./benches/BENCHMARKS.md) from <https://github.com/djkoloski/rust_serialization_benchmark> (in draft until 0.2 release).
+See also [benchmark results](./BENCHMARKS.md) from <https://github.com/djkoloski/rust_serialization_benchmark> (in draft until 0.2 release).
 
 ## Features
 
@@ -122,7 +125,7 @@ The crate works using three fundamental traits.
 `Formula`, `Serialize` and `Deserialize`.
 There's also supporting trait - `BareFormula`.
 
-*Alkahest* provides derive macros for `Formula`, `Serialize` and `Deserialize`.
+*Alkahest* provides proc-macro `alkahest` for deriving `Formula`, `Serialize` and `Deserialize`.
 
 ### Formula
 
@@ -262,10 +265,11 @@ formula, naturally it will be serialized using `bincode` crate.
 // This requires two default features - "alloc" and "derive".
 #[cfg(all(feature = "derive", feature = "alloc"))]
 fn main() {
-  use alkahest::{Formula, Serialize, Deserialize, serialize_to_vec, deserialize};
+  use alkahest::{alkahest, serialize_to_vec, deserialize};
 
   // Define simple formula. Make it self-serializable.
-  #[derive(Clone, Debug, PartialEq, Eq, Formula, Serialize, Deserialize)]
+  #[derive(Clone, Debug, PartialEq, Eq)]
+  #[alkahest(Formula, SerializeRef, Deserialize)]
   struct MyDataType {
     a: u32,
     b: Vec<u8>,
@@ -284,10 +288,9 @@ fn main() {
   // This is default behavior for `Serialized` derive macro.
   // Some types required ownership transfer for serialization.
   // Notable example is iterators.
-  let size = serialize_to_vec::<MyDataType, _>(&value, &mut data);
+  let (size, _) = serialize_to_vec::<MyDataType, _>(&value, &mut data);
 
-  let (de, de_size) = deserialize::<MyDataType, MyDataType>(&data).unwrap();
-  assert_eq!(de_size, size);
+  let de = deserialize::<MyDataType, MyDataType>(&data[..size]).unwrap();
   assert_eq!(de, value);
 }
 

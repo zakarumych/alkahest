@@ -3,7 +3,7 @@ use crate::{
     deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::{repeat_size, BareFormula, Formula},
     iter::{owned_iter_fast_sizes, ref_iter_fast_sizes},
-    serialize::{write_array, write_slice, Serialize, Sizes},
+    serialize::{write_array, write_slice, Serialize, SerializeRef, Sizes},
 };
 
 impl<F, const N: usize> Formula for [F; N]
@@ -11,7 +11,7 @@ where
     F: Formula,
 {
     const MAX_STACK_SIZE: Option<usize> = repeat_size(F::MAX_STACK_SIZE, N);
-    const EXACT_SIZE: bool = true; // All elements are padded.
+    const EXACT_SIZE: bool = F::EXACT_SIZE;
     const HEAPLESS: bool = F::HEAPLESS;
 }
 
@@ -36,13 +36,13 @@ where
     }
 }
 
-impl<'ser, F, T, const N: usize> Serialize<[F; N]> for &'ser [T; N]
+impl<F, T, const N: usize> SerializeRef<[F; N]> for [T; N]
 where
     F: Formula,
-    &'ser T: Serialize<F>,
+    for<'ser> &'ser T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
+    fn serialize<B>(&self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
         B: Buffer,
     {

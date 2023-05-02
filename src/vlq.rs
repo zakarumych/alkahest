@@ -24,8 +24,8 @@ use crate::{
 /// # use alkahest::*;
 ///
 /// let mut buffer = [0u8; 1024];
-/// let size = serialize::<Vlq, u8>(0, &mut buffer).unwrap();
-/// let value = deserialize::<Vlq, u16>(&buffer[..size]).unwrap().0;
+/// let (size, root) = serialize::<Vlq, u8>(0, &mut buffer).unwrap();
+/// let value = deserialize_with_size::<Vlq, u16>(&buffer[..size], root).unwrap();
 /// assert_eq!(0, value);
 /// ```
 ///
@@ -38,8 +38,8 @@ use crate::{
 ///
 /// let mut buffer = [0u8; 1024];
 ///
-/// let size = serialize::<Vlq, u32>(8573, &mut buffer).unwrap();
-/// let value = deserialize::<Vlq, u16>(&buffer[..size]).unwrap().0;
+/// let (size, root) = serialize::<Vlq, u32>(8573, &mut buffer).unwrap();
+/// let value = deserialize_with_size::<Vlq, u16>(&buffer[..size], root).unwrap();
 /// assert_eq!(8573, value);
 /// ```
 ///
@@ -50,15 +50,15 @@ use crate::{
 ///
 /// let mut buffer = [0u8; 1024];
 ///
-/// let size = serialize::<Vlq, u32>(70000, &mut buffer).unwrap();
-/// let err = deserialize::<Vlq, u16>(&buffer[..size]).unwrap_err();
+/// let (size, root) = serialize::<Vlq, u32>(70000, &mut buffer).unwrap();
+/// let err = deserialize_with_size::<Vlq, u16>(&buffer[..size], root).unwrap_err();
 /// assert!(matches!(err, DeserializeError::IntegerOverflow));
 /// ```
 pub struct Vlq;
 
 impl Formula for Vlq {
     const MAX_STACK_SIZE: Option<usize> = None;
-    const EXACT_SIZE: bool = true;
+    const EXACT_SIZE: bool = false;
     const HEAPLESS: bool = true;
 }
 

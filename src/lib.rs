@@ -24,6 +24,7 @@ mod formula;
 mod iter;
 mod lazy;
 mod option;
+mod packet;
 mod primitive;
 mod reference;
 mod serialize;
@@ -53,16 +54,21 @@ pub use crate::{
     buffer::BufferExhausted,
     bytes::Bytes,
     deserialize::{
-        deserialize, deserialize_in_place, value_size, DeIter, Deserialize, DeserializeError,
+        deserialize, deserialize_in_place, deserialize_in_place_with_size, deserialize_with_size,
+        DeIter, Deserialize, DeserializeError,
     },
     formula::Formula,
     iter::SerIter,
     lazy::Lazy,
+    packet::{
+        packet_size, read_packet, read_packet_in_place, read_packet_size, write_packet,
+        write_packet_into, write_packet_unchecked,
+    },
     r#as::As,
     reference::Ref,
     serialize::{
         serialize, serialize_or_size, serialize_unchecked, serialized_size, BufferSizeRequired,
-        Serialize,
+        Serialize, SerializeRef,
     },
     size::{FixedIsize, FixedUsize},
     skip::Skip,
@@ -70,10 +76,10 @@ pub use crate::{
 };
 
 #[cfg(feature = "alloc")]
-pub use crate::serialize::serialize_to_vec;
+pub use crate::{packet::write_packet_to_vec, serialize::serialize_to_vec};
 
 #[cfg(feature = "derive")]
-pub use alkahest_proc::{Deserialize, Formula, Serialize};
+pub use alkahest_proc::{alkahest, Deserialize, Formula, Serialize, SerializeRef};
 
 #[cfg(feature = "bincoded")]
 pub use bincoded::{Bincode, Bincoded};
@@ -112,7 +118,9 @@ pub mod private {
         buffer::Buffer,
         deserialize::{Deserialize, DeserializeError, Deserializer},
         formula::{max_size, sum_size, BareFormula, Formula},
-        serialize::{formula_fast_sizes, write_exact_size_field, write_field, Serialize, Sizes},
+        serialize::{
+            formula_fast_sizes, write_exact_size_field, write_field, Serialize, SerializeRef, Sizes,
+        },
     };
 
     use core::marker::PhantomData;

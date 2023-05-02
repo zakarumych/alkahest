@@ -14,7 +14,7 @@ where
         Some(0) => Some(SIZE_STACK),
         _ => None,
     };
-    const EXACT_SIZE: bool = true; // All elements are padded.
+    const EXACT_SIZE: bool = false;
     const HEAPLESS: bool = F::HEAPLESS;
 }
 

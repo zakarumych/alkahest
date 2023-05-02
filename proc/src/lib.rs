@@ -5,15 +5,51 @@ mod deserialize;
 mod formula;
 mod serialize;
 
+use attrs::{DeserializeArgs, FormulaArgs, SerializeArgs};
 use proc_macro::TokenStream;
+
+#[proc_macro_attribute]
+pub fn alkahest(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let mut output = item.clone();
+    let input = syn::parse_macro_input!(item as syn::DeriveInput);
+
+    match alkahest_impl(attr, input) {
+        Ok(tokens) => output.extend(TokenStream::from(tokens)),
+        Err(err) => output.extend(TokenStream::from(err.to_compile_error())),
+    }
+    output
+}
+
+fn alkahest_impl(
+    attr: TokenStream,
+    input: syn::DeriveInput,
+) -> syn::Result<proc_macro2::TokenStream> {
+    let mut output = proc_macro2::TokenStream::new();
+    let attr = proc_macro2::TokenStream::from(attr);
+    let args = attrs::Args::parse_attributes(attr)?;
+    if let Some(args) = args.formula {
+        output.extend(formula::derive(args, &input)?);
+    }
+    if let Some(args) = args.serialize {
+        output.extend(serialize::derive(args, &input, false)?);
+    }
+    if let Some(args) = args.serialize_ref {
+        output.extend(serialize::derive(args, &input, true)?);
+    }
+    if let Some(args) = args.deserialize {
+        output.extend(deserialize::derive(args, &input)?);
+    }
+    Ok(output)
+}
 
 /// Proc-macro to derive `Formula` trait for user-defined type.
 ///
 /// This macro requires that type is either `struct` or `enum`.
 /// All fields must implement `Formula`.
-#[proc_macro_derive(Formula, attributes(alkahest))]
+#[proc_macro_derive(Formula)]
 pub fn derive_formula(input: TokenStream) -> TokenStream {
-    match formula::derive(input) {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+    match formula::derive(FormulaArgs::empty(), &input) {
         Ok(tokens) => tokens.into(),
         Err(err) => err.to_compile_error().into(),
     }
@@ -23,9 +59,23 @@ pub fn derive_formula(input: TokenStream) -> TokenStream {
 ///
 /// This macro requires that type is either `struct` or `enum`.
 /// All fields must implement `Serialize`.
-#[proc_macro_derive(Serialize, attributes(alkahest))]
+#[proc_macro_derive(Serialize)]
 pub fn derive_serialize(input: TokenStream) -> TokenStream {
-    match serialize::derive(input) {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+    match serialize::derive(SerializeArgs::empty(), &input, false) {
+        Ok(tokens) => tokens.into(),
+        Err(err) => err.to_compile_error().into(),
+    }
+}
+
+/// Proc-macro to derive `SerializeRef` trait for user-defined type.
+///
+/// This macro requires that type is either `struct` or `enum`.
+/// All fields must implement `Serialize`.
+#[proc_macro_derive(SerializeRef)]
+pub fn derive_serialize_ref(input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+    match serialize::derive(SerializeArgs::empty(), &input, true) {
         Ok(tokens) => tokens.into(),
         Err(err) => err.to_compile_error().into(),
     }
@@ -35,9 +85,10 @@ pub fn derive_serialize(input: TokenStream) -> TokenStream {
 ///
 /// This macro requires that type is either `struct` or `enum`.
 /// All fields must implement `Deserialize`.
-#[proc_macro_derive(Deserialize, attributes(alkahest))]
+#[proc_macro_derive(Deserialize)]
 pub fn derive_deserialize(input: TokenStream) -> TokenStream {
-    match deserialize::derive(input) {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+    match deserialize::derive(DeserializeArgs::empty(), &input) {
         Ok(tokens) => tokens.into(),
         Err(err) => err.to_compile_error().into(),
     }

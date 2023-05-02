@@ -38,9 +38,10 @@ pub trait Buffer {
     /// Reserves heap space and returns a buffer over it.
     /// Returned buffer is always of `FixedBuffer` type.
     ///
-    /// If buffer cannot reserve heap space, it should return `Ok(None)`.
-    /// In this case serializing code should fallback
-    /// to using `write_stack` and `move_to_heap`.
+    /// If buffer cannot reserve heap space, it may return either
+    /// `Err` or `Ok([])`.
+    /// If `Ok([])` is returned serializer should skip writing this
+    /// part of the data and continue writing the rest.
     ///
     /// # Errors
     ///

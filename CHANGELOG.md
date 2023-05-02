@@ -4,7 +4,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0]
+
+### Fixed
+
+* Fix recursive types.
+
+### Added
+
+* Custom attribute to derive `Formula`, `Serialize` and `Deserialize`
+  when additional data is needed for deriving.
+
+### Changed
+
+* Derive macros do not accept attributes anymore.
+  Use custom attribute instead.
+* Support manual generic bounds for formula deriving macro.
+* Move packet writing into separate trait.
+
+## [0.2.0]
 
 * Reimplement with no unsafe code.
 * Fuse deserialization with cheap direct access and lazy deserialization

@@ -655,70 +655,57 @@ where
 {
 }
 
-/// Reads size of the value from the input.
-/// Returns `None` if the input is too short to determine the size.
-///
-/// # Panics
-///
-/// This function may panic if the value size is too big to fit `usize`.
-#[must_use]
-#[inline(always)]
-pub fn value_size<F>(input: &[u8]) -> Option<usize>
-where
-    F: Formula + ?Sized,
-{
-    match F::MAX_STACK_SIZE {
-        Some(0) => Some(0),
-        _ => {
-            if input.len() < SIZE_STACK {
-                None
-            } else {
-                let mut bytes = [0u8; SIZE_STACK];
-                bytes.copy_from_slice(&input[..SIZE_STACK]);
-                let address =
-                    FixedUsize::from_le_bytes(bytes).expect("Value size can't fit `usize`");
-                Some(address.into())
-            }
-        }
-    }
-}
-
 /// Deserializes value from the input.
-/// Returns deserialized value and number of bytes consumed.
+/// The value must occupy the whole input slice.
+/// The value must be either sized or heap-less.
+/// Returns deserialized value.
 ///
 /// # Errors
 ///
 /// Returns `DeserializeError` if deserialization fails.
 #[inline(always)]
-pub fn deserialize<'de, F, T>(input: &'de [u8]) -> Result<(T, usize), DeserializeError>
+pub fn deserialize<'de, F, T>(input: &'de [u8]) -> Result<T, DeserializeError>
 where
     F: Formula + ?Sized,
     T: Deserialize<'de, F>,
 {
-    let reference_size = reference_size::<F>();
+    let stack = match F::MAX_STACK_SIZE {
+        None => input.len(),
+        Some(max_stack) => max_stack.min(input.len()),
+    };
 
-    if input.len() < reference_size {
-        return Err(DeserializeError::OutOfBounds);
-    }
-
-    let (address, size) = read_reference::<F>(input, input.len() - reference_size);
-
-    if size > address {
-        return Err(DeserializeError::WrongAddress);
-    }
-
-    if address > input.len() {
-        return Err(DeserializeError::OutOfBounds);
-    }
-
-    let de = Deserializer::new_unchecked(size, &input[..address]);
+    let de = Deserializer::new_unchecked(stack, input);
     let value = <T as Deserialize<'de, F>>::deserialize(de)?;
 
-    Ok((value, address))
+    Ok(value)
 }
 
-/// Deserializes value from the input into specified place.
-/// Returns number of bytes consumed.
+/// Deserializes value from the input.
+/// The value must occupy the whole input slice.
+/// Returns deserialized value.
+///
+/// # Errors
+///
+/// Returns `DeserializeError` if deserialization fails.
+#[inline(always)]
+pub fn deserialize_with_size<'de, F, T>(
+    input: &'de [u8],
+    stack: usize,
+) -> Result<T, DeserializeError>
+where
+    F: Formula + ?Sized,
+    T: Deserialize<'de, F>,
+{
+    let de = Deserializer::new_unchecked(stack, input);
+    let value = <T as Deserialize<'de, F>>::deserialize(de)?;
+
+    Ok(value)
+}
+
+/// Deserializes value from the input.
+/// The value must occupy the whole input slice.
+/// The value must be either sized or heap-less.
+/// Updates value in-place.
 ///
 /// # Errors
 ///
@@ -727,55 +714,59 @@ where
 pub fn deserialize_in_place<'de, F, T>(
     place: &mut T,
     input: &'de [u8],
-) -> Result<usize, DeserializeError>
+) -> Result<(), DeserializeError>
 where
     F: Formula + ?Sized,
     T: Deserialize<'de, F> + ?Sized,
 {
-    let reference_size = reference_size::<F>();
-
-    if input.len() < reference_size {
-        return Err(DeserializeError::OutOfBounds);
-    }
-
-    let (address, size) = read_reference::<F>(input, input.len() - reference_size);
-
-    if size > address {
-        return Err(DeserializeError::WrongAddress);
-    }
-
-    if address > input.len() {
-        return Err(DeserializeError::OutOfBounds);
-    }
-
-    let de = Deserializer::new_unchecked(size, &input[..address]);
+    let stack = match F::MAX_STACK_SIZE {
+        None => input.len(),
+        Some(max_stack) => max_stack.min(input.len()),
+    };
+    let de = Deserializer::new_unchecked(stack, input);
     <T as Deserialize<'de, F>>::deserialize_in_place(place, de)?;
 
-    Ok(address)
+    Ok(())
+}
+
+/// Deserializes value from the input.
+/// The value must occupy the whole input slice.
+/// Updates value in-place.
+///
+/// # Errors
+///
+/// Returns `DeserializeError` if deserialization fails.
+#[inline(always)]
+pub fn deserialize_in_place_with_size<'de, F, T>(
+    place: &mut T,
+    input: &'de [u8],
+    stack: usize,
+) -> Result<(), DeserializeError>
+where
+    F: Formula + ?Sized,
+    T: Deserialize<'de, F> + ?Sized,
+{
+    let de = Deserializer::new_unchecked(stack, input);
+    <T as Deserialize<'de, F>>::deserialize_in_place(place, de)?;
+
+    Ok(())
 }
 
 #[inline(always)]
-fn read_reference<F>(input: &[u8], len: usize) -> (usize, usize)
+pub fn read_reference<F>(input: &[u8], len: usize) -> (usize, usize)
 where
     F: Formula + ?Sized,
 {
     let reference_size = reference_size::<F>();
     debug_assert!(reference_size <= input.len());
 
-    match (F::MAX_STACK_SIZE, F::EXACT_SIZE) {
-        (Some(0), _) => {
-            // do nothing
-            (0, 0)
-        }
-        (Some(max_stack), true) => {
-            let mut de = Deserializer::new(reference_size, &input[..reference_size]).unwrap();
-            let Ok(address) = de.read_value::<FixedUsize, usize>(true) else { unreachable!(); };
-            (address, max_stack.min(len))
-        }
-        _ => {
-            let mut de = Deserializer::new(reference_size, &input[..reference_size]).unwrap();
-            let Ok([size, address]) = de.read_value::<[FixedUsize; 2], [usize; 2]>(true) else { unreachable!(); };
-            (address, size)
-        }
+    if F::EXACT_SIZE {
+        let mut de = Deserializer::new(reference_size, &input[..reference_size]).unwrap();
+        let Ok(address) = de.read_value::<FixedUsize, usize>(true) else { unreachable!(); };
+        (address, unwrap_size(F::MAX_STACK_SIZE).min(len))
+    } else {
+        let mut de = Deserializer::new(reference_size, &input[..reference_size]).unwrap();
+        let Ok([size, address]) = de.read_value::<[FixedUsize; 2], [usize; 2]>(true) else { unreachable!(); };
+        (address, size)
     }
 }

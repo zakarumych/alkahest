@@ -5,7 +5,7 @@ use crate::{
     deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::{reference_size, Formula},
     reference::Ref,
-    serialize::{write_bytes, write_ref, Serialize, Sizes},
+    serialize::{write_bytes, write_ref, write_reference, Serialize, Sizes},
 };
 
 impl Formula for String {
@@ -19,11 +19,14 @@ where
     T: Serialize<str>,
 {
     #[inline(always)]
-    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
+    fn serialize<B>(self, sizes: &mut Sizes, mut buffer: B) -> Result<(), B::Error>
     where
         B: Buffer,
     {
-        write_ref::<str, T, _>(self, sizes, buffer)
+        let size = write_ref::<str, T, _>(self, sizes, buffer.reborrow())?;
+        write_reference::<str, B>(size, sizes.heap, sizes.heap, sizes.stack, buffer)?;
+        sizes.stack += reference_size::<str>();
+        Ok(())
     }
 
     #[inline(always)]
