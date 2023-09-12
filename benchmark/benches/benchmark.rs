@@ -11,7 +11,7 @@ extern crate rkyv;
 #[cfg(feature = "speedy")]
 extern crate speedy;
 
-use alkahest::{alkahest, Deserialize, Formula, Lazy, Ref, SerIter, Serialize};
+use alkahest::{alkahest, Deserialize, Formula, Lazy, SerIter, Serialize};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 #[cfg(feature = "rkyv")]
@@ -19,12 +19,12 @@ use bytecheck::CheckBytes;
 use rand::{
     distributions::{Alphanumeric, DistString},
     rngs::SmallRng,
-    thread_rng, Rng, SeedableRng,
+    Rng, SeedableRng,
 };
 
 #[derive(Debug, Clone, Formula, Serialize, Deserialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "rkyv", derive(rkyv::Archive, rkyv::Serialize))]
+#[cfg_attr(feature = "rkyv", derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize))]
 #[cfg_attr(feature = "rkyv", archive_attr(derive(CheckBytes)))]
 #[cfg_attr(feature = "speedy", derive(speedy::Writable, speedy::Readable))]
 pub enum GameMessage {
@@ -42,7 +42,7 @@ pub enum GameMessageRead<'de> {
 
 #[derive(Debug, Clone, Formula, Serialize, Deserialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "rkyv", derive(rkyv::Archive, rkyv::Serialize))]
+#[cfg_attr(feature = "rkyv", derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize))]
 #[cfg_attr(feature = "rkyv", archive_attr(derive(CheckBytes)))]
 #[cfg_attr(feature = "speedy", derive(speedy::Writable, speedy::Readable))]
 pub enum ClientMessage {
@@ -60,7 +60,7 @@ pub enum ClientMessageRead<'de> {
 
 #[derive(Debug, Clone, Formula, Serialize, Deserialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "rkyv", derive(rkyv::Archive, rkyv::Serialize))]
+#[cfg_attr(feature = "rkyv", derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize))]
 #[cfg_attr(feature = "rkyv", archive_attr(derive(CheckBytes)))]
 #[cfg_attr(feature = "speedy", derive(speedy::Writable, speedy::Readable))]
 pub enum ServerMessage {
@@ -78,7 +78,7 @@ pub enum ServerMessageRead<'de> {
 
 #[derive(Debug, Formula, Serialize, Deserialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "rkyv", derive(rkyv::Archive, rkyv::Serialize))]
+#[cfg_attr(feature = "rkyv", derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize))]
 #[cfg_attr(feature = "rkyv", archive_attr(derive(CheckBytes)))]
 #[cfg_attr(feature = "speedy", derive(speedy::Writable, speedy::Readable))]
 pub struct NetPacket<G> {
@@ -123,9 +123,9 @@ fn messages<'a>(mut rng: impl Rng + 'a, len: usize) -> impl Iterator<Item = Game
 pub fn criterion_benchmark(c: &mut Criterion) {
     let mut buffer = Vec::with_capacity(1 << 14);
     buffer.resize(buffer.capacity(), 0);
-    let mut rng = SmallRng::seed_from_u64(42);
+    let rng = SmallRng::seed_from_u64(42);
 
-    const LEN: usize = 200;
+    const LEN: usize = 2000;
     let mut size = 0;
 
     {
@@ -176,6 +176,41 @@ pub fn criterion_benchmark(c: &mut Criterion) {
                 }
             })
         });
+
+        group.bench_function("deserialize", |b| {
+            b.iter(|| {
+                let packet = alkahest::deserialize::<
+                    NetPacket<GameMessage>,
+                    NetPacket<GameMessage>,
+                >(&buffer[..size])
+                .unwrap();
+
+                for message in packet.game_messages.iter() {
+                    match message {
+                        GameMessage::Client(ClientMessage::ClientData {
+                            nickname,
+                            clan,
+                        }) => {
+                            black_box(nickname);
+                            black_box(clan);
+                        }
+                        GameMessage::Client(ClientMessage::Chat(message)) => {
+                            black_box(message);
+                        }
+                        GameMessage::Server(ServerMessage::ServerData(data)) => {
+                            black_box(data);
+                        }
+                        GameMessage::Server(ServerMessage::ClientChat {
+                            client_id,
+                            message,
+                        }) => {
+                            black_box(client_id);
+                            black_box(message);
+                        }
+                    }
+                }
+            })
+        });
     }
 
     #[cfg(feature = "bincode")]
@@ -194,7 +229,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             })
         });
 
-        group.bench_function("read", |b| {
+        group.bench_function("deserialize", |b| {
             b.iter(|| {
                 let packet = bincode::deserialize::<NetPacket<GameMessage>>(&buffer).unwrap();
 
@@ -268,6 +303,39 @@ pub fn criterion_benchmark(c: &mut Criterion) {
                 }
             })
         });
+
+        group.bench_function("deserialize", |b| {
+            b.iter(|| {
+                use rkyv::Deserialize;
+                let archive = rkyv::check_archived_root::<NetPacket<GameMessage>>(&vec[..]).unwrap();
+                let packet: NetPacket<GameMessage> = archive.deserialize(&mut rkyv::Infallible).unwrap();
+
+                for message in packet.game_messages.iter() {
+                    match message {
+                        GameMessage::Client(ClientMessage::ClientData {
+                            nickname,
+                            clan,
+                        }) => {
+                            black_box(nickname);
+                            black_box(clan);
+                        }
+                        GameMessage::Client(ClientMessage::Chat(message)) => {
+                            black_box(message);
+                        }
+                        GameMessage::Server(ServerMessage::ServerData(data)) => {
+                            black_box(data);
+                        }
+                        GameMessage::Server(ServerMessage::ClientChat {
+                            client_id,
+                            message,
+                        }) => {
+                            black_box(client_id);
+                            black_box(message);
+                        }
+                    }
+                }
+            })
+        });
     }
 
     #[cfg(feature = "speedy")]
@@ -311,6 +379,39 @@ pub fn criterion_benchmark(c: &mut Criterion) {
                             black_box(data);
                         }
                         GameMessageRead::Server(ServerMessageRead::ClientChat {
+                            client_id,
+                            message,
+                        }) => {
+                            black_box(client_id);
+                            black_box(message);
+                        }
+                    }
+                }
+            })
+        });
+        
+        group.bench_function("deserialize", |b| {
+            b.iter(|| {
+                let packet =
+                    <NetPacket<GameMessage> as speedy::Readable<_>>::read_from_buffer(&buffer)
+                        .unwrap();
+
+                for message in packet.game_messages.iter() {
+                    match message {
+                        GameMessage::Client(ClientMessage::ClientData {
+                            nickname,
+                            clan,
+                        }) => {
+                            black_box(nickname);
+                            black_box(clan);
+                        }
+                        GameMessage::Client(ClientMessage::Chat(message)) => {
+                            black_box(message);
+                        }
+                        GameMessage::Server(ServerMessage::ServerData(data)) => {
+                            black_box(data);
+                        }
+                        GameMessage::Server(ServerMessage::ClientChat {
                             client_id,
                             message,
                         }) => {
