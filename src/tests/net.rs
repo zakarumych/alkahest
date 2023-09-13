@@ -11,8 +11,8 @@ use crate::{
 
 #[alkahest(Formula)]
 pub enum GameMessageFormula {
-    Client(Ref<ClientMessageFormula>),
-    Server(Ref<ServerMessageFormula>),
+    Client(ClientMessageFormula),
+    Server(ServerMessageFormula),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
