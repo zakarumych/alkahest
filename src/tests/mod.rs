@@ -472,6 +472,29 @@ fn test_bincoded() {
     assert_eq!(de.0, 102414);
 }
 
+#[cfg(all(feature = "bincoded", feature = "derive"))]
+#[test]
+fn test_bincode_size_hint() {
+    use crate::Bincoded;
+    use alkahest_proc::alkahest;
+
+    #[alkahest(Serialize<Formula>)]
+    struct FormulaImpl {
+        element: Box<[u8]>
+    }
+
+    #[alkahest(Formula)]
+    struct Formula {
+        element: Bincoded<Box<[u8]>>,
+    }
+
+    let value = FormulaImpl { element: vec![0; 32 ].into_boxed_slice() };
+    let size_hint = Serialize::<Formula>::size_hint(&value).unwrap();
+    // Expect 64-bit size of array followed by 32 bytes of elements (40 bytes total).
+    // +1 for overhead for Alkahest.
+    assert_eq!(size_hint.total(), 41);
+}
+
 #[test]
 fn test_zero_sized_arrays() {
     serialize::<[u8; 0], [u8; 0]>([], &mut []).unwrap();

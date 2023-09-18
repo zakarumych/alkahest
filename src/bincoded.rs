@@ -68,7 +68,25 @@ where
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        None
+        let options = bincode::config::DefaultOptions::new();
+
+        let size = match bincode::Options::serialized_size(options, &self) {
+            Ok(size) => size,
+            Err(err) => panic!("Bincode serialization error: {}", err),
+        };
+
+        let Ok(size) = FixedUsizeType::try_from(size) else {
+            panic!("Bincode serialization uses more that `FixedUsize::MAX` bytes");
+        };
+
+        let Ok(size) = FixedUsize::try_from(size) else {
+            panic!("Bincode serialization uses more that `usize::MAX` bytes");
+        };
+
+        let size: usize = size.into();
+        let mut sizes = Sizes::with_heap(size);
+        sizes.add_stack(reference_size::<Bytes>());
+        Some(sizes)
     }
 }
 
