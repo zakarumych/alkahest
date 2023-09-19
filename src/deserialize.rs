@@ -762,11 +762,15 @@ where
 
     if F::EXACT_SIZE {
         let mut de = Deserializer::new(reference_size, &input[..reference_size]).unwrap();
-        let Ok(address) = de.read_value::<FixedUsize, usize>(true) else { unreachable!(); };
+        let Ok(address) = de.read_value::<FixedUsize, usize>(true) else {
+            unreachable!();
+        };
         (address, unwrap_size(F::MAX_STACK_SIZE).min(len))
     } else {
         let mut de = Deserializer::new(reference_size, &input[..reference_size]).unwrap();
-        let Ok([size, address]) = de.read_value::<[FixedUsize; 2], [usize; 2]>(true) else { unreachable!(); };
+        let Ok([size, address]) = de.read_value::<[FixedUsize; 2], [usize; 2]>(true) else {
+            unreachable!();
+        };
         (address, size)
     }
 }
