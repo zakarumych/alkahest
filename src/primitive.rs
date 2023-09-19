@@ -1,4 +1,4 @@
-use core::{borrow::Borrow, mem::size_of};
+use core::mem::size_of;
 
 use crate::{
     buffer::Buffer,
@@ -157,7 +157,7 @@ impl Serialize<bool> for &bool {
     where
         B: Buffer,
     {
-        <u8 as Serialize<u8>>::serialize(u8::from(*self.borrow()), sizes, buffer)
+        <u8 as Serialize<u8>>::serialize(u8::from(*self), sizes, buffer)
     }
 
     #[inline(always)]

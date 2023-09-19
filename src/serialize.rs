@@ -496,6 +496,7 @@ where
     let size = FixedUsize::truncate_unchecked(size);
 
     if F::EXACT_SIZE {
+        debug_assert_eq!(size, FixedUsize::truncate_unchecked(F::MAX_STACK_SIZE.unwrap()));
         buffer.write_stack(heap, stack, &address.to_le_bytes())?;
     } else {
         buffer.write_stack(heap, stack, &size.to_le_bytes())?;

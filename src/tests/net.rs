@@ -6,68 +6,92 @@ use rand::{
 };
 
 use crate::{
-    alkahest, read_packet, write_packet_to_vec, Formula, Lazy, SerIter, Serialize, SerializeRef,
+    alkahest, read_packet, write_packet_to_vec, Deserialize, Formula, Lazy, SerIter, Serialize, SerializeRef, Ref,
 };
 
+#[alkahest(Formula)]
+pub enum GameMessageFormula {
+    Client(ClientMessageFormula),
+    Server(ServerMessageFormula),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[alkahest(Formula, Serialize, Deserialize)]
+#[alkahest(Serialize<GameMessageFormula>, Deserialize<'_, GameMessageFormula>)]
 pub enum GameMessage {
     Client(ClientMessage),
     Server(ServerMessage),
 }
 
 #[derive(Debug)]
-#[alkahest(Deserialize<'de, GameMessage>)]
+#[alkahest(Deserialize<'de, GameMessageFormula>)]
 pub enum GameMessageRead<'de> {
     Client(ClientMessageRead<'de>),
     Server(ServerMessageRead<'de>),
 }
 
+#[alkahest(Formula)]
+pub enum ClientMessageFormula {
+    ClientData { nickname: Ref<str>, clan: Ref<str> },
+    Chat(Ref<str>),
+}
+
 #[derive(Debug, PartialEq, Eq, Clone)]
-#[alkahest(Formula, Serialize, Deserialize)]
+#[alkahest(Serialize<ClientMessageFormula>, Deserialize<'_, ClientMessageFormula>)]
 pub enum ClientMessage {
     ClientData { nickname: String, clan: String },
     Chat(String),
 }
 
 #[derive(Debug)]
-#[alkahest(Deserialize<'de, ClientMessage>)]
+#[alkahest(Deserialize<'de, ClientMessageFormula>)]
 pub enum ClientMessageRead<'de> {
     ClientData { nickname: &'de str, clan: &'de str },
     Chat(&'de str),
 }
 
+#[alkahest(Formula)]
+pub enum ServerMessageFormula {
+    ServerData(u64),
+    ClientChat { client_id: u64, message: Ref<str> },
+}
+
 #[derive(Debug, PartialEq, Eq, Clone)]
-#[alkahest(Formula, Serialize, Deserialize)]
+#[alkahest(Serialize<ServerMessageFormula>, Deserialize<'_, ServerMessageFormula>)]
 pub enum ServerMessage {
     ServerData(u64),
     ClientChat { client_id: u64, message: String },
 }
 
 #[derive(Debug)]
-#[alkahest(Deserialize<'de, ServerMessage>)]
+#[alkahest(Deserialize<'de, ServerMessageFormula>)]
 pub enum ServerMessageRead<'de> {
     ServerData(u64),
     ClientChat { client_id: u64, message: &'de str },
 }
 
+#[alkahest(Formula)]
+pub struct NetPacketFormula<F> {
+    pub game_messages: Vec<F>,
+}
+
 #[derive(Debug)]
-#[alkahest(Formula, Serialize, Deserialize)]
+#[alkahest(for<F: Formula> Serialize<NetPacketFormula<F>> where G: Serialize<F>)]
+#[alkahest(for<'de, F: Formula> Deserialize<'de, NetPacketFormula<F>> where G: Deserialize<'de, F>)]
 pub struct NetPacket<G> {
     pub game_messages: Vec<G>,
 }
 
 #[derive(Debug)]
-#[alkahest(for<X: Formula> Serialize<NetPacket<X>> where G: Serialize<[X]>)]
-#[alkahest(for<X: Formula> SerializeRef<NetPacket<X>> where G: SerializeRef<[X]>)]
+#[alkahest(for<F: Formula> Serialize<NetPacketFormula<F>> where G: Serialize<[F]>)]
+#[alkahest(for<F: Formula> SerializeRef<NetPacketFormula<F>> where G: SerializeRef<[F]>)]
 pub struct NetPacketWrite<G> {
     pub game_messages: G,
 }
 
 #[derive(Debug)]
-#[alkahest(Deserialize<'de, NetPacket::<G>> where G: Formula)]
-pub struct NetPacketRead<'de, G> {
-    pub game_messages: Lazy<'de, [G]>,
+#[alkahest(Deserialize<'de, NetPacketFormula<F>> where F: Formula)]
+pub struct NetPacketRead<'de, F> {
+    pub game_messages: Lazy<'de, [F]>,
 }
 
 fn get_string(rng: &mut impl Rng) -> String {
@@ -103,7 +127,7 @@ fn test_net_packet() {
     const LEN: usize = 1000;
 
     let mut buffer = Vec::new();
-    let size = write_packet_to_vec::<NetPacket<GameMessage>, _>(
+    let size = write_packet_to_vec::<NetPacketFormula<GameMessageFormula>, _>(
         NetPacketWrite {
             game_messages: SerIter(messages(rng.clone(), LEN)),
         },
@@ -111,7 +135,7 @@ fn test_net_packet() {
     );
 
     let mut buffer2 = Vec::new();
-    let size2 = write_packet_to_vec::<NetPacket<GameMessage>, _>(
+    let size2 = write_packet_to_vec::<NetPacketFormula<GameMessageFormula>, _>(
         NetPacket {
             game_messages: messages(rng, LEN).collect::<Vec<_>>(),
         },
@@ -122,23 +146,23 @@ fn test_net_packet() {
     assert_eq!(buffer[..size], buffer2[..size]);
 
     let (packet, _) =
-        read_packet::<NetPacket<GameMessage>, NetPacketRead<GameMessage>>(&buffer[..]).unwrap();
+        read_packet::<NetPacketFormula<GameMessageFormula>, NetPacketRead<GameMessageFormula>>(&buffer[..]).unwrap();
 
     for message in packet.game_messages.iter::<GameMessageRead>() {
         match message.unwrap() {
             GameMessageRead::Client(ClientMessageRead::ClientData { nickname, clan }) => {
-                drop(nickname);
-                drop(clan);
+                let _ = nickname;
+                let _ = clan;
             }
             GameMessageRead::Client(ClientMessageRead::Chat(message)) => {
-                drop(message);
+                let _ = message;
             }
             GameMessageRead::Server(ServerMessageRead::ServerData(data)) => {
-                drop(data);
+                let _ = data;
             }
             GameMessageRead::Server(ServerMessageRead::ClientChat { client_id, message }) => {
-                drop(client_id);
-                drop(message);
+                let _ = client_id;
+                let _ = message;
             }
         }
     }
