@@ -185,9 +185,7 @@ pub fn derive(args: DeserializeArgs, input: &syn::DeriveInput) -> syn::Result<To
 
             deserialize_generics.lt_token = deserialize_generics.lt_token.or(cfg.generics.lt_token);
             deserialize_generics.gt_token = deserialize_generics.gt_token.or(cfg.generics.gt_token);
-            deserialize_generics
-                .params
-                .extend(cfg.generics.params.into_iter());
+            deserialize_generics.params.extend(cfg.generics.params);
 
             if let Some(where_clause) = cfg.generics.where_clause {
                 deserialize_generics
@@ -343,9 +341,7 @@ pub fn derive(args: DeserializeArgs, input: &syn::DeriveInput) -> syn::Result<To
 
             deserialize_generics.lt_token = deserialize_generics.lt_token.or(cfg.generics.lt_token);
             deserialize_generics.gt_token = deserialize_generics.gt_token.or(cfg.generics.gt_token);
-            deserialize_generics
-                .params
-                .extend(cfg.generics.params.into_iter());
+            deserialize_generics.params.extend(cfg.generics.params);
 
             if let Some(where_clause) = cfg.generics.where_clause {
                 deserialize_generics

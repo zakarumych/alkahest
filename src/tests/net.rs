@@ -6,7 +6,8 @@ use rand::{
 };
 
 use crate::{
-    alkahest, read_packet, write_packet_to_vec, Deserialize, Formula, Lazy, SerIter, Serialize, SerializeRef, Ref,
+    alkahest, read_packet, write_packet_to_vec, Deserialize, Formula, Lazy, Ref, SerIter,
+    Serialize, SerializeRef,
 };
 
 #[alkahest(Formula)]
@@ -145,8 +146,11 @@ fn test_net_packet() {
     assert_eq!(size, size2);
     assert_eq!(buffer[..size], buffer2[..size]);
 
-    let (packet, _) =
-        read_packet::<NetPacketFormula<GameMessageFormula>, NetPacketRead<GameMessageFormula>>(&buffer[..]).unwrap();
+    let (packet, _) = read_packet::<
+        NetPacketFormula<GameMessageFormula>,
+        NetPacketRead<GameMessageFormula>,
+    >(&buffer[..])
+    .unwrap();
 
     for message in packet.game_messages.iter::<GameMessageRead>() {
         match message.unwrap() {

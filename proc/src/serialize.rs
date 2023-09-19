@@ -240,7 +240,7 @@ pub fn derive(
 
             generics.lt_token = generics.lt_token.or(cfg.generics.lt_token);
             generics.gt_token = generics.gt_token.or(cfg.generics.gt_token);
-            generics.params.extend(cfg.generics.params.into_iter());
+            generics.params.extend(cfg.generics.params);
 
             if let Some(where_clause) = cfg.generics.where_clause {
                 generics
@@ -452,7 +452,7 @@ pub fn derive(
 
             generics.lt_token = generics.lt_token.or(cfg.generics.lt_token);
             generics.gt_token = generics.gt_token.or(cfg.generics.gt_token);
-            generics.params.extend(cfg.generics.params.into_iter());
+            generics.params.extend(cfg.generics.params);
 
             if let Some(where_clause) = cfg.generics.where_clause {
                 generics
