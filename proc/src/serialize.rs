@@ -146,7 +146,7 @@ pub fn derive(
         )),
         syn::Data::Struct(data) => {
             let field_checks = if cfg.check_fields {
-                struct_field_order_checks(&data, cfg.variant.as_ref(), &input.ident, &cfg.formula)
+                struct_field_order_checks(data, cfg.variant.as_ref(), &input.ident, &cfg.formula)
             } else {
                 TokenStream::new()
             };
@@ -240,7 +240,7 @@ pub fn derive(
 
             generics.lt_token = generics.lt_token.or(cfg.generics.lt_token);
             generics.gt_token = generics.gt_token.or(cfg.generics.gt_token);
-            generics.params.extend(cfg.generics.params.into_iter());
+            generics.params.extend(cfg.generics.params);
 
             if let Some(where_clause) = cfg.generics.where_clause {
                 generics
@@ -343,7 +343,7 @@ pub fn derive(
         }
         syn::Data::Enum(data) => {
             let field_checks = if cfg.check_fields {
-                enum_field_order_checks(&data, &input.ident, &cfg.formula)
+                enum_field_order_checks(data, &input.ident, &cfg.formula)
             } else {
                 TokenStream::new()
             };
@@ -452,7 +452,7 @@ pub fn derive(
 
             generics.lt_token = generics.lt_token.or(cfg.generics.lt_token);
             generics.gt_token = generics.gt_token.or(cfg.generics.gt_token);
-            generics.params.extend(cfg.generics.params.into_iter());
+            generics.params.extend(cfg.generics.params);
 
             if let Some(where_clause) = cfg.generics.where_clause {
                 generics

@@ -143,7 +143,6 @@ where
 /// # Errors
 ///
 /// Returns `DeserializeError` if deserialization fails.
-#[must_use]
 #[inline(always)]
 pub fn read_packet<'de, F, T>(input: &'de [u8]) -> Result<(T, usize), DeserializeError>
 where
@@ -179,7 +178,6 @@ where
 /// # Errors
 ///
 /// Returns `DeserializeError` if deserialization fails.
-#[must_use]
 #[inline(always)]
 pub fn read_packet_in_place<'de, F, T>(
     place: &mut T,

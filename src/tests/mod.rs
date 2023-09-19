@@ -466,7 +466,7 @@ fn test_bincoded() {
     let mut buffer = [0u8; 1024];
 
     let size = serialize::<Bincode, _>(Value(102414), &mut buffer).unwrap();
-    let (de, _) = deserialize::<Bincode, Value>(&buffer[..size]).unwrap();
+    let de = deserialize::<Bincode, Value>(&buffer[..size.0]).unwrap();
     assert_eq!(de.0, 102414);
 }
 

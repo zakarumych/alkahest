@@ -24,7 +24,10 @@ use rand::{
 
 #[derive(Debug, Clone, Formula, Serialize, Deserialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "rkyv", derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize))]
+#[cfg_attr(
+    feature = "rkyv",
+    derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)
+)]
 #[cfg_attr(feature = "rkyv", archive_attr(derive(CheckBytes)))]
 #[cfg_attr(feature = "speedy", derive(speedy::Writable, speedy::Readable))]
 pub enum GameMessage {
@@ -42,7 +45,10 @@ pub enum GameMessageRead<'de> {
 
 #[derive(Debug, Clone, Formula, Serialize, Deserialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "rkyv", derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize))]
+#[cfg_attr(
+    feature = "rkyv",
+    derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)
+)]
 #[cfg_attr(feature = "rkyv", archive_attr(derive(CheckBytes)))]
 #[cfg_attr(feature = "speedy", derive(speedy::Writable, speedy::Readable))]
 pub enum ClientMessage {
@@ -60,7 +66,10 @@ pub enum ClientMessageRead<'de> {
 
 #[derive(Debug, Clone, Formula, Serialize, Deserialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "rkyv", derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize))]
+#[cfg_attr(
+    feature = "rkyv",
+    derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)
+)]
 #[cfg_attr(feature = "rkyv", archive_attr(derive(CheckBytes)))]
 #[cfg_attr(feature = "speedy", derive(speedy::Writable, speedy::Readable))]
 pub enum ServerMessage {
@@ -78,7 +87,10 @@ pub enum ServerMessageRead<'de> {
 
 #[derive(Debug, Formula, Serialize, Deserialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "rkyv", derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize))]
+#[cfg_attr(
+    feature = "rkyv",
+    derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)
+)]
 #[cfg_attr(feature = "rkyv", archive_attr(derive(CheckBytes)))]
 #[cfg_attr(feature = "speedy", derive(speedy::Writable, speedy::Readable))]
 pub struct NetPacket<G> {
@@ -179,18 +191,15 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
         group.bench_function("deserialize", |b| {
             b.iter(|| {
-                let packet = alkahest::deserialize::<
-                    NetPacket<GameMessage>,
-                    NetPacket<GameMessage>,
-                >(&buffer[..size])
-                .unwrap();
+                let packet =
+                    alkahest::deserialize::<NetPacket<GameMessage>, NetPacket<GameMessage>>(
+                        &buffer[..size],
+                    )
+                    .unwrap();
 
                 for message in packet.game_messages.iter() {
                     match message {
-                        GameMessage::Client(ClientMessage::ClientData {
-                            nickname,
-                            clan,
-                        }) => {
+                        GameMessage::Client(ClientMessage::ClientData { nickname, clan }) => {
                             black_box(nickname);
                             black_box(clan);
                         }
@@ -200,10 +209,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
                         GameMessage::Server(ServerMessage::ServerData(data)) => {
                             black_box(data);
                         }
-                        GameMessage::Server(ServerMessage::ClientChat {
-                            client_id,
-                            message,
-                        }) => {
+                        GameMessage::Server(ServerMessage::ClientChat { client_id, message }) => {
                             black_box(client_id);
                             black_box(message);
                         }
@@ -307,15 +313,14 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("deserialize", |b| {
             b.iter(|| {
                 use rkyv::Deserialize;
-                let archive = rkyv::check_archived_root::<NetPacket<GameMessage>>(&vec[..]).unwrap();
-                let packet: NetPacket<GameMessage> = archive.deserialize(&mut rkyv::Infallible).unwrap();
+                let archive =
+                    rkyv::check_archived_root::<NetPacket<GameMessage>>(&vec[..]).unwrap();
+                let packet: NetPacket<GameMessage> =
+                    archive.deserialize(&mut rkyv::Infallible).unwrap();
 
                 for message in packet.game_messages.iter() {
                     match message {
-                        GameMessage::Client(ClientMessage::ClientData {
-                            nickname,
-                            clan,
-                        }) => {
+                        GameMessage::Client(ClientMessage::ClientData { nickname, clan }) => {
                             black_box(nickname);
                             black_box(clan);
                         }
@@ -325,10 +330,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
                         GameMessage::Server(ServerMessage::ServerData(data)) => {
                             black_box(data);
                         }
-                        GameMessage::Server(ServerMessage::ClientChat {
-                            client_id,
-                            message,
-                        }) => {
+                        GameMessage::Server(ServerMessage::ClientChat { client_id, message }) => {
                             black_box(client_id);
                             black_box(message);
                         }
@@ -389,7 +391,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
                 }
             })
         });
-        
+
         group.bench_function("deserialize", |b| {
             b.iter(|| {
                 let packet =
@@ -398,10 +400,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
                 for message in packet.game_messages.iter() {
                     match message {
-                        GameMessage::Client(ClientMessage::ClientData {
-                            nickname,
-                            clan,
-                        }) => {
+                        GameMessage::Client(ClientMessage::ClientData { nickname, clan }) => {
                             black_box(nickname);
                             black_box(clan);
                         }
@@ -411,10 +410,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
                         GameMessage::Server(ServerMessage::ServerData(data)) => {
                             black_box(data);
                         }
-                        GameMessage::Server(ServerMessage::ClientChat {
-                            client_id,
-                            message,
-                        }) => {
+                        GameMessage::Server(ServerMessage::ClientChat { client_id, message }) => {
                             black_box(client_id);
                             black_box(message);
                         }

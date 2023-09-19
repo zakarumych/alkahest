@@ -496,7 +496,10 @@ where
     let size = FixedUsize::truncate_unchecked(size);
 
     if F::EXACT_SIZE {
-        debug_assert_eq!(size, FixedUsize::truncate_unchecked(F::MAX_STACK_SIZE.unwrap()));
+        debug_assert_eq!(
+            size,
+            FixedUsize::truncate_unchecked(F::MAX_STACK_SIZE.unwrap())
+        );
         buffer.write_stack(heap, stack, &address.to_le_bytes())?;
     } else {
         buffer.write_stack(heap, stack, &size.to_le_bytes())?;
@@ -625,7 +628,6 @@ where
 /// # Errors
 ///
 /// Returns error if buffer write fails.
-#[must_use]
 #[inline(always)]
 pub fn write_ref<F, T, B>(value: T, sizes: &mut Sizes, mut buffer: B) -> Result<usize, B::Error>
 where

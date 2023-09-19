@@ -140,6 +140,24 @@ where
     }
 }
 
+impl<T> Serialize<Bincoded<T>> for &T
+where
+    T: serde::Serialize,
+{
+    #[inline(always)]
+    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
+    where
+        B: Buffer,
+    {
+        <&T as Serialize<Bincode>>::serialize(self, sizes, buffer)
+    }
+
+    #[inline(always)]
+    fn size_hint(&self) -> Option<Sizes> {
+        <&T as Serialize<Bincode>>::size_hint(self)
+    }
+}
+
 impl<'de, T> Deserialize<'de, Bincoded<T>> for T
 where
     T: serde::Deserialize<'de>,
