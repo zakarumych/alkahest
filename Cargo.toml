@@ -25,7 +25,7 @@ fixed64 = [] # sets size of `FixedUsize` and `FixedIsize` to 64 bits.
 
 default = ["alloc", "fixed32", "inline-more"]
 
-bincoded = ["bincode", "serde", "std"]
+bincoded = ["dep:bincode", "dep:serde", "std"]
 
 [dependencies]
 alkahest-proc = { version = "=0.3.0", path = "proc", optional = true }
