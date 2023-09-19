@@ -172,7 +172,7 @@ pub fn derive(args: DeserializeArgs, input: &syn::DeriveInput) -> syn::Result<To
         )),
         syn::Data::Struct(data) => {
             let field_checks = if cfg.check_fields {
-                struct_field_order_checks(&data, None, &input.ident, &cfg.formula)
+                struct_field_order_checks(data, None, &input.ident, &cfg.formula)
             } else {
                 TokenStream::new()
             };
@@ -330,7 +330,7 @@ pub fn derive(args: DeserializeArgs, input: &syn::DeriveInput) -> syn::Result<To
         }
         syn::Data::Enum(data) => {
             let field_checks = if cfg.check_fields {
-                enum_field_order_checks(&data, &input.ident, &cfg.formula)
+                enum_field_order_checks(data, &input.ident, &cfg.formula)
             } else {
                 TokenStream::new()
             };

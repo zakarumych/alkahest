@@ -625,7 +625,6 @@ where
 /// # Errors
 ///
 /// Returns error if buffer write fails.
-#[must_use]
 #[inline(always)]
 pub fn write_ref<F, T, B>(value: T, sizes: &mut Sizes, mut buffer: B) -> Result<usize, B::Error>
 where
