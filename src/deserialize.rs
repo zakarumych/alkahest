@@ -1,4 +1,4 @@
-use core::{iter::FusedIterator, marker::PhantomData, str::Utf8Error};
+use core::{any::type_name, iter::FusedIterator, marker::PhantomData, str::Utf8Error};
 
 use crate::{
     formula::{reference_size, unwrap_size, Formula},
@@ -669,6 +669,23 @@ where
     F: Formula + ?Sized,
     T: Deserialize<'de, F>,
 {
+    assert!(
+        F::HEAPLESS || F::MAX_STACK_SIZE.is_some(),
+        "The value must be either sized or heap-less.
+        {} is {} {}",
+        type_name::<F>(),
+        if F::HEAPLESS {
+            "heapless but"
+        } else {
+            "not heapless and"
+        },
+        if F::MAX_STACK_SIZE.is_some() {
+            "sized"
+        } else {
+            "not sized"
+        }
+    );
+
     let stack = match F::MAX_STACK_SIZE {
         None => input.len(),
         Some(max_stack) => max_stack.min(input.len()),
