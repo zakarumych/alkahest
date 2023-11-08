@@ -379,7 +379,7 @@ fn test_ref_in_enum() {
 
     let mut buffer = [0u8; 256];
     let size = serialize::<[Test], _>([&value], &mut buffer).unwrap();
-    let data = deserialize::<[Test], Vec<Test>>(&buffer[..size.0]).unwrap();
+    let data = deserialize_with_size::<[Test], Vec<Test>>(&buffer[..size.0], size.1).unwrap();
 
     assert_eq!(data, [value]);
 }
