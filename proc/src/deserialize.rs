@@ -288,7 +288,7 @@ pub fn derive(args: DeserializeArgs, input: &syn::DeriveInput) -> syn::Result<To
                 deserialize_generics.split_for_impl();
             Ok(quote::quote! {
                 impl #impl_deserialize_generics ::alkahest::private::Deserialize<#de, #formula_path> for #ident #type_generics #where_serialize_clause {
-                    #[inline(always)]
+                    #[inline]
                     fn deserialize(mut de: ::alkahest::private::Deserializer<#de>) -> ::alkahest::private::Result<Self, ::alkahest::private::DeserializeError> {
                         #field_checks
 
@@ -306,7 +306,7 @@ pub fn derive(args: DeserializeArgs, input: &syn::DeriveInput) -> syn::Result<To
                         ::alkahest::private::Result::Ok(value)
                     }
 
-                    #[inline(always)]
+                    #[inline]
                     fn deserialize_in_place(&mut self, mut de: ::alkahest::private::Deserializer<#de>) -> Result<(), ::alkahest::private::DeserializeError> {
                         #field_checks
 
@@ -475,7 +475,7 @@ pub fn derive(args: DeserializeArgs, input: &syn::DeriveInput) -> syn::Result<To
                 deserialize_generics.split_for_impl();
             Ok(quote::quote! {
                 impl #impl_deserialize_generics ::alkahest::private::Deserialize<#de, #formula_path> for #ident #type_generics #where_serialize_clause {
-                    #[inline(always)]
+                    #[inline]
                     fn deserialize(mut de: ::alkahest::private::Deserializer<#de>) -> ::alkahest::private::Result<Self, ::alkahest::private::DeserializeError> {
                         #field_checks
 
@@ -500,7 +500,7 @@ pub fn derive(args: DeserializeArgs, input: &syn::DeriveInput) -> syn::Result<To
                         }
                     }
 
-                    #[inline(always)]
+                    #[inline]
                     fn deserialize_in_place(&mut self, mut de: ::alkahest::private::Deserializer<#de>) -> Result<(), ::alkahest::private::DeserializeError> {
                         #field_checks
 

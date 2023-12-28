@@ -98,7 +98,7 @@ where
     F: Formula,
     T: Deserialize<'de, F>,
 {
-    #[inline(always)]
+    #[inline]
     fn deserialize(mut de: Deserializer<'de>) -> Result<Self, DeserializeError> {
         let mut opts = [(); N].map(|_| None);
         opts.iter_mut().try_for_each(|slot| {

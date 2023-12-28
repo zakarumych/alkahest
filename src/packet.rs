@@ -13,7 +13,7 @@ use crate::{
 /// Use when value is `Copy` or can be cheaply replicated to allocate
 /// the buffer for serialization in advance.
 /// Or to find out required size after [`write_packet`] fails.
-#[inline(always)]
+#[inline]
 pub fn packet_size<F, T>(value: T) -> usize
 where
     F: Formula + ?Sized,
@@ -117,7 +117,7 @@ where
 ///
 /// This function may panic if the value size is too big to fit `usize`.
 #[must_use]
-#[inline(always)]
+#[inline]
 pub fn read_packet_size<F>(input: &[u8]) -> Option<usize>
 where
     F: Formula + ?Sized,
@@ -145,7 +145,7 @@ where
 /// # Errors
 ///
 /// Returns `DeserializeError` if deserialization fails.
-#[inline(always)]
+#[inline]
 pub fn read_packet<'de, F, T>(input: &'de [u8]) -> Result<(T, usize), DeserializeError>
 where
     F: Formula + ?Sized,
@@ -180,7 +180,7 @@ where
 /// # Errors
 ///
 /// Returns `DeserializeError` if deserialization fails.
-#[inline(always)]
+#[inline]
 pub fn read_packet_in_place<'de, F, T>(
     place: &mut T,
     input: &'de [u8],

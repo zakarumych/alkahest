@@ -108,7 +108,7 @@ macro_rules! formula_serialize {
             $at: Formula + ?Sized,
             $bt: Serialize<$at>,
         {
-            #[inline(always)]
+            #[inline]
             fn serialize<B>(self, sizes: &mut Sizes, mut buffer: B) -> Result<(), B::Error>
             where
                 B: Buffer,
@@ -122,7 +122,7 @@ macro_rules! formula_serialize {
                 write_field::<$at, $bt, _>($bt, sizes, buffer, true)
             }
 
-            #[inline(always)]
+            #[inline]
             fn size_hint(&self) -> Option<Sizes> {
                 #![allow(non_snake_case, unused_mut)]
                 let mut sizes = Sizes::ZERO;
@@ -148,7 +148,7 @@ macro_rules! formula_serialize {
             for<'ser> &'ser $bt: Serialize<$at>,
             $bt: ?Sized,
         {
-            #[inline(always)]
+            #[inline]
             fn serialize<B>(&self, sizes: &mut Sizes, mut buffer: B) -> Result<(), B::Error>
             where
                 B: Buffer,
@@ -161,7 +161,7 @@ macro_rules! formula_serialize {
                 write_field::<$at, &$bt, _>($bt, sizes, buffer, true)
             }
 
-            #[inline(always)]
+            #[inline]
             fn size_hint(&self) -> Option<Sizes> {
                 #![allow(non_snake_case, unused_mut)]
                 let mut sizes = Sizes::ZERO;
@@ -188,7 +188,7 @@ macro_rules! formula_serialize {
             $at: Formula + ?Sized,
             $bt: Deserialize<'de, $at>,
         {
-            #[inline(always)]
+            #[inline]
             fn deserialize(mut de: Deserializer<'de>) -> Result<($($b,)* $bt,), DeserializeError> {
                 #![allow(non_snake_case)]
                 $(
@@ -201,7 +201,7 @@ macro_rules! formula_serialize {
                 Ok(value)
             }
 
-            #[inline(always)]
+            #[inline]
             fn deserialize_in_place(&mut self, mut de: Deserializer<'de>) -> Result<(), DeserializeError> {
                 #![allow(non_snake_case)]
 

@@ -108,7 +108,7 @@ impl Buffer for DryBuffer {
 pub struct BufferExhausted;
 
 impl fmt::Display for BufferExhausted {
-    #[inline]
+    #[inline(always)]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "buffer exhausted")
     }

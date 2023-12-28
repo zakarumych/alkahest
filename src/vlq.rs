@@ -176,7 +176,7 @@ where
     }
 }
 
-#[inline(always)]
+#[inline]
 fn size_hint<T>(mut value: T) -> Sizes
 where
     T: VlqType,
@@ -202,7 +202,7 @@ where
     Sizes::with_stack(tail + 1)
 }
 
-#[inline(always)]
+#[inline]
 fn serialize<T, B>(mut value: T, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
 where
     T: VlqType,
@@ -235,7 +235,7 @@ where
     }
 }
 
-#[inline(always)]
+#[inline]
 fn deserialize<T>(mut de: Deserializer) -> Result<T, DeserializeError>
 where
     T: VlqType,

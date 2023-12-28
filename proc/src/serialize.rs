@@ -254,7 +254,7 @@ pub fn derive(
             let tokens = if by_ref {
                 quote::quote! {
                     impl #impl_generics ::alkahest::private::SerializeRef<#formula_path> for #ident #type_generics #where_clause {
-                        #[inline(always)]
+                        #[inline]
                         fn serialize<__alkahest_Buffer>(&self, __sizes: &mut ::alkahest::private::Sizes, mut __buffer: __alkahest_Buffer) -> ::alkahest::private::Result<(), __alkahest_Buffer::Error>
                         where
                             __alkahest_Buffer: ::alkahest::private::Buffer,
@@ -274,7 +274,7 @@ pub fn derive(
                             Ok(())
                         }
 
-                        #[inline(always)]
+                        #[inline]
                         fn size_hint(&self) -> ::alkahest::private::Option<::alkahest::private::Sizes> {
                             #![allow(unused_mut)]
                             #field_checks
@@ -297,7 +297,7 @@ pub fn derive(
             } else {
                 quote::quote! {
                     impl #impl_generics ::alkahest::private::Serialize<#formula_path> for #ident #type_generics #where_clause {
-                        #[inline(always)]
+                        #[inline]
                         fn serialize<__alkahest_Buffer>(self, __sizes: &mut ::alkahest::private::Sizes, mut __buffer: __alkahest_Buffer) -> ::alkahest::private::Result<(), __alkahest_Buffer::Error>
                         where
                             __alkahest_Buffer: ::alkahest::private::Buffer,
@@ -317,7 +317,7 @@ pub fn derive(
                             Ok(())
                         }
 
-                        #[inline(always)]
+                        #[inline]
                         fn size_hint(&self) -> ::alkahest::private::Option<::alkahest::private::Sizes> {
                             #![allow(unused_mut)]
                             #field_checks
@@ -466,7 +466,7 @@ pub fn derive(
             let tokens = if by_ref {
                 quote::quote! {
                     impl #impl_generics ::alkahest::private::SerializeRef<#formula_path> for #ident #type_generics #where_clause {
-                        #[inline(always)]
+                        #[inline]
                         fn serialize<__alkahest_Buffer>(&self, __sizes: &mut ::alkahest::private::Sizes, mut __buffer: __alkahest_Buffer) -> ::alkahest::private::Result<(), __alkahest_Buffer::Error>
                         where
                             __alkahest_Buffer: ::alkahest::private::Buffer,
@@ -490,7 +490,7 @@ pub fn derive(
                             }
                         }
 
-                        #[inline(always)]
+                        #[inline]
                         fn size_hint(&self) -> ::alkahest::private::Option<::alkahest::private::Sizes> {
                             #![allow(unused_mut, unused_variables)]
                             #field_checks
@@ -518,7 +518,7 @@ pub fn derive(
             } else {
                 quote::quote! {
                     impl #impl_generics ::alkahest::private::Serialize<#formula_path> for #ident #type_generics #where_clause {
-                        #[inline(always)]
+                        #[inline]
                         fn serialize<__alkahest_Buffer>(self, __sizes: &mut ::alkahest::private::Sizes, mut __buffer: __alkahest_Buffer) -> ::alkahest::private::Result<(), __alkahest_Buffer::Error>
                         where
                             __alkahest_Buffer: ::alkahest::private::Buffer,
@@ -542,7 +542,7 @@ pub fn derive(
                             }
                         }
 
-                        #[inline(always)]
+                        #[inline]
                         fn size_hint(&self) -> ::alkahest::private::Option<::alkahest::private::Sizes> {
                             #![allow(unused_mut, unused_variables)]
                             #field_checks

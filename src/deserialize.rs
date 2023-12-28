@@ -5,7 +5,7 @@ use crate::{
     size::{deserialize_usize, FixedIsizeType, FixedUsizeType, SIZE_STACK},
 };
 
-#[inline(always)]
+#[inline(never)]
 #[cold]
 pub(crate) const fn cold_err<T>(e: DeserializeError) -> Result<T, DeserializeError> {
     Err(e)
@@ -112,7 +112,6 @@ impl<'de> Deserializer<'de> {
     }
 
     #[inline(always)]
-    #[track_caller]
     pub(crate) fn sub(&mut self, stack: usize) -> Result<Self, DeserializeError> {
         if self.stack < stack {
             return cold_err(DeserializeError::WrongLength);
@@ -282,7 +281,7 @@ impl<'de> Deserializer<'de> {
     ///
     /// Returns `DeserializeError` if reference is out of bounds
     /// or has address larger that self.
-    #[inline(always)]
+    #[inline]
     pub fn deref<F>(self) -> Result<Deserializer<'de>, DeserializeError>
     where
         F: Formula + ?Sized,
@@ -405,7 +404,7 @@ impl<'de> Deserializer<'de> {
     // }
 
     /// Skips specified number of values with specified formula.
-    #[inline(always)]
+    #[inline]
     fn skip_values<F>(&mut self, n: usize) -> Result<(), DeserializeError>
     where
         F: Formula + ?Sized,
@@ -518,7 +517,7 @@ where
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn nth(&mut self, n: usize) -> Option<Result<T, DeserializeError>> {
         if n > 0 {
             if n >= self.upper {
@@ -534,7 +533,7 @@ where
         self.next()
     }
 
-    #[inline(always)]
+    #[inline]
     fn fold<B, Fun>(mut self, mut init: B, mut f: Fun) -> B
     where
         Fun: FnMut(B, Result<T, DeserializeError>) -> B,
@@ -606,7 +605,7 @@ where
         Some(item)
     }
 
-    #[inline(always)]
+    #[inline]
     fn nth_back(&mut self, n: usize) -> Option<Result<T, DeserializeError>> {
         if n > 0 {
             if n >= self.upper {
@@ -619,7 +618,7 @@ where
         self.next_back()
     }
 
-    #[inline(always)]
+    #[inline]
     fn rfold<B, Fun>(self, mut init: B, mut f: Fun) -> B
     where
         Fun: FnMut(B, Result<T, DeserializeError>) -> B,

@@ -93,7 +93,7 @@ where
 {
     #[inline(always)]
     fn deserialize(mut de: Deserializer<'de>) -> Result<Self, DeserializeError> {
-        let is_some: u8 = de.read_bytes(1)?[0];
+        let is_some: u8 = de.read_byte()?;
         if is_some == 0 {
             Ok(None)
         } else {
@@ -103,7 +103,7 @@ where
 
     #[inline(always)]
     fn deserialize_in_place(&mut self, mut de: Deserializer<'de>) -> Result<(), DeserializeError> {
-        let is_some: u8 = de.read_bytes(1)?[0];
+        let is_some: u8 = de.read_byte()?;
         if is_some == 0 {
             *self = None;
         } else {

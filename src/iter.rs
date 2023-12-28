@@ -34,7 +34,7 @@ where
 }
 
 /// Returns the size of the serialized data if it can be determined fast.
-#[inline(always)]
+#[inline]
 pub fn ref_iter_fast_sizes<'a, F, I, T: 'a>(iter: I) -> Option<Sizes>
 where
     F: Formula + ?Sized,
@@ -69,7 +69,7 @@ where
 }
 
 /// Returns the size of the serialized data if it can be determined fast.
-#[inline(always)]
+#[inline]
 pub fn owned_iter_fast_sizes<F, I, T>(iter: I) -> Option<Sizes>
 where
     F: Formula + ?Sized,
@@ -744,7 +744,7 @@ where
 /// # Errors
 ///
 /// Returns `DeserializeError` if deserialization fails.
-#[inline(always)]
+#[inline]
 pub fn deserialize_extend_iter<A, T>(
     value: &mut T,
     mut iter: impl Iterator<Item = Result<A, DeserializeError>>,

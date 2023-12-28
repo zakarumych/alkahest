@@ -368,7 +368,7 @@ pub struct BufferSizeRequired {
 }
 
 impl fmt::Display for BufferSizeRequired {
-    #[inline]
+    #[inline(always)]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "buffer size required: {}", self.required)
     }
@@ -386,7 +386,7 @@ impl fmt::Display for BufferSizeRequired {
 ///
 /// Returns [`BufferSizeRequired`] error if the buffer is too small.
 /// Error contains the exact number of bytes required.
-#[inline(always)]
+#[inline]
 pub fn serialize_or_size<F, T>(
     value: T,
     output: &mut [u8],
@@ -450,7 +450,7 @@ where
 /// Size hint for serializing a field.
 ///
 /// Use in [`Serialize::size_hint`](Serialize::size_hint) implementation.
-#[inline(always)]
+#[inline]
 pub fn field_size_hint<F: Formula + ?Sized>(
     value: &impl Serialize<F>,
     last: bool,
@@ -480,7 +480,7 @@ pub fn field_size_hint<F: Formula + ?Sized>(
 /// # Errors
 ///
 /// Returns error if buffer write fails.
-#[inline(always)]
+#[inline]
 pub fn write_reference<F, B>(
     size: usize,
     address: usize,
@@ -512,7 +512,7 @@ where
 /// # Errors
 ///
 /// Returns error if buffer write fails.
-#[inline(always)]
+#[inline]
 pub fn write_field<F, T, B>(
     value: T,
     sizes: &mut Sizes,
@@ -625,7 +625,7 @@ where
 /// # Errors
 ///
 /// Returns error if buffer write fails.
-#[inline(always)]
+#[inline]
 pub fn write_ref<F, T, B>(value: T, sizes: &mut Sizes, mut buffer: B) -> Result<usize, B::Error>
 where
     F: Formula + ?Sized,
@@ -743,7 +743,7 @@ where
 /// # Errors
 ///
 /// Returns error if buffer write fails.
-#[inline(always)]
+#[inline]
 pub fn write_slice<F, T, B>(
     mut iter: impl Iterator<Item = T>,
     sizes: &mut Sizes,
