@@ -6,7 +6,7 @@ use crate::{
     deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::{reference_size, Formula},
     serialize::{write_reference, Serialize, Sizes},
-    size::{FixedUsize, FixedUsizeType},
+    size::FixedUsizeType,
 };
 
 /// A formula that can be used to serialize and deserialize data
@@ -40,13 +40,12 @@ where
         };
 
         let Ok(size) = FixedUsizeType::try_from(size) else {
-            panic!("Bincode serialization uses more that `FixedUsize::MAX` bytes");
+            panic!("Bincode serialization uses more that `FixedUsizeType::MAX` bytes");
         };
 
-        let Ok(size) = FixedUsize::try_from(size) else {
+        let Ok(size) = usize::try_from(size) else {
             panic!("Bincode serialization uses more that `usize::MAX` bytes");
         };
-        let size: usize = size.into();
 
         match buffer.reserve_heap(sizes.heap, sizes.stack, size) {
             Err(err) => return Err(err),
@@ -174,4 +173,78 @@ where
     fn deserialize_in_place(&mut self, de: Deserializer<'de>) -> Result<(), DeserializeError> {
         <T as Deserialize<'de, Bincode>>::deserialize_in_place(self, de)
     }
+}
+
+#[test]
+fn roundtrip() {
+    use alkahest::{alkahest, Bincoded};
+
+    #[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
+    pub struct BincodedStruct {
+        bytes: Box<[u8]>,
+    }
+
+    #[derive(Clone)]
+    #[alkahest(Serialize<BincodedWrapperFormula>, Deserialize<'_, BincodedWrapperFormula>)]
+    pub struct BincodedWrapperStruct {
+        wrapped: BincodedStruct,
+    }
+
+    #[alkahest(Formula)]
+    pub struct BincodedWrapperFormula {
+        wrapped: Bincoded<BincodedStruct>,
+    }
+
+    #[derive(Clone)]
+    #[alkahest(Serialize<VariableHeaderV1Formula>)]
+    pub(crate) struct VariableHeaderV1Construction {
+        // A filter covering all keys within the table.
+        pub(crate) bincoded: BincodedWrapperStruct,
+        pub(crate) bytes: Vec<u8>,
+    }
+
+    #[alkahest(Deserialize<'de, VariableHeaderV1Formula>)]
+    pub(crate) struct VariableHeaderV1Access<'de> {
+        // A filter covering all keys within the table.
+        pub(crate) bincoded: BincodedWrapperStruct,
+        pub(crate) bytes: &'de [u8],
+    }
+
+    #[alkahest(Formula)]
+    pub(crate) struct VariableHeaderV1Formula {
+        bincoded: BincodedWrapperFormula,
+        bytes: alkahest::Bytes,
+    }
+
+    let bincoded = BincodedWrapperStruct {
+        wrapped: BincodedStruct {
+            bytes: Box::new([4, 5, 6, 7]),
+        },
+    };
+    let header = VariableHeaderV1Construction {
+        bincoded,
+        bytes: vec![1, 2, 3, 4],
+    };
+    let mut output = vec![0u8; 4096];
+    let (serialized_len, size) =
+        alkahest::serialize::<VariableHeaderV1Formula, _>(header, &mut output).unwrap();
+    output.truncate(serialized_len);
+
+    let deserialized = alkahest::deserialize_with_size::<
+        VariableHeaderV1Formula,
+        VariableHeaderV1Access,
+    >(&output, size)
+    .unwrap();
+    assert_eq!(
+        &*deserialized.bincoded.wrapped.bytes,
+        &[4, 5, 6, 7],
+        "Full serialized {:?}",
+        &output
+    );
+    assert_eq!(
+        deserialized.bytes,
+        &[1, 2, 3, 4],
+        "Full serialized {:?}",
+        &output
+    );
 }

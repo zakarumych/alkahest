@@ -3,7 +3,7 @@ use crate::{
     deserialize::DeserializeError,
     formula::Formula,
     serialize::{field_size_hint, write_slice, Serialize, Sizes},
-    size::{FixedUsize, SIZE_STACK},
+    size::SIZE_STACK,
 };
 
 const ITER_UPPER: usize = 4;
@@ -258,7 +258,7 @@ where
 
 // Typically `usize` is not serializable.
 // But lib makes exception for `usize`s that are derived from actual sizes.
-impl<F, I, T> Serialize<[(FixedUsize, F)]> for core::iter::Enumerate<I>
+impl<F, I, T> Serialize<[(usize, F)]> for core::iter::Enumerate<I>
 where
     F: Formula,
     I: Iterator<Item = T>,
@@ -269,12 +269,12 @@ where
     where
         B: Buffer,
     {
-        serialize_iter_to_slice!((FixedUsize, F) : self => sizes, buffer)
+        serialize_iter_to_slice!((usize, F) : self => sizes, buffer)
     }
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        default_iter_fast_sizes::<(FixedUsize, F), _>(self)
+        default_iter_fast_sizes::<(usize, F), _>(self)
     }
 }
 

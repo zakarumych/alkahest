@@ -1,9 +1,10 @@
 use crate::{
+    advanced::FixedUsizeType,
     buffer::{Buffer, BufferExhausted, CheckedFixedBuffer, DryBuffer, VecBuffer},
     deserialize::{read_reference, Deserialize, DeserializeError, Deserializer},
     formula::{reference_size, Formula},
     serialize::{write_ref, write_reference, Serialize, Sizes},
-    size::{FixedUsize, SIZE_STACK},
+    size::SIZE_STACK,
 };
 
 /// Returns the number of bytes required to write packet with the value.
@@ -129,9 +130,10 @@ where
             } else {
                 let mut bytes = [0u8; SIZE_STACK];
                 bytes.copy_from_slice(&input[..SIZE_STACK]);
-                let address =
-                    FixedUsize::from_le_bytes(bytes).expect("Value size can't fit `usize`");
-                Some(address.into())
+                let address = FixedUsizeType::from_le_bytes(bytes)
+                    .try_into()
+                    .expect("Value size can't fit `usize`");
+                Some(address)
             }
         }
     }

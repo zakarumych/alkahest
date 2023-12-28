@@ -15,10 +15,10 @@ custom high-performance network protocols.
 
 This benchmark that mimics some game networking protocol.
 
-|                 | `alkahest`               | `bincode`                       | `rkyv`                          | `speedy`                         |
-|:----------------|:-------------------------|:--------------------------------|:--------------------------------|:-------------------------------- |
-| **`serialize`** | `10.69 us` (✅ **1.00x**) | `11.08 us` (✅ **1.04x slower**) | `12.43 us` (❌ *1.16x slower*)   | `11.13 us` (✅ **1.04x slower**)  |
-| **`read`**      | `1.19 us` (✅ **1.00x**)  | `9.19 us` (❌ *7.74x slower*)    | `2.10 us` (❌ *1.77x slower*)    | `1.54 us` (❌ *1.30x slower*)     |
+|                 | `alkahest`               | `bincode`                       | `rkyv`                        | `speedy`                        |
+| :-------------- | :----------------------- | :------------------------------ | :---------------------------- | :------------------------------ |
+| **`serialize`** | `10.69 us` (✅ **1.00x**) | `11.08 us` (✅ **1.04x slower**) | `12.43 us` (❌ *1.16x slower*) | `11.13 us` (✅ **1.04x slower**) |
+| **`read`**      | `1.19 us` (✅ **1.00x**)  | `9.19 us` (❌ *7.74x slower*)    | `2.10 us` (❌ *1.77x slower*)  | `1.54 us` (❌ *1.30x slower*)    |
 
 ---
 Made with [criterion-table](https://github.com/nu11ptr/criterion-table)
@@ -140,14 +140,11 @@ opening possibility for cross-language communication.
 
 `Formula` is implemented for a number of types out-of-the-box.
 Primitive types like `bool`, integers and floating point types all implement `Formula`.
-This excludes `isize` and `usize`.
-In their place there's `FixedUsize` and `FixedIsize` types provided,
-whose size is controlled by a feature-flag.
 *!Caveat!*:
-  Sizes and addresses are serialized as `FixedUsize`.
+  Serialized size of `isize` and `usize` is controlled by a feature-flag.
+  Sizes and addresses are serialized as `usize`.
   Truncating `usize` value if it was too large.
   This may result in broken data generated and panic in debug.
-  Increase size of the `FixedUsize` if you encounter this.
 It is also implemented for tuples, array and slice, `Option` and `Vec` (the later requires `"alloc"` feature).
 
 The easiest way to define a new formula is to derive `Formula` trait for a struct or an enum.

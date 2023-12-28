@@ -70,7 +70,6 @@ pub use crate::{
         serialize, serialize_or_size, serialize_unchecked, serialized_size, BufferSizeRequired,
         Serialize, SerializeRef,
     },
-    size::{FixedIsize, FixedUsize},
     skip::Skip,
     vlq::Vlq,
 };
@@ -97,7 +96,7 @@ pub mod advanced {
             write_exact_size_field, write_field, write_ref, write_reference, write_slice, Sizes,
             SliceWriter,
         },
-        size::{FixedIsize, FixedIsizeType},
+        size::{FixedIsizeType, FixedUsizeType},
     };
 
     #[cfg(feature = "alloc")]

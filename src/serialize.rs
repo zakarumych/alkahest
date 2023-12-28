@@ -3,7 +3,7 @@ use core::{fmt, marker::PhantomData, ops};
 use crate::{
     buffer::{Buffer, BufferExhausted, CheckedFixedBuffer, DryBuffer, MaybeFixedBuffer},
     formula::{unwrap_size, BareFormula, Formula},
-    size::{FixedUsize, SIZE_STACK},
+    size::{usize_truncate_unchecked, SIZE_STACK},
 };
 
 #[cfg(feature = "alloc")]
@@ -492,14 +492,11 @@ where
     F: Formula + ?Sized,
     B: Buffer,
 {
-    let address = FixedUsize::truncate_unchecked(address);
-    let size = FixedUsize::truncate_unchecked(size);
+    let address = usize_truncate_unchecked(address);
+    let size = usize_truncate_unchecked(size);
 
     if F::EXACT_SIZE {
-        debug_assert_eq!(
-            size,
-            FixedUsize::truncate_unchecked(F::MAX_STACK_SIZE.unwrap())
-        );
+        debug_assert_eq!(size, usize_truncate_unchecked(F::MAX_STACK_SIZE.unwrap()));
         buffer.write_stack(heap, stack, &address.to_le_bytes())?;
     } else {
         buffer.write_stack(heap, stack, &size.to_le_bytes())?;
@@ -537,7 +534,7 @@ where
 
     match (F::MAX_STACK_SIZE, F::EXACT_SIZE, last) {
         (None, _, false) => {
-            let size = FixedUsize::truncate_unchecked(sizes.stack - old_stack);
+            let size = usize_truncate_unchecked(sizes.stack - old_stack);
             let res = buffer.write_stack(sizes.heap, old_stack - SIZE_STACK, &size.to_le_bytes());
             if res.is_err() {
                 unreachable!("Successfully written before");
@@ -711,7 +708,7 @@ where
     pub fn finish(self) -> Result<(), B::Error> {
         if let Some(0) = <F as Formula>::MAX_STACK_SIZE {
             debug_assert!(<F as Formula>::HEAPLESS);
-            write_field::<FixedUsize, _, _>(self.count, self.sizes, self.buffer.reborrow(), true)?;
+            write_field::<usize, _, _>(self.count, self.sizes, self.buffer.reborrow(), true)?;
         }
         Ok(())
     }
@@ -768,7 +765,7 @@ where
         } else {
             iter.count()
         };
-        write_field::<FixedUsize, _, _>(count, sizes, buffer, true)
+        write_field::<usize, _, _>(count, sizes, buffer, true)
     } else {
         iter.try_fold((), |(), elem| {
             write_field::<F, _, _>(elem, sizes, buffer.reborrow(), false)
