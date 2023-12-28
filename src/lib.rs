@@ -1,13 +1,21 @@
 #![doc = include_str!("../README.md")]
 //!
 //! The root module exports public API sufficient for most use cases.
-//! Except manual implementation and direct usage of `Buffer`, `Formula`,
-//! `Serialize` and `Deserialize` traits and `Deserializer` type.
-//! For those use cases, see `advanced` module.
+//!
+//! For manual implementation and direct usage of `Buffer`, `Formula`,
+//! `Serialize` and `Deserialize` traits and `Deserializer` type
+//! see [`advanced`] module.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
+#![deny(
+    clippy::correctness,
+    clippy::suspicious,
+    clippy::complexity,
+    clippy::perf,
+    clippy::style
+)]
 
 #[cfg(test)]
 extern crate self as alkahest;
