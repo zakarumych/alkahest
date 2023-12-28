@@ -65,7 +65,7 @@ where
 ///
 /// Returns [`BufferExhausted`] if the buffer is too small.
 #[inline(always)]
-pub fn write_packet<F, T, B>(value: T, output: &mut [u8]) -> Result<usize, BufferExhausted>
+pub fn write_packet<F, T>(value: T, output: &mut [u8]) -> Result<usize, BufferExhausted>
 where
     F: Formula + ?Sized,
     T: Serialize<F>,
