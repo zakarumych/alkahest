@@ -191,3 +191,27 @@ where
         Ok(())
     }
 }
+
+#[cfg(feature = "derive")]
+#[test]
+pub fn test_box() {
+    #[derive(alkahest_proc::Formula)]
+    struct Foo {
+        a: u32,
+    }
+
+    #[alkahest_proc::alkahest(SerializeRef<Foo>, Deserialize<'_, Foo>)]
+    #[derive(Debug, PartialEq, Eq)]
+    struct FooWithBox {
+        a: Box<u32>,
+    }
+
+    let foo = FooWithBox { a: Box::new(42) };
+
+    let mut buffer = [0u8; 4];
+    crate::serialize::<Foo, _>(&foo, &mut buffer).unwrap();
+
+    let foo2 = crate::deserialize::<Foo, FooWithBox>(&buffer).unwrap();
+
+    assert_eq!(foo, foo2);
+}
