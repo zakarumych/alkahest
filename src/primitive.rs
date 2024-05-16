@@ -11,14 +11,14 @@ macro_rules! impl_primitive {
     () => {};
 
     ([$($head:ident)+] $([$($tail:ident)+])*) => {
-        impl_primitive!(@ < $($head)+);
+        impl_primitive!(^ < $($head)+);
         impl_primitive!($([$($tail)+])*);
     };
 
-    (@ $($head:ident)* <) => {};
-    (@ $($head:ident)* < $cursor:ident $($tail:ident)*) => {
+    (^ $($head:ident)* <) => {};
+    (^ $($head:ident)* < $cursor:ident $($tail:ident)*) => {
         impl_primitive!{! $($head)* < $cursor < $($tail)* }
-        impl_primitive!{@ $($head)* $cursor < $($tail)* }
+        impl_primitive!{^ $($head)* $cursor < $($tail)* }
     };
 
     (! $($from:ident)* < $ty:ident < $($to:ident)*) => {
@@ -77,6 +77,26 @@ macro_rules! impl_primitive {
             }
         }
 
+        impl Deserialize<'_, $ty> for $ty
+        {
+            #[inline(always)]
+            fn deserialize(mut de: Deserializer) -> Result<Self, DeserializeError> {
+                let input = de.read_byte_array::<{size_of::<$ty>()}>()?;
+                // de.finish()?;
+                let value = <$ty>::from_le_bytes(input);
+                return Ok(value);
+            }
+
+            #[inline(always)]
+            fn deserialize_in_place(&mut self, mut de: Deserializer) -> Result<(), DeserializeError> {
+                let input = de.read_byte_array::<{size_of::<$ty>()}>()?;
+                // de.finish()?;
+                let value = <$ty>::from_le_bytes(input);
+                *self = value;
+                Ok(())
+            }
+        }
+
         $(
             impl SerializeRef<$ty> for $from {
                 #[inline(always)]
@@ -92,29 +112,27 @@ macro_rules! impl_primitive {
                     Some(Sizes{ heap: 0, stack: size_of::<$ty>()})
                 }
             }
+
+            impl Deserialize<'_, $from> for $ty
+            {
+                #[inline(always)]
+                fn deserialize(mut de: Deserializer) -> Result<Self, DeserializeError> {
+                    let input = de.read_byte_array::<{size_of::<$from>()}>()?;
+                    // de.finish()?;
+                    let value = <$from>::from_le_bytes(input);
+                    return Ok($ty::from(value));
+                }
+
+                #[inline(always)]
+                fn deserialize_in_place(&mut self, mut de: Deserializer) -> Result<(), DeserializeError> {
+                    let input = de.read_byte_array::<{size_of::<$from>()}>()?;
+                    // de.finish()?;
+                    let value = <$from>::from_le_bytes(input);
+                    *self = $ty::from(value);
+                    Ok(())
+                }
+            }
         )*
-
-        impl<T> Deserialize<'_, $ty> for T
-        where
-            T: From<$ty>,
-        {
-            #[inline(always)]
-            fn deserialize(mut de: Deserializer) -> Result<Self, DeserializeError> {
-                let input = de.read_byte_array::<{size_of::<$ty>()}>()?;
-                // de.finish()?;
-                let value = <$ty>::from_le_bytes(input);
-                return Ok(From::from(value));
-            }
-
-            #[inline(always)]
-            fn deserialize_in_place(&mut self, mut de: Deserializer) -> Result<(), DeserializeError> {
-                let input = de.read_byte_array::<{size_of::<$ty>()}>()?;
-                // de.finish()?;
-                let value = <$ty>::from_le_bytes(input);
-                *self = From::from(value);
-                Ok(())
-            }
-        }
     };
 }
 
@@ -169,20 +187,17 @@ impl Serialize<bool> for &bool {
     }
 }
 
-impl<T> Deserialize<'_, bool> for T
-where
-    T: From<bool>,
-{
+impl Deserialize<'_, bool> for bool {
     #[inline(always)]
     fn deserialize(mut de: Deserializer) -> Result<Self, DeserializeError> {
         let byte = de.read_byte()?;
-        Ok(T::from(byte != 0))
+        Ok(byte != 0)
     }
 
     #[inline(always)]
     fn deserialize_in_place(&mut self, mut de: Deserializer) -> Result<(), DeserializeError> {
         let byte = de.read_byte()?;
-        *self = From::from(byte != 0);
+        *self = byte != 0;
         Ok(())
     }
 }

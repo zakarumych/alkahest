@@ -43,6 +43,9 @@ mod str;
 mod tuple;
 mod vlq;
 
+#[cfg(feature = "alloc")]
+mod boxed;
+
 #[cfg(test)]
 mod tests;
 

@@ -37,6 +37,7 @@ proc_easy::easy_parse! {
 }
 
 proc_easy::easy_parse! {
+    #[allow(unused)]
     enum ImplTrait {
         Formula(Formula),
         Serialize(Serialize, proc_easy::EasyMaybe<SerializeParams>),
