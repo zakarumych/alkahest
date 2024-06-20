@@ -83,7 +83,7 @@ serialization and deserialization.
 And larger footprint of serialized data than some other binary formats.
 
 Question about support of dense data packing is open.
-It may be desireable to control on type level.
+It may be desirable to control on type level.
 
 ### Errors and panics
 
@@ -249,7 +249,7 @@ So either both *should have* manual implementation or both derived.
 ## Interoperability with `serde`
 
 *Alkahest* is cool but `serde` is almost universally used, and for good reasons.
-While designing a `Formula` it may be desireable to include existing type
+While designing a `Formula` it may be desirable to include existing type
 that supports serialization `serde`, especially if it comes from another crate.
 This crate provides `Bincode` and `Bincoded<T>` formulas to cover this.
 Anything with `serde::Serialize` implementation can be serialized with `Bincode`
