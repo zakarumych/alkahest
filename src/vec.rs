@@ -7,7 +7,7 @@ use crate::{
     formula::{reference_size, Formula},
     iter::{deserialize_extend_iter, owned_iter_fast_sizes, ref_iter_fast_sizes},
     reference::Ref,
-    serialize::{write_bytes, write_ref, write_reference, write_slice, Serialize, Sizes},
+    serialize::{write_bytes, write_ref, write_reference, write_slice, Serialize, Sizes}, SerializeRef,
 };
 
 impl<F> Formula for Vec<F>
@@ -38,6 +38,32 @@ where
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
         let mut sizes = <Self as Serialize<[F]>>::size_hint(self)?;
+        sizes.to_heap(0);
+        sizes.add_stack(reference_size::<[F]>());
+        Some(sizes)
+    }
+}
+
+impl<F, T> SerializeRef<Vec<F>> for T
+where
+    F: Formula,
+    T: ?Sized,
+    for<'a> &'a T: Serialize<[F]>,
+{
+    #[inline(always)]
+    fn serialize<B>(&self, sizes: &mut Sizes, mut buffer: B) -> Result<(), B::Error>
+    where
+        B: Buffer,
+    {
+        let size = write_ref::<[F], &T, _>(self, sizes, buffer.reborrow())?;
+        write_reference::<[F], B>(size, sizes.heap, sizes.heap, sizes.stack, buffer)?;
+        sizes.stack += reference_size::<[F]>();
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn size_hint(&self) -> Option<Sizes> {
+        let mut sizes = <&Self as Serialize<[F]>>::size_hint(&self)?;
         sizes.to_heap(0);
         sizes.add_stack(reference_size::<[F]>());
         Some(sizes)

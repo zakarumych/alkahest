@@ -5,7 +5,7 @@ use crate::{
     deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::{reference_size, Formula},
     reference::Ref,
-    serialize::{write_bytes, write_ref, write_reference, Serialize, Sizes},
+    serialize::{write_bytes, write_ref, write_reference, Serialize, Sizes}, SerializeRef,
 };
 
 impl Formula for String {
@@ -32,6 +32,31 @@ where
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
         let mut sizes = <Self as Serialize<str>>::size_hint(self)?;
+        sizes.to_heap(0);
+        sizes.add_stack(reference_size::<str>());
+        Some(sizes)
+    }
+}
+
+impl<T> SerializeRef<String> for T
+where
+    T: ?Sized,
+    for<'a> &'a T: Serialize<str>,
+{
+    #[inline(always)]
+    fn serialize<B>(&self, sizes: &mut Sizes, mut buffer: B) -> Result<(), B::Error>
+    where
+        B: Buffer,
+    {
+        let size = write_ref::<str, &T, _>(self, sizes, buffer.reborrow())?;
+        write_reference::<str, B>(size, sizes.heap, sizes.heap, sizes.stack, buffer)?;
+        sizes.stack += reference_size::<str>();
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn size_hint(&self) -> Option<Sizes> {
+        let mut sizes = <&Self as Serialize<str>>::size_hint(&self)?;
         sizes.to_heap(0);
         sizes.add_stack(reference_size::<str>());
         Some(sizes)

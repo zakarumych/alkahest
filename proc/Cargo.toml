@@ -13,6 +13,9 @@ description = "Procedural macros for 'alkahest-proc' crate"
 [lib]
 proc-macro = true
 
+[features]
+evolution = []
+
 [dependencies]
 proc-macro2 = "1.0"
 syn = { version = "2.0", features = ["derive"] }

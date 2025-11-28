@@ -8,6 +8,9 @@ use crate::{
     SerializeRef,
 };
 
+#[cfg(feature = "evolution")]
+use crate::evolution::Descriptor;
+
 impl<T, F> Serialize<F> for Box<T>
 where
     F: BareFormula,
@@ -30,19 +33,20 @@ where
 impl<T, F> SerializeRef<F> for Box<T>
 where
     F: BareFormula,
-    T: SerializeRef<F>,
+    T: ?Sized,
+    for<'a> &'a T: Serialize<F>,
 {
     #[inline(always)]
     fn serialize<B>(&self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
         B: Buffer,
     {
-        <T as SerializeRef<F>>::serialize(self.as_ref(), sizes, buffer)
+        <&T as Serialize<F>>::serialize(self.as_ref(), sizes, buffer)
     }
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        <T as SerializeRef<F>>::size_hint(self.as_ref())
+        <&T as Serialize<F>>::size_hint(&self.as_ref())
     }
 }
 
@@ -66,43 +70,76 @@ where
     ) -> Result<(), DeserializeError> {
         <T as Deserialize<F>>::deserialize_in_place(self, deserializer)
     }
+
+    #[cfg(feature = "evolution")]
+    #[inline(always)]
+    fn deserialize_with_descriptor(
+        descriptor: &Descriptor,
+        formula: u32,
+        deserializer: Deserializer<'de>,
+    ) -> Result<Self, DeserializeError>
+    where
+        Self: Sized,
+    {
+        Ok(Box::new(
+            <T as Deserialize<F>>::deserialize_with_descriptor(descriptor, formula, deserializer)?,
+        ))
+    }
+
+    #[cfg(feature = "evolution")]
+    #[inline(always)]
+    fn deserialize_in_place_with_descriptor(
+        &mut self,
+        descriptor: &Descriptor,
+        formula: u32,
+        deserializer: Deserializer<'de>,
+    ) -> Result<(), DeserializeError> {
+        <T as Deserialize<F>>::deserialize_in_place_with_descriptor(
+            self,
+            descriptor,
+            formula,
+            deserializer,
+        )
+    }
 }
 
 impl<T, F> Serialize<F> for Rc<T>
 where
     F: BareFormula,
-    T: SerializeRef<F>,
+    T: ?Sized,
+    for<'a> &'a T: Serialize<F>,
 {
     #[inline(always)]
     fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
         B: Buffer,
     {
-        <T as SerializeRef<F>>::serialize(self.as_ref(), sizes, buffer)
+        <&T as Serialize<F>>::serialize(self.as_ref(), sizes, buffer)
     }
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        <T as SerializeRef<F>>::size_hint(self.as_ref())
+        <&T as Serialize<F>>::size_hint(&self.as_ref())
     }
 }
 
 impl<T, F> SerializeRef<F> for Rc<T>
 where
     F: BareFormula,
-    T: SerializeRef<F>,
+    T: ?Sized,
+    for<'a> &'a T: Serialize<F>,
 {
     #[inline(always)]
     fn serialize<B>(&self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
         B: Buffer,
     {
-        <T as SerializeRef<F>>::serialize(self.as_ref(), sizes, buffer)
+        <&T as Serialize<F>>::serialize(self.as_ref(), sizes, buffer)
     }
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        <T as SerializeRef<F>>::size_hint(self.as_ref())
+        <&T as Serialize<F>>::size_hint(&self.as_ref())
     }
 }
 
@@ -124,7 +161,54 @@ where
         &mut self,
         deserializer: Deserializer<'de>,
     ) -> Result<(), DeserializeError> {
-        *self = Rc::new(<T as Deserialize<F>>::deserialize(deserializer)?);
+        match Rc::get_mut(self) {
+            None => *self = Rc::new(<T as Deserialize<F>>::deserialize(deserializer)?),
+            Some(me) => <T as Deserialize<F>>::deserialize_in_place(me, deserializer)?,
+        }
+
+        Ok(())
+    }
+
+    #[cfg(feature = "evolution")]
+    #[inline(always)]
+    fn deserialize_with_descriptor(
+        descriptor: &Descriptor,
+        formula: u32,
+        deserializer: Deserializer<'de>,
+    ) -> Result<Self, DeserializeError>
+    where
+        Self: Sized,
+    {
+        Ok(Rc::new(<T as Deserialize<F>>::deserialize_with_descriptor(
+            descriptor,
+            formula,
+            deserializer,
+        )?))
+    }
+
+    #[cfg(feature = "evolution")]
+    #[inline(always)]
+    fn deserialize_in_place_with_descriptor(
+        &mut self,
+        descriptor: &Descriptor,
+        formula: u32,
+        deserializer: Deserializer<'de>,
+    ) -> Result<(), DeserializeError> {
+        match Rc::get_mut(self) {
+            None => {
+                *self = Rc::new(<T as Deserialize<F>>::deserialize_with_descriptor(
+                    descriptor,
+                    formula,
+                    deserializer,
+                )?)
+            }
+            Some(me) => <T as Deserialize<F>>::deserialize_in_place_with_descriptor(
+                me,
+                descriptor,
+                formula,
+                deserializer,
+            )?,
+        }
 
         Ok(())
     }
@@ -133,38 +217,40 @@ where
 impl<T, F> Serialize<F> for Arc<T>
 where
     F: BareFormula,
-    T: SerializeRef<F>,
+    T: ?Sized,
+    for<'a> &'a T: Serialize<F>,
 {
     #[inline(always)]
     fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
         B: Buffer,
     {
-        <T as SerializeRef<F>>::serialize(self.as_ref(), sizes, buffer)
+        <&T as Serialize<F>>::serialize(self.as_ref(), sizes, buffer)
     }
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        <T as SerializeRef<F>>::size_hint(self.as_ref())
+        <&T as Serialize<F>>::size_hint(&self.as_ref())
     }
 }
 
 impl<T, F> SerializeRef<F> for Arc<T>
 where
     F: BareFormula,
-    T: SerializeRef<F>,
+    T: ?Sized,
+    for<'a> &'a T: Serialize<F>,
 {
     #[inline(always)]
     fn serialize<B>(&self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
         B: Buffer,
     {
-        <T as SerializeRef<F>>::serialize(self.as_ref(), sizes, buffer)
+        <&T as Serialize<F>>::serialize(self.as_ref(), sizes, buffer)
     }
 
     #[inline(always)]
     fn size_hint(&self) -> Option<Sizes> {
-        <T as SerializeRef<F>>::size_hint(self.as_ref())
+        <&T as Serialize<F>>::size_hint(&self.as_ref())
     }
 }
 
@@ -187,6 +273,48 @@ where
         deserializer: Deserializer<'de>,
     ) -> Result<(), DeserializeError> {
         *self = Arc::new(<T as Deserialize<F>>::deserialize(deserializer)?);
+
+        Ok(())
+    }
+
+    #[cfg(feature = "evolution")]
+    #[inline(always)]
+    fn deserialize_with_descriptor(
+        descriptor: &Descriptor,
+        formula: u32,
+        deserializer: Deserializer<'de>,
+    ) -> Result<Self, DeserializeError>
+    where
+        Self: Sized,
+    {
+        Ok(Arc::new(
+            <T as Deserialize<F>>::deserialize_with_descriptor(descriptor, formula, deserializer)?,
+        ))
+    }
+
+    #[cfg(feature = "evolution")]
+    #[inline(always)]
+    fn deserialize_in_place_with_descriptor(
+        &mut self,
+        descriptor: &Descriptor,
+        formula: u32,
+        deserializer: Deserializer<'de>,
+    ) -> Result<(), DeserializeError> {
+        match Arc::get_mut(self) {
+            None => {
+                *self = Arc::new(<T as Deserialize<F>>::deserialize_with_descriptor(
+                    descriptor,
+                    formula,
+                    deserializer,
+                )?)
+            }
+            Some(me) => <T as Deserialize<F>>::deserialize_in_place_with_descriptor(
+                me,
+                descriptor,
+                formula,
+                deserializer,
+            )?,
+        }
 
         Ok(())
     }

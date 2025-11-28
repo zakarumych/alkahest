@@ -5,7 +5,10 @@ use crate::{
     size::{deserialize_usize, FixedIsizeType, FixedUsizeType, SIZE_STACK},
 };
 
-#[inline(never)]
+#[cfg(feature = "evolution")]
+use crate::evolution::Descriptor;
+
+#[inline(always)]
 #[cold]
 pub(crate) const fn cold_err<T>(e: DeserializeError) -> Result<T, DeserializeError> {
     Err(e)
@@ -77,6 +80,69 @@ pub trait Deserialize<'de, F: Formula + ?Sized> {
         &mut self,
         deserializer: Deserializer<'de>,
     ) -> Result<(), DeserializeError>;
+
+    /// Deserializes value provided deserializer.
+    /// Returns deserialized value and the number of bytes consumed from
+    /// the and of input.
+    ///
+    /// The value appears at the end of the slice.
+    /// And referenced values are addressed from the beginning of the slice.
+    ///
+    /// # Errors
+    ///
+    /// Returns `DeserializeError` if deserialization fails.
+    #[cfg(feature = "evolution")]
+    fn deserialize_with_descriptor(
+        descriptor: &Descriptor,
+        formula: u32,
+        deserializer: Deserializer<'de>,
+    ) -> Result<Self, DeserializeError>
+    where
+        Self: Sized,
+    {
+        match *descriptor.get(formula) {
+            crate::evolution::Flavor::Ref(None) => {
+                let de = deserializer.deref::<F>()?;
+                <Self as Deserialize<F>>::deserialize(de)
+            }
+            crate::evolution::Flavor::Ref(Some(inner)) => {
+                let de = deserializer.deref::<F>()?;
+                <Self as Deserialize<F>>::deserialize_with_descriptor(descriptor, inner, de)
+            }
+            _ => Err(DeserializeError::Incompatible),
+        }
+    }
+
+    /// Deserializes value in-place provided deserializer.
+    /// Overwrites `self` with data from the `input`.
+    ///
+    /// The value appears at the end of the slice.
+    /// And referenced values are addressed from the beginning of the slice.
+    ///
+    /// # Errors
+    ///
+    /// Returns `DeserializeError` if deserialization fails.
+    #[cfg(feature = "evolution")]
+    fn deserialize_in_place_with_descriptor(
+        &mut self,
+        descriptor: &Descriptor,
+        formula: u32,
+        deserializer: Deserializer<'de>,
+    ) -> Result<(), DeserializeError> {
+        match *descriptor.get(formula) {
+            crate::evolution::Flavor::Ref(None) => {
+                let de = deserializer.deref::<F>()?;
+                <Self as Deserialize<F>>::deserialize_in_place(self, de)
+            }
+            crate::evolution::Flavor::Ref(Some(inner)) => {
+                let de = deserializer.deref::<F>()?;
+                <Self as Deserialize<F>>::deserialize_in_place_with_descriptor(
+                    self, descriptor, inner, de,
+                )
+            }
+            _ => Err(DeserializeError::Incompatible),
+        }
+    }
 }
 
 /// Deserializer from raw bytes.
@@ -229,6 +295,37 @@ impl<'de> Deserializer<'de> {
         <T as Deserialize<'de, F>>::deserialize(self.sub(stack)?)
     }
 
+    /// Reads and deserializes field from the input buffer.
+    /// Advances the input buffer.
+    ///
+    /// # Errors
+    ///
+    /// Returns `DeserializeError` if deserialization fails.
+    #[inline(always)]
+    pub fn read_value_with_descriptor<F, T>(
+        &mut self,
+        descriptor: &Descriptor,
+        formula: u32,
+        last: bool,
+    ) -> Result<T, DeserializeError>
+    where
+        F: Formula + ?Sized,
+        T: Deserialize<'de, F>,
+    {
+        let stack = match (F::MAX_STACK_SIZE, F::EXACT_SIZE, last) {
+            (None, _, false) => self.read_usize()?,
+            (None, _, true) => self.stack,
+            (Some(max_stack), false, true) => max_stack.min(self.stack),
+            (Some(max_stack), _, _) => max_stack,
+        };
+
+        <T as Deserialize<'de, F>>::deserialize_with_descriptor(
+            descriptor,
+            formula,
+            self.sub(stack)?,
+        )
+    }
+
     /// Reads and deserializes field from the back of input buffer.
     /// Advances the input buffer.
     ///
@@ -253,6 +350,36 @@ impl<'de> Deserializer<'de> {
 
         let sub = Deserializer::new_unchecked(stack, input_back);
         <T as Deserialize<'de, F>>::deserialize(sub)
+    }
+
+    /// Reads and deserializes field from the back of input buffer.
+    /// Advances the input buffer.
+    ///
+    /// # Errors
+    ///
+    /// Returns `DeserializeError` if deserialization fails.
+    #[inline(always)]
+    pub fn read_back_value_with_descriptor<F, T>(
+        &mut self,
+        descriptor: &Descriptor,
+        formula: u32,
+    ) -> Result<T, DeserializeError>
+    where
+        F: Formula + ?Sized,
+        T: Deserialize<'de, F>,
+    {
+        let stack = unwrap_size(F::MAX_STACK_SIZE);
+
+        if self.stack < stack {
+            self.stack = 0;
+            return cold_err(DeserializeError::WrongLength);
+        }
+
+        let input_back = &self.input[..self.input.len() - self.stack + stack];
+        self.stack -= stack;
+
+        let sub = Deserializer::new_unchecked(stack, input_back);
+        <T as Deserialize<'de, F>>::deserialize_with_descriptor(descriptor, formula, sub)
     }
 
     /// Reads and deserializes field from the input buffer in-place.
@@ -405,7 +532,7 @@ impl<'de> Deserializer<'de> {
 
     /// Skips specified number of values with specified formula.
     #[inline]
-    fn skip_values<F>(&mut self, n: usize) -> Result<(), DeserializeError>
+    pub fn skip_values<F>(&mut self, n: usize) -> Result<(), DeserializeError>
     where
         F: Formula + ?Sized,
     {

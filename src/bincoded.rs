@@ -115,7 +115,10 @@ where
 /// Deserializing non-compatible type will cause deserialization error.
 pub struct Bincoded<T>(PhantomData<fn(&T) -> &T>);
 
-impl<T> Formula for Bincoded<T> {
+impl<T> Formula for Bincoded<T>
+where
+    T: 'static,
+{
     const MAX_STACK_SIZE: Option<usize> = Some(size_of::<[FixedUsizeType; 2]>());
     const EXACT_SIZE: bool = true;
     const HEAPLESS: bool = false;
@@ -123,7 +126,7 @@ impl<T> Formula for Bincoded<T> {
 
 impl<T> Serialize<Bincoded<T>> for T
 where
-    T: serde::Serialize,
+    T: serde::Serialize + 'static,
 {
     #[inline(always)]
     fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
@@ -141,7 +144,7 @@ where
 
 impl<T> Serialize<Bincoded<T>> for &T
 where
-    T: serde::Serialize,
+    T: serde::Serialize + 'static,
 {
     #[inline(always)]
     fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
@@ -159,7 +162,7 @@ where
 
 impl<'de, T> Deserialize<'de, Bincoded<T>> for T
 where
-    T: serde::Deserialize<'de>,
+    T: serde::Deserialize<'de> + 'static,
 {
     #[inline(always)]
     fn deserialize(de: Deserializer<'de>) -> Result<Self, DeserializeError>

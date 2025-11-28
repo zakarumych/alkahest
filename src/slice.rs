@@ -4,6 +4,7 @@ use crate::{
     iter::owned_iter_fast_sizes,
     serialize::{write_slice, Serialize, Sizes},
     size::SIZE_STACK,
+    SerializeRef,
 };
 
 impl<F> Formula for [F]
@@ -16,22 +17,26 @@ where
     };
     const EXACT_SIZE: bool = false;
     const HEAPLESS: bool = F::HEAPLESS;
+
+    #[cfg(feature = "evolution")]
+    fn descriptor(builder: crate::evolution::DescriptorBuilder) {
+        builder.sequence::<F>(None);
+    }
 }
 
 impl<F> BareFormula for [F] where F: Formula {}
 
-impl<'ser, F, T> Serialize<[F]> for &'ser [T]
+impl<F, T> SerializeRef<[F]> for [T]
 where
     F: Formula,
-    &'ser T: Serialize<F>,
+    for<'a> &'a T: Serialize<F>,
 {
     #[inline(always)]
-    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
+    fn serialize<B>(&self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
     where
-        Self: Sized,
         B: Buffer,
     {
-        write_slice(self.iter(), sizes, buffer)
+        write_slice::<F, &T, _>(self.iter(), sizes, buffer)
     }
 
     #[inline(always)]

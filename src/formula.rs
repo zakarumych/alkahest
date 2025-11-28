@@ -1,3 +1,6 @@
+#[cfg(feature = "evolution")]
+use crate::evolution::DescriptorBuilder;
+
 use crate::size::SIZE_STACK;
 
 /// Trait for data formulas.
@@ -98,7 +101,7 @@ enum EnumFormula {
 Names of the formula variants and fields are important for `Serialize` and `Deserialize` proc-macros.
 "#
 )]
-pub trait Formula {
+pub trait Formula: 'static {
     /// Maximum size of stack this formula occupies.
     const MAX_STACK_SIZE: Option<usize>;
 
@@ -107,6 +110,12 @@ pub trait Formula {
 
     /// Signals that heap is not used for serialzation.
     const HEAPLESS: bool;
+
+    /// Builds descriptor for formula.
+    #[cfg(feature = "evolution")]
+    fn descriptor(builder: DescriptorBuilder) {
+        let _ = builder;
+    }
 }
 
 /// Ad-hoc negative trait.

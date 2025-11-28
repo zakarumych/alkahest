@@ -267,7 +267,7 @@ pub trait SerializeRef<F: Formula + ?Sized> {
 
 impl<F, T> SerializeRef<F> for &T
 where
-    F: Formula + ?Sized,
+    F: BareFormula + ?Sized,
     T: ?Sized,
     for<'a> &'a T: Serialize<F>,
 {

@@ -13,6 +13,11 @@ where
     const MAX_STACK_SIZE: Option<usize> = repeat_size(F::MAX_STACK_SIZE, N);
     const EXACT_SIZE: bool = F::EXACT_SIZE;
     const HEAPLESS: bool = F::HEAPLESS;
+
+    #[cfg(feature = "evolution")]
+    fn descriptor(builder: crate::evolution::DescriptorBuilder) {
+        builder.sequence::<F>(u32::try_from(N).ok());
+    }
 }
 
 impl<F, const N: usize> BareFormula for [F; N] where F: Formula {}
@@ -101,10 +106,11 @@ where
     #[inline]
     fn deserialize(mut de: Deserializer<'de>) -> Result<Self, DeserializeError> {
         let mut opts = [(); N].map(|_| None);
-        opts.iter_mut().try_for_each(|slot| {
-            *slot = Some(de.read_value::<F, T>(false)?);
-            Ok(())
-        })?;
+
+        for i in 0..N {
+            opts[i] = Some(de.read_value::<F, T>(false)?);
+        }
+
         let value = opts.map(Option::unwrap);
         Ok(value)
     }
@@ -114,6 +120,41 @@ where
         self.iter_mut()
             .try_for_each(|elem| de.read_in_place::<F, T>(elem, false))?;
         Ok(())
+    }
+
+    #[cfg(feature = "evolution")]
+    #[inline(always)]
+    fn deserialize_with_descriptor(
+        desc: &crate::evolution::Descriptor,
+        formula: u32,
+        mut de: Deserializer<'de>,
+    ) -> Result<Self, DeserializeError> {
+        match *desc.get(formula) {
+            crate::evolution::Flavor::Sequence { elem: None, .. } => {
+                // Data contains slice.
+                let mut opts = [(); N].map(|_| None);
+
+                for i in 0..N {
+                    opts[i] = Some(de.read_value::<F, T>(false)?);
+                }
+
+                let value = opts.map(Option::unwrap);
+                Ok(value)
+            }
+            crate::evolution::Flavor::Sequence {
+                elem: Some(elem), ..
+            } => {
+                let mut opts = [(); N].map(|_| None);
+
+                for i in 0..N {
+                    opts[i] = Some(de.read_value_with_descriptor::<F, T>(desc, elem, false)?);
+                }
+
+                let value = opts.map(Option::unwrap);
+                Ok(value)
+            }
+            _ => Err(DeserializeError::Incompatible),
+        }
     }
 }
 

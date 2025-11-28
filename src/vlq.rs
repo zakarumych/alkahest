@@ -24,9 +24,9 @@ use crate::{
 /// # use alkahest::*;
 ///
 /// let mut buffer = [0u8; 1024];
-/// let (size, root) = serialize::<Vlq, u8>(0, &mut buffer).unwrap();
+/// let (size, root) = serialize::<Vlq, u8>(42, &mut buffer).unwrap();
 /// let value = deserialize_with_size::<Vlq, u16>(&buffer[..size], root).unwrap();
-/// assert_eq!(0, value);
+/// assert_eq!(42, value);
 /// ```
 ///
 /// It may be smaller, unlike fixed size formulas.

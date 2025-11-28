@@ -43,6 +43,9 @@ mod str;
 mod tuple;
 mod vlq;
 
+#[cfg(feature = "evolution")]
+pub mod evolution;
+
 #[cfg(feature = "alloc")]
 mod boxed;
 

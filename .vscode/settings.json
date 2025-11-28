@@ -1,0 +1,8 @@
+{
+    "rust-analyzer.cargo.features": [
+        "evolution",
+        "evolution-global-cache",
+        "bincoded",
+    ],
+    "editor.formatOnSave": true
+}
