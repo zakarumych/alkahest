@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{fmt, rc::Rc};
 
 use crate::{Span, parse::ParseStream};
 
@@ -7,6 +7,16 @@ pub enum LexErrorKind {
     UnexpectedEndOfInput,
     UnexpectedCharacter(char),
     UnclosedDelimiter,
+}
+
+impl fmt::Display for LexErrorKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            LexErrorKind::UnexpectedEndOfInput => write!(f, "Unexpected end of input"),
+            LexErrorKind::UnexpectedCharacter(c) => write!(f, "Unexpected character: '{}'", c),
+            LexErrorKind::UnclosedDelimiter => write!(f, "Unclosed delimiter"),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -502,12 +512,13 @@ pub enum Token {
 }
 
 impl Token {
+    #[inline]
     pub fn span(&self) -> Span {
         match self {
-            Token::Punct(p) => p.span,
-            Token::Ident(i) => i.span,
-            Token::Literal(l) => l.span,
-            Token::Group(g) => g.span,
+            Token::Punct(p) => p.span(),
+            Token::Ident(i) => i.span(),
+            Token::Literal(l) => l.span(),
+            Token::Group(g) => g.span(),
         }
     }
 }
@@ -609,32 +620,5 @@ impl TokenStream {
             Some('[') if delim == Delimiter::Bracket => true,
             _ => false,
         }
-    }
-}
-
-pub struct TokenStreamIterator {
-    stream: TokenStream,
-}
-
-impl Iterator for TokenStreamIterator {
-    type Item = Result<Token, LexError>;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.stream.is_empty() {
-            None
-        } else {
-            Some(self.stream.next())
-        }
-    }
-}
-
-impl IntoIterator for TokenStream {
-    type Item = Result<Token, LexError>;
-    type IntoIter = TokenStreamIterator;
-
-    #[inline]
-    fn into_iter(self) -> TokenStreamIterator {
-        TokenStreamIterator { stream: self }
     }
 }

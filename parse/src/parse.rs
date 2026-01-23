@@ -56,7 +56,7 @@ impl ParseStream {
     }
 
     pub fn peek_char(&self) -> Option<char> {
-        self.input.as_str()[self.pos..].chars().next()
+        self.as_str().chars().next()
     }
 
     pub fn as_str(&self) -> &str {
@@ -64,7 +64,7 @@ impl ParseStream {
     }
 
     fn skip_whitespace(&mut self) {
-        let s = self.input.as_str();
+        let s = self.as_str();
         let len = s.len();
         match s.find(|c: char| !c.is_whitespace()) {
             None => {
