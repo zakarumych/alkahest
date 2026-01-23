@@ -635,6 +635,7 @@ impl Parser for Module {
             let name = stream.parse::<Ident>()?;
             let _eq = stream.parse::<Token![=]>()?;
             let formula = stream.parse::<Formula>()?;
+            let _semicolon = stream.parse::<Token![;]>()?;
 
             formulas.push(NamedFormula { name, formula });
         }
@@ -846,6 +847,21 @@ mod tests {
     }
 
     #[test]
+    fn test_deeply_nested() {
+        let formula = parse_formula("[[u32]]").unwrap();
+        match formula {
+            Formula::List { element, .. } => match element.as_ref() {
+                Formula::List { element: inner, .. } => match inner.as_ref() {
+                    Formula::Symbol(sym) => assert_eq!(sym.name(), "u32"),
+                    _ => panic!("Expected Symbol"),
+                },
+                _ => panic!("Expected List"),
+            },
+            _ => panic!("Expected List"),
+        }
+    }
+
+    #[test]
     fn test_tuple_empty() {
         let formula = parse_formula("()").unwrap();
         match formula {
@@ -975,6 +991,21 @@ mod tests {
     }
 
     #[test]
+    fn test_nested_structures() {
+        let formula = parse_formula("({x: u32, y: string})").unwrap();
+        match formula {
+            Formula::Tuple { elements } => {
+                assert_eq!(elements.len(), 1);
+                match &elements[0] {
+                    Formula::Record { fields } => assert_eq!(fields.len(), 2),
+                    _ => panic!("Expected Record"),
+                }
+            }
+            _ => panic!("Expected Tuple"),
+        }
+    }
+
+    #[test]
     fn test_variant_single() {
         let formula = parse_formula("|Foo u32").unwrap();
         match formula {
@@ -1026,7 +1057,7 @@ mod tests {
 
     #[test]
     fn test_module_simple() {
-        let module = parse_module("formula MyType = u32").unwrap();
+        let module = parse_module("formula MyType = u32;").unwrap();
         assert_eq!(module.formulas.len(), 1);
         assert_eq!(module.formulas[0].name.as_str(), "MyType");
         match &module.formulas[0].formula {
@@ -1037,41 +1068,11 @@ mod tests {
 
     #[test]
     fn test_module_multiple_formulas() {
-        let source = "formula A = u32\nformula B = string\nformula C = {x: u32}";
+        let source = "formula A = u32; formula B = string; formula C = {x: u32};";
         let module = parse_module(source).unwrap();
         assert_eq!(module.formulas.len(), 3);
         assert_eq!(module.formulas[0].name.as_str(), "A");
         assert_eq!(module.formulas[1].name.as_str(), "B");
         assert_eq!(module.formulas[2].name.as_str(), "C");
-    }
-
-    #[test]
-    fn test_nested_structures() {
-        let formula = parse_formula("({x: u32, y: string})").unwrap();
-        match formula {
-            Formula::Tuple { elements } => {
-                assert_eq!(elements.len(), 1);
-                match &elements[0] {
-                    Formula::Record { fields } => assert_eq!(fields.len(), 2),
-                    _ => panic!("Expected Record"),
-                }
-            }
-            _ => panic!("Expected Tuple"),
-        }
-    }
-
-    #[test]
-    fn test_deeply_nested() {
-        let formula = parse_formula("[[u32]]").unwrap();
-        match formula {
-            Formula::List { element, .. } => match element.as_ref() {
-                Formula::List { element: inner, .. } => match inner.as_ref() {
-                    Formula::Symbol(sym) => assert_eq!(sym.name(), "u32"),
-                    _ => panic!("Expected Symbol"),
-                },
-                _ => panic!("Expected List"),
-            },
-            _ => panic!("Expected List"),
-        }
     }
 }
