@@ -135,12 +135,12 @@ use hashbrown::{
 };
 
 use crate::{
-    advanced::{reference_size, BareFormula, Buffer},
+    advanced::{reference_size, BareFormulaType, Buffer},
     r#as::As,
     reference::Ref,
     serialize::{SerializeRef, Sizes},
     size::SIZE_STACK,
-    Formula,
+    FormulaType,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -151,13 +151,13 @@ struct Field {
 
 struct FieldFormula;
 
-impl Formula for FieldFormula {
+impl FormulaType for FieldFormula {
     const MAX_STACK_SIZE: Option<usize> = Some(size_of::<u32>() * 2 + 1);
     const EXACT_SIZE: bool = false;
     const HEAPLESS: bool = false;
 }
 
-impl BareFormula for FieldFormula {}
+impl BareFormulaType for FieldFormula {}
 
 impl SerializeRef<FieldFormula> for Field {
     #[inline(always)]
@@ -200,14 +200,14 @@ struct Variant {
 
 struct VariantFormula;
 
-impl Formula for VariantFormula {
+impl FormulaType for VariantFormula {
     const MAX_STACK_SIZE: Option<usize> =
         Some(size_of::<u32>() + reference_size::<[FieldFormula]>());
     const EXACT_SIZE: bool = true;
     const HEAPLESS: bool = false;
 }
 
-impl BareFormula for VariantFormula {}
+impl BareFormulaType for VariantFormula {}
 
 impl SerializeRef<VariantFormula> for Variant {
     #[inline(always)]
@@ -250,13 +250,13 @@ pub enum Flavor {
 
 struct KindFormula;
 
-impl Formula for KindFormula {
+impl FormulaType for KindFormula {
     const MAX_STACK_SIZE: Option<usize> = Some(1 + SIZE_STACK * 2);
     const EXACT_SIZE: bool = false;
     const HEAPLESS: bool = false;
 }
 
-impl BareFormula for KindFormula {}
+impl BareFormulaType for KindFormula {}
 
 impl SerializeRef<KindFormula> for Flavor {
     #[inline]
@@ -422,13 +422,13 @@ impl Descriptor {
     /// Creates descriptor of formula.
     pub fn new<F>() -> Self
     where
-        F: Formula,
+        F: FormulaType,
     {
         let mut map = HashMap::with_hasher(NoopHasherBuilder);
         let mut formulas = Vec::new();
         let mut idx = None;
 
-        <F as Formula>::descriptor(DescriptorBuilder {
+        <F as FormulaType>::descriptor(DescriptorBuilder {
             map: &mut map,
             array: &mut formulas,
             idx: &mut idx,
@@ -438,16 +438,16 @@ impl Descriptor {
     }
 }
 
-/// Formula for `Descriptor` type.
+/// FormulaType for `Descriptor` type.
 pub struct DescriptorFormula;
 
-impl Formula for DescriptorFormula {
+impl FormulaType for DescriptorFormula {
     const MAX_STACK_SIZE: Option<usize> = Some(reference_size::<[KindFormula]>());
     const EXACT_SIZE: bool = true;
     const HEAPLESS: bool = false;
 }
 
-impl BareFormula for DescriptorFormula {}
+impl BareFormulaType for DescriptorFormula {}
 
 impl SerializeRef<DescriptorFormula> for Descriptor {
     #[inline(always)]
@@ -475,7 +475,7 @@ impl DescriptorBuilder<'_> {
     /// Set to reference flavor.
     pub fn reference<F>(self)
     where
-        F: Formula + ?Sized,
+        F: FormulaType + ?Sized,
     {
         let idx = match self.map.entry(TypeId::of::<Ref<F>>()) {
             Entry::Occupied(entry) => *entry.get(),
@@ -488,7 +488,7 @@ impl DescriptorBuilder<'_> {
                     None => {
                         let mut formula = None;
 
-                        <F as Formula>::descriptor(DescriptorBuilder {
+                        <F as FormulaType>::descriptor(DescriptorBuilder {
                             map: &mut *self.map,
                             array: &mut *self.array,
                             idx: &mut formula,
@@ -513,7 +513,7 @@ impl DescriptorBuilder<'_> {
     /// Set to sequence flavor.
     pub fn sequence<F>(self, len: Option<u32>)
     where
-        F: Formula + ?Sized,
+        F: FormulaType + ?Sized,
     {
         struct Seq<F: ?Sized>(As<F>);
 
@@ -528,7 +528,7 @@ impl DescriptorBuilder<'_> {
                     None => {
                         let mut elem = None;
 
-                        <F as Formula>::descriptor(DescriptorBuilder {
+                        <F as FormulaType>::descriptor(DescriptorBuilder {
                             map: &mut *self.map,
                             array: &mut *self.array,
                             idx: &mut elem,
@@ -553,8 +553,8 @@ impl DescriptorBuilder<'_> {
     /// Set to map flavor.
     pub fn map<K, V>(self)
     where
-        K: Formula + ?Sized,
-        V: Formula + ?Sized,
+        K: FormulaType + ?Sized,
+        V: FormulaType + ?Sized,
     {
         struct Map<K: ?Sized, V: ?Sized>(As<K>, As<V>);
 
@@ -572,7 +572,7 @@ impl DescriptorBuilder<'_> {
                     None => {
                         let mut key = None;
 
-                        <K as Formula>::descriptor(DescriptorBuilder {
+                        <K as FormulaType>::descriptor(DescriptorBuilder {
                             map: &mut *self.map,
                             array: &mut *self.array,
                             idx: &mut key,
@@ -589,7 +589,7 @@ impl DescriptorBuilder<'_> {
                     None => {
                         let mut value = None;
 
-                        <V as Formula>::descriptor(DescriptorBuilder {
+                        <V as FormulaType>::descriptor(DescriptorBuilder {
                             map: &mut *self.map,
                             array: &mut *self.array,
                             idx: &mut value,
@@ -684,12 +684,12 @@ pub struct RecordBuilder<'a> {
 
 impl RecordBuilder<'_> {
     /// Adds field to the record.
-    pub fn field<F: Formula>(&mut self, id: u32) {
+    pub fn field<F: FormulaType>(&mut self, id: u32) {
         let idx = match self.map.get(&TypeId::of::<F>()) {
             None => {
                 let mut idx = None;
 
-                <F as Formula>::descriptor(DescriptorBuilder {
+                <F as FormulaType>::descriptor(DescriptorBuilder {
                     map: &mut *self.map,
                     array: &mut *self.formulas,
                     idx: &mut idx,
@@ -723,12 +723,12 @@ impl DescriptorsCache {
     /// Returns descriptor of the formula.
     pub fn descriptor<F>(&mut self) -> &Descriptor
     where
-        F: Formula,
+        F: FormulaType,
     {
         #[cold]
         fn new_descriptor<F>(entry: VacantEntry<'_, TypeId, Descriptor>) -> &Descriptor
         where
-            F: Formula,
+            F: FormulaType,
         {
             let descriptor = Descriptor::new::<F>();
             &*entry.insert(descriptor)
@@ -747,14 +747,14 @@ mod global_cache {
 
     use hashbrown::{hash_map::Entry, HashMap};
 
-    use crate::formula::Formula;
+    use crate::formula::FormulaType;
 
     use super::{Descriptor, NoopHasherBuilder};
 
     /// Returns descriptor of the formula.
     pub fn descriptor<'a, F>() -> &'a Descriptor
     where
-        F: Formula,
+        F: FormulaType,
     {
         let cache = GLOBAL_CACHE.read();
         if let Some(&d) = cache.get(&TypeId::of::<F>()) {
@@ -768,7 +768,7 @@ mod global_cache {
     #[cold]
     fn new_descriptor<'a, F>() -> &'a Descriptor
     where
-        F: Formula,
+        F: FormulaType,
     {
         let d = Descriptor::new::<F>();
 

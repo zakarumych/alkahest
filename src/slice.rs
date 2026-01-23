@@ -1,15 +1,15 @@
 use crate::{
     buffer::Buffer,
-    formula::{BareFormula, Formula},
+    formula::{BareFormulaType, FormulaType},
     iter::owned_iter_fast_sizes,
     serialize::{write_slice, Serialize, Sizes},
     size::SIZE_STACK,
     SerializeRef,
 };
 
-impl<F> Formula for [F]
+impl<F> FormulaType for [F]
 where
-    F: Formula,
+    F: FormulaType,
 {
     const MAX_STACK_SIZE: Option<usize> = match F::MAX_STACK_SIZE {
         Some(0) => Some(SIZE_STACK),
@@ -24,11 +24,11 @@ where
     }
 }
 
-impl<F> BareFormula for [F] where F: Formula {}
+impl<F> BareFormulaType for [F] where F: FormulaType {}
 
 impl<F, T> SerializeRef<[F]> for [T]
 where
-    F: Formula,
+    F: FormulaType,
     for<'a> &'a T: Serialize<F>,
 {
     #[inline(always)]

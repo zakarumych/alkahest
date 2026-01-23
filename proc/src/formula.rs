@@ -36,7 +36,7 @@ impl Config {
                     let predicates = all_generic_field_types
                     .iter()
                     .map(|ty| -> syn::WherePredicate {
-                        syn::parse_quote_spanned! { ty.span() => #ty: ::alkahest::private::Formula }
+                        syn::parse_quote_spanned! { ty.span() => #ty: ::alkahest::private::FormulaType }
                     });
                     let where_clause = formula_generics.make_where_clause();
                     where_clause.predicates.extend(predicates);
@@ -130,23 +130,23 @@ pub fn derive(args: FormulaArgs, input: &syn::DeriveInput) -> syn::Result<TokenS
                     }
                 }
 
-                impl #formula_impl_generics ::alkahest::private::Formula for #ident #formula_type_generics #formula_where_clause {
+                impl #formula_impl_generics ::alkahest::private::FormulaType for #ident #formula_type_generics #formula_where_clause {
                     const MAX_STACK_SIZE: ::alkahest::private::Option<::alkahest::private::usize> = {
                         #[allow(unused_mut)]
                         let mut max_size = Some(0);
                         #(
-                            max_size = ::alkahest::private::sum_size(max_size, <#all_field_types as ::alkahest::private::Formula>::MAX_STACK_SIZE);
+                            max_size = ::alkahest::private::sum_size(max_size, <#all_field_types as ::alkahest::private::FormulaType>::MAX_STACK_SIZE);
                         )*;
                         // #expand_size
                         max_size
                     };
 
-                    const EXACT_SIZE: ::alkahest::private::bool = {true #(; <#last_field_type as ::alkahest::private::Formula>::EXACT_SIZE)*};
+                    const EXACT_SIZE: ::alkahest::private::bool = {true #(; <#last_field_type as ::alkahest::private::FormulaType>::EXACT_SIZE)*};
 
-                    const HEAPLESS: ::alkahest::private::bool = true #(&& <#all_field_types as ::alkahest::private::Formula>::HEAPLESS)*;
+                    const HEAPLESS: ::alkahest::private::bool = true #(&& <#all_field_types as ::alkahest::private::FormulaType>::HEAPLESS)*;
                 }
 
-                impl #formula_impl_generics ::alkahest::private::BareFormula for #ident #formula_type_generics #formula_where_clause {}
+                impl #formula_impl_generics ::alkahest::private::BareFormulaType for #ident #formula_type_generics #formula_where_clause {}
             };
 
             Ok(tokens)
@@ -292,7 +292,7 @@ pub fn derive(args: FormulaArgs, input: &syn::DeriveInput) -> syn::Result<TokenS
                     }
                 }
 
-                impl #formula_impl_generics ::alkahest::private::Formula for #ident #formula_type_generics #formula_where_clause {
+                impl #formula_impl_generics ::alkahest::private::FormulaType for #ident #formula_type_generics #formula_where_clause {
                     const MAX_STACK_SIZE: ::alkahest::private::Option<::alkahest::private::usize> = {
                         #[allow(unused_mut)]
                         let mut max_size = Some(0);
@@ -302,7 +302,7 @@ pub fn derive(args: FormulaArgs, input: &syn::DeriveInput) -> syn::Result<TokenS
                                 #[allow(unused_mut)]
                                 let mut max_size = Some(0);
                                 #(
-                                    max_size = ::alkahest::private::sum_size(max_size, <#all_field_types as ::alkahest::private::Formula>::MAX_STACK_SIZE);
+                                    max_size = ::alkahest::private::sum_size(max_size, <#all_field_types as ::alkahest::private::FormulaType>::MAX_STACK_SIZE);
                                 )*;
                                 max_size
                             };
@@ -318,13 +318,13 @@ pub fn derive(args: FormulaArgs, input: &syn::DeriveInput) -> syn::Result<TokenS
                         let mut exact = true;
                         let mut common_size = None;
                         #(
-                            #(exact &= <#last_field_types as ::alkahest::private::Formula>::EXACT_SIZE;)*
+                            #(exact &= <#last_field_types as ::alkahest::private::FormulaType>::EXACT_SIZE;)*
 
                             let var_size = {
                                 #[allow(unused_mut)]
                                 let mut max_size = Some(0);
                                 #(
-                                    max_size = ::alkahest::private::sum_size(max_size, <#all_field_types as ::alkahest::private::Formula>::MAX_STACK_SIZE);
+                                    max_size = ::alkahest::private::sum_size(max_size, <#all_field_types as ::alkahest::private::FormulaType>::MAX_STACK_SIZE);
                                 )*;
                                 max_size
                             };
@@ -338,10 +338,10 @@ pub fn derive(args: FormulaArgs, input: &syn::DeriveInput) -> syn::Result<TokenS
                         exact
                     };
 
-                    const HEAPLESS: ::alkahest::private::bool = true #(#(&& <#all_field_types as ::alkahest::private::Formula>::HEAPLESS)*)*;
+                    const HEAPLESS: ::alkahest::private::bool = true #(#(&& <#all_field_types as ::alkahest::private::FormulaType>::HEAPLESS)*)*;
                 }
 
-                impl #formula_impl_generics ::alkahest::private::BareFormula for #ident #formula_type_generics #formula_where_clause {}
+                impl #formula_impl_generics ::alkahest::private::BareFormulaType for #ident #formula_type_generics #formula_where_clause {}
             })
         }
     }

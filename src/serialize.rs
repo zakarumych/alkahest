@@ -2,7 +2,7 @@ use core::{fmt, marker::PhantomData, ops};
 
 use crate::{
     buffer::{Buffer, BufferExhausted, CheckedFixedBuffer, DryBuffer, MaybeFixedBuffer},
-    formula::{unwrap_size, BareFormula, Formula},
+    formula::{unwrap_size, BareFormulaType, FormulaType},
     size::{usize_truncate_unchecked, SIZE_STACK},
 };
 
@@ -100,7 +100,7 @@ impl ops::AddAssign for Sizes {
 ///
 /// struct ThreeBytes;
 ///
-/// impl Formula for ThreeBytes {
+/// impl FormulaType for ThreeBytes {
 ///     const MAX_STACK_SIZE: Option<usize> = Some(3);
 ///     const EXACT_SIZE: bool = true;
 ///     const HEAPLESS: bool = true;
@@ -141,7 +141,7 @@ struct EmptyFormula {}
 struct EmptySerialize;
 
 
-/// Formula for serializing tuple structures with fields
+/// FormulaType for serializing tuple structures with fields
 /// that are serializable with `u8` and `[u16]` formulas.
 /// Slice formulas are serialized from some `IntoIterator`s and `SerIter` wrapper over any `Iterator`
 /// with serializable item type.
@@ -153,7 +153,7 @@ struct TupleFormula(u8, [u16]);
 struct TupleSerialize(u8, std::iter::Once<u16>);
 
 
-/// Formula for serializing structures with fields
+/// FormulaType for serializing structures with fields
 /// that are serializable with `u8` and `str` formulas.
 #[alkahest(Formula)]
 struct StructFormula {
@@ -170,7 +170,7 @@ struct StructSerialize {
 }
 
 # #[cfg(feature = "alloc")]
-/// Formula for serializing enums.
+/// FormulaType for serializing enums.
 #[alkahest(Formula, Serialize)]
 enum EnumFormula {
     A,
@@ -201,7 +201,7 @@ struct CVariantSerialize {
 Names of the formula variants and fields are important for `Serialize` and `Deserialize` derive macros.
 "#
 )]
-pub trait Serialize<F: Formula + ?Sized> {
+pub trait Serialize<F: FormulaType + ?Sized> {
     /// Serializes `self` into the given buffer.
     /// `heap` specifies the size of the buffer's heap occupied prior to this call.
     ///
@@ -225,7 +225,7 @@ pub trait Serialize<F: Formula + ?Sized> {
 
 // impl<'ser, F, T: ?Sized> Serialize<F> for &&'ser T
 // where
-//     F: BareFormula + ?Sized,
+//     F: BareFormulaType + ?Sized,
 //     &'ser T: Serialize<F>,
 // {
 //     #[inline(always)]
@@ -244,7 +244,7 @@ pub trait Serialize<F: Formula + ?Sized> {
 // }
 
 /// `Serialize` but for references.
-pub trait SerializeRef<F: Formula + ?Sized> {
+pub trait SerializeRef<F: FormulaType + ?Sized> {
     /// Serializes `self` into the given buffer.
     /// `heap` specifies the size of the buffer's heap occupied prior to this call.
     ///
@@ -267,7 +267,7 @@ pub trait SerializeRef<F: Formula + ?Sized> {
 
 impl<F, T> SerializeRef<F> for &T
 where
-    F: BareFormula + ?Sized,
+    F: BareFormulaType + ?Sized,
     T: ?Sized,
     for<'a> &'a T: Serialize<F>,
 {
@@ -288,7 +288,7 @@ where
 
 impl<F, T> Serialize<F> for &T
 where
-    F: BareFormula + ?Sized,
+    F: BareFormulaType + ?Sized,
     T: SerializeRef<F> + ?Sized,
 {
     #[inline(always)]
@@ -312,7 +312,7 @@ where
 #[inline(always)]
 pub fn serialize_into<F, T, B>(value: T, buffer: B) -> Result<(usize, usize), B::Error>
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     T: Serialize<F>,
     B: Buffer,
 {
@@ -334,7 +334,7 @@ where
 #[inline(always)]
 pub fn serialize<F, T>(value: T, output: &mut [u8]) -> Result<(usize, usize), BufferExhausted>
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     T: Serialize<F>,
 {
     serialize_into::<F, T, _>(value, CheckedFixedBuffer::new(output))
@@ -347,7 +347,7 @@ where
 #[inline(always)]
 pub fn serialize_unchecked<F, T>(value: T, output: &mut [u8]) -> (usize, usize)
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     T: Serialize<F>,
 {
     match serialize_into::<F, T, _>(value, output) {
@@ -392,7 +392,7 @@ pub fn serialize_or_size<F, T>(
     output: &mut [u8],
 ) -> Result<(usize, usize), BufferSizeRequired>
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     T: Serialize<F>,
 {
     let mut exhausted = false;
@@ -419,7 +419,7 @@ where
 #[inline(always)]
 pub fn serialize_to_vec<F, T>(value: T, output: &mut alloc::vec::Vec<u8>) -> (usize, usize)
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     T: Serialize<F>,
 {
     match serialize_into::<F, T, _>(value, VecBuffer::new(output)) {
@@ -437,7 +437,7 @@ where
 #[inline(always)]
 pub fn serialized_size<F, T>(value: T) -> (usize, usize)
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     T: Serialize<F>,
 {
     let mut sizes = Sizes::ZERO;
@@ -451,7 +451,7 @@ where
 ///
 /// Use in [`Serialize::size_hint`](Serialize::size_hint) implementation.
 #[inline]
-pub fn field_size_hint<F: Formula + ?Sized>(
+pub fn field_size_hint<F: FormulaType + ?Sized>(
     value: &impl Serialize<F>,
     last: bool,
 ) -> Option<Sizes> {
@@ -489,7 +489,7 @@ pub fn write_reference<F, B>(
     mut buffer: B,
 ) -> Result<(), B::Error>
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     B: Buffer,
 {
     let address = usize_truncate_unchecked(address);
@@ -520,7 +520,7 @@ pub fn write_field<F, T, B>(
     last: bool,
 ) -> Result<(), B::Error>
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     T: Serialize<F>,
     B: Buffer,
 {
@@ -573,7 +573,7 @@ pub fn write_exact_size_field<F, T, B>(
     buffer: B,
 ) -> Result<(), B::Error>
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     T: Serialize<F>,
     B: Buffer,
 {
@@ -606,7 +606,7 @@ where
 #[inline(always)]
 fn write_ref_slow<F, T, B>(value: T, sizes: &mut Sizes, mut buffer: B) -> Result<usize, B::Error>
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     T: Serialize<F>,
     B: Buffer,
 {
@@ -628,7 +628,7 @@ where
 #[inline]
 pub fn write_ref<F, T, B>(value: T, sizes: &mut Sizes, mut buffer: B) -> Result<usize, B::Error>
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     T: Serialize<F>,
     B: Buffer,
 {
@@ -667,7 +667,7 @@ where
 /// Use in [`Serialize::serialize`](Serialize::serialize) implementation
 /// for slice formulas.
 #[must_use]
-pub struct SliceWriter<'a, F: Formula + ?Sized, B: Buffer + ?Sized> {
+pub struct SliceWriter<'a, F: FormulaType + ?Sized, B: Buffer + ?Sized> {
     buffer: &'a mut B,
     sizes: &'a mut Sizes,
     count: usize,
@@ -676,7 +676,7 @@ pub struct SliceWriter<'a, F: Formula + ?Sized, B: Buffer + ?Sized> {
 
 impl<'a, F, B> SliceWriter<'a, F, B>
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     B: Buffer + ?Sized,
 {
     /// Serialize next element of a slice.
@@ -689,8 +689,8 @@ where
     where
         T: Serialize<F>,
     {
-        if let Some(0) = <F as Formula>::MAX_STACK_SIZE {
-            debug_assert!(<F as Formula>::HEAPLESS);
+        if let Some(0) = <F as FormulaType>::MAX_STACK_SIZE {
+            debug_assert!(<F as FormulaType>::HEAPLESS);
             debug_assert!(serialize::<F, T>(value, &mut []).is_ok());
             self.count += 1;
             Ok(())
@@ -706,8 +706,8 @@ where
     /// Returns error if buffer write fails.
     #[inline(always)]
     pub fn finish(self) -> Result<(), B::Error> {
-        if let Some(0) = <F as Formula>::MAX_STACK_SIZE {
-            debug_assert!(<F as Formula>::HEAPLESS);
+        if let Some(0) = <F as FormulaType>::MAX_STACK_SIZE {
+            debug_assert!(<F as FormulaType>::HEAPLESS);
             write_field::<usize, _, _>(self.count, self.sizes, self.buffer.reborrow(), true)?;
         }
         Ok(())
@@ -722,7 +722,7 @@ where
 #[inline(always)]
 pub fn slice_writer<'a, F, B>(sizes: &'a mut Sizes, buffer: &'a mut B) -> SliceWriter<'a, F, B>
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     B: Buffer,
 {
     SliceWriter {
@@ -750,12 +750,12 @@ pub fn write_slice<F, T, B>(
     mut buffer: B,
 ) -> Result<(), B::Error>
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     T: Serialize<F>,
     B: Buffer,
 {
-    if let Some(0) = <F as Formula>::MAX_STACK_SIZE {
-        debug_assert!(<F as Formula>::HEAPLESS);
+    if let Some(0) = <F as FormulaType>::MAX_STACK_SIZE {
+        debug_assert!(<F as FormulaType>::HEAPLESS);
         let count = if cfg!(debug_assertions) {
             iter.fold(0, |acc, item| {
                 let r = serialize::<F, T>(item, &mut []);
@@ -790,7 +790,7 @@ pub fn write_array<F, T, B>(
     mut buffer: B,
 ) -> Result<(), B::Error>
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     T: Serialize<F>,
     B: Buffer,
 {
@@ -807,7 +807,7 @@ where
 #[inline(always)]
 pub const fn formula_fast_sizes<F>() -> Option<Sizes>
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
 {
     match (F::EXACT_SIZE, F::HEAPLESS, F::MAX_STACK_SIZE) {
         (true, true, Some(max_stack_size)) => Some(Sizes::with_stack(max_stack_size)),

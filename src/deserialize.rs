@@ -1,7 +1,7 @@
 use core::{any::type_name, iter::FusedIterator, marker::PhantomData, str::Utf8Error};
 
 use crate::{
-    formula::{reference_size, unwrap_size, Formula},
+    formula::{reference_size, unwrap_size, FormulaType},
     size::{deserialize_usize, FixedIsizeType, FixedUsizeType, SIZE_STACK},
 };
 
@@ -52,7 +52,7 @@ pub enum DeserializeError {
 
 /// Trait for types that can be deserialized
 /// from raw bytes with specified `F: `[`Formula`].
-pub trait Deserialize<'de, F: Formula + ?Sized> {
+pub trait Deserialize<'de, F: FormulaType + ?Sized> {
     /// Deserializes value provided deserializer.
     /// Returns deserialized value and the number of bytes consumed from
     /// the and of input.
@@ -282,7 +282,7 @@ impl<'de> Deserializer<'de> {
     #[inline(always)]
     pub fn read_value<F, T>(&mut self, last: bool) -> Result<T, DeserializeError>
     where
-        F: Formula + ?Sized,
+        F: FormulaType + ?Sized,
         T: Deserialize<'de, F>,
     {
         let stack = match (F::MAX_STACK_SIZE, F::EXACT_SIZE, last) {
@@ -309,7 +309,7 @@ impl<'de> Deserializer<'de> {
         last: bool,
     ) -> Result<T, DeserializeError>
     where
-        F: Formula + ?Sized,
+        F: FormulaType + ?Sized,
         T: Deserialize<'de, F>,
     {
         let stack = match (F::MAX_STACK_SIZE, F::EXACT_SIZE, last) {
@@ -335,7 +335,7 @@ impl<'de> Deserializer<'de> {
     #[inline(always)]
     pub fn read_back_value<F, T>(&mut self) -> Result<T, DeserializeError>
     where
-        F: Formula + ?Sized,
+        F: FormulaType + ?Sized,
         T: Deserialize<'de, F>,
     {
         let stack = unwrap_size(F::MAX_STACK_SIZE);
@@ -365,7 +365,7 @@ impl<'de> Deserializer<'de> {
         formula: u32,
     ) -> Result<T, DeserializeError>
     where
-        F: Formula + ?Sized,
+        F: FormulaType + ?Sized,
         T: Deserialize<'de, F>,
     {
         let stack = unwrap_size(F::MAX_STACK_SIZE);
@@ -390,7 +390,7 @@ impl<'de> Deserializer<'de> {
     #[inline(always)]
     pub fn read_in_place<F, T>(&mut self, place: &mut T, last: bool) -> Result<(), DeserializeError>
     where
-        F: Formula + ?Sized,
+        F: FormulaType + ?Sized,
         T: Deserialize<'de, F> + ?Sized,
     {
         let stack = match (last, F::MAX_STACK_SIZE) {
@@ -411,7 +411,7 @@ impl<'de> Deserializer<'de> {
     #[inline]
     pub fn deref<F>(self) -> Result<Deserializer<'de>, DeserializeError>
     where
-        F: Formula + ?Sized,
+        F: FormulaType + ?Sized,
     {
         let reference_size = reference_size::<F>();
         if self.stack < reference_size {
@@ -440,7 +440,7 @@ impl<'de> Deserializer<'de> {
     #[inline(always)]
     pub fn into_sized_iter<F, T>(mut self) -> SizedDeIter<'de, F, T>
     where
-        F: Formula + ?Sized,
+        F: FormulaType + ?Sized,
         T: Deserialize<'de, F>,
     {
         let upper = match F::MAX_STACK_SIZE {
@@ -463,7 +463,7 @@ impl<'de> Deserializer<'de> {
     #[allow(clippy::missing_panics_doc)]
     pub fn into_unsized_iter<F, T>(mut self) -> DeIter<'de, F, T>
     where
-        F: Formula + ?Sized,
+        F: FormulaType + ?Sized,
         T: Deserialize<'de, F>,
     {
         let upper = match F::MAX_STACK_SIZE {
@@ -490,7 +490,7 @@ impl<'de> Deserializer<'de> {
     #[inline(always)]
     pub fn into_sized_array_iter<F, T>(self, len: usize) -> SizedDeIter<'de, F, T>
     where
-        F: Formula + ?Sized,
+        F: FormulaType + ?Sized,
         T: Deserialize<'de, F>,
     {
         assert!(F::MAX_STACK_SIZE.is_some(), "Formula must be sized");
@@ -509,7 +509,7 @@ impl<'de> Deserializer<'de> {
     #[allow(clippy::missing_panics_doc)]
     pub fn into_unsized_array_iter<F, T>(self, len: usize) -> DeIter<'de, F, T>
     where
-        F: Formula + ?Sized,
+        F: FormulaType + ?Sized,
         T: Deserialize<'de, F>,
     {
         assert!(self.stack <= self.input.len());
@@ -534,7 +534,7 @@ impl<'de> Deserializer<'de> {
     #[inline]
     pub fn skip_values<F>(&mut self, n: usize) -> Result<(), DeserializeError>
     where
-        F: Formula + ?Sized,
+        F: FormulaType + ?Sized,
     {
         if n == 0 {
             return Ok(());
@@ -571,7 +571,7 @@ pub struct DeIter<'de, F: ?Sized, T, M = IterMaybeUnsized> {
 
 impl<'de, F, T, M> DeIter<'de, F, T, M>
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     T: Deserialize<'de, F>,
 {
     /// Returns true if no items remains in the iterator.
@@ -613,7 +613,7 @@ where
 
 impl<'de, F, T, M> Iterator for DeIter<'de, F, T, M>
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     T: Deserialize<'de, F>,
 {
     type Item = Result<T, DeserializeError>;
@@ -711,7 +711,7 @@ where
 
 impl<'de, F, T> DeIter<'de, F, T, IterSized>
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     T: Deserialize<'de, F>,
 {
     const ELEMENT_SIZE: usize = unwrap_size(F::MAX_STACK_SIZE);
@@ -719,7 +719,7 @@ where
 
 impl<'de, F, T> DoubleEndedIterator for DeIter<'de, F, T, IterSized>
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     T: Deserialize<'de, F>,
 {
     #[inline(always)]
@@ -776,7 +776,7 @@ where
 
 impl<'de, F, T> ExactSizeIterator for DeIter<'de, F, T, IterSized>
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     T: Deserialize<'de, F>,
 {
     #[inline(always)]
@@ -787,7 +787,7 @@ where
 
 impl<'de, F, T, M> FusedIterator for DeIter<'de, F, T, M>
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     T: Deserialize<'de, F>,
 {
 }
@@ -803,7 +803,7 @@ where
 #[inline(always)]
 pub fn deserialize<'de, F, T>(input: &'de [u8]) -> Result<T, DeserializeError>
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     T: Deserialize<'de, F>,
 {
     assert!(
@@ -847,7 +847,7 @@ pub fn deserialize_with_size<'de, F, T>(
     stack: usize,
 ) -> Result<T, DeserializeError>
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     T: Deserialize<'de, F>,
 {
     let de = Deserializer::new_unchecked(stack, input);
@@ -870,7 +870,7 @@ pub fn deserialize_in_place<'de, F, T>(
     input: &'de [u8],
 ) -> Result<(), DeserializeError>
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     T: Deserialize<'de, F> + ?Sized,
 {
     let stack = match F::MAX_STACK_SIZE {
@@ -897,7 +897,7 @@ pub fn deserialize_in_place_with_size<'de, F, T>(
     stack: usize,
 ) -> Result<(), DeserializeError>
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     T: Deserialize<'de, F> + ?Sized,
 {
     let de = Deserializer::new_unchecked(stack, input);
@@ -909,7 +909,7 @@ where
 #[inline(always)]
 pub fn read_reference<F>(input: &[u8], len: usize) -> (usize, usize)
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
 {
     let reference_size = reference_size::<F>();
     debug_assert!(reference_size <= input.len());

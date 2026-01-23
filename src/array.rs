@@ -1,14 +1,14 @@
 use crate::{
     buffer::Buffer,
     deserialize::{Deserialize, DeserializeError, Deserializer},
-    formula::{repeat_size, BareFormula, Formula},
+    formula::{repeat_size, BareFormulaType, FormulaType},
     iter::{owned_iter_fast_sizes, ref_iter_fast_sizes},
     serialize::{write_array, write_slice, Serialize, SerializeRef, Sizes},
 };
 
-impl<F, const N: usize> Formula for [F; N]
+impl<F, const N: usize> FormulaType for [F; N]
 where
-    F: Formula,
+    F: FormulaType,
 {
     const MAX_STACK_SIZE: Option<usize> = repeat_size(F::MAX_STACK_SIZE, N);
     const EXACT_SIZE: bool = F::EXACT_SIZE;
@@ -20,11 +20,11 @@ where
     }
 }
 
-impl<F, const N: usize> BareFormula for [F; N] where F: Formula {}
+impl<F, const N: usize> BareFormulaType for [F; N] where F: FormulaType {}
 
 impl<F, T, const N: usize> Serialize<[F; N]> for [T; N]
 where
-    F: Formula,
+    F: FormulaType,
     T: Serialize<F>,
 {
     #[inline(always)]
@@ -43,7 +43,7 @@ where
 
 impl<F, T, const N: usize> SerializeRef<[F; N]> for [T; N]
 where
-    F: Formula,
+    F: FormulaType,
     for<'ser> &'ser T: Serialize<F>,
 {
     #[inline(always)]
@@ -62,7 +62,7 @@ where
 
 impl<F, T, const N: usize> Serialize<[F]> for [T; N]
 where
-    F: Formula,
+    F: FormulaType,
     T: Serialize<F>,
 {
     #[inline(always)]
@@ -81,7 +81,7 @@ where
 
 impl<'ser, F, T, const N: usize> Serialize<[F]> for &'ser [T; N]
 where
-    F: Formula,
+    F: FormulaType,
     &'ser T: Serialize<F>,
 {
     #[inline(always)]
@@ -100,7 +100,7 @@ where
 
 impl<'de, F, T, const N: usize> Deserialize<'de, [F; N]> for [T; N]
 where
-    F: Formula,
+    F: FormulaType,
     T: Deserialize<'de, F>,
 {
     #[inline]
@@ -162,7 +162,7 @@ where
 #[inline(always)]
 pub fn owned_array_fast_sizes<F, I, T>(iter: I) -> Option<Sizes>
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     I: Iterator<Item = T>,
     T: Serialize<F>,
 {
@@ -176,7 +176,7 @@ where
 #[inline(always)]
 pub fn ref_array_fast_sizes<'a, F, I, T: 'a>(iter: I) -> Option<Sizes>
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     I: Iterator<Item = &'a T>,
     T: Serialize<F>,
 {

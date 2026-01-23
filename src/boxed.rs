@@ -3,7 +3,7 @@ use alloc::{boxed::Box, rc::Rc, sync::Arc};
 use crate::{
     buffer::Buffer,
     deserialize::{Deserialize, DeserializeError, Deserializer},
-    formula::BareFormula,
+    formula::BareFormulaType,
     serialize::{Serialize, Sizes},
     SerializeRef,
 };
@@ -13,7 +13,7 @@ use crate::evolution::Descriptor;
 
 impl<T, F> Serialize<F> for Box<T>
 where
-    F: BareFormula,
+    F: BareFormulaType,
     T: Serialize<F>,
 {
     #[inline(always)]
@@ -32,7 +32,7 @@ where
 
 impl<T, F> SerializeRef<F> for Box<T>
 where
-    F: BareFormula,
+    F: BareFormulaType,
     T: ?Sized,
     for<'a> &'a T: Serialize<F>,
 {
@@ -52,7 +52,7 @@ where
 
 impl<'de, T, F> Deserialize<'de, F> for Box<T>
 where
-    F: BareFormula,
+    F: BareFormulaType,
     T: Deserialize<'de, F>,
 {
     #[inline(always)]
@@ -105,7 +105,7 @@ where
 
 impl<T, F> Serialize<F> for Rc<T>
 where
-    F: BareFormula,
+    F: BareFormulaType,
     T: ?Sized,
     for<'a> &'a T: Serialize<F>,
 {
@@ -125,7 +125,7 @@ where
 
 impl<T, F> SerializeRef<F> for Rc<T>
 where
-    F: BareFormula,
+    F: BareFormulaType,
     T: ?Sized,
     for<'a> &'a T: Serialize<F>,
 {
@@ -145,7 +145,7 @@ where
 
 impl<'de, T, F> Deserialize<'de, F> for Rc<T>
 where
-    F: BareFormula,
+    F: BareFormulaType,
     T: Deserialize<'de, F>,
 {
     #[inline(always)]
@@ -216,7 +216,7 @@ where
 
 impl<T, F> Serialize<F> for Arc<T>
 where
-    F: BareFormula,
+    F: BareFormulaType,
     T: ?Sized,
     for<'a> &'a T: Serialize<F>,
 {
@@ -236,7 +236,7 @@ where
 
 impl<T, F> SerializeRef<F> for Arc<T>
 where
-    F: BareFormula,
+    F: BareFormulaType,
     T: ?Sized,
     for<'a> &'a T: Serialize<F>,
 {
@@ -256,7 +256,7 @@ where
 
 impl<'de, T, F> Deserialize<'de, F> for Arc<T>
 where
-    F: BareFormula,
+    F: BareFormulaType,
     T: Deserialize<'de, F>,
 {
     #[inline(always)]

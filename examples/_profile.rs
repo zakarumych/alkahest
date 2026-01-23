@@ -7,7 +7,7 @@ extern crate speedy;
 
 use std::hint::black_box;
 
-use alkahest::{alkahest, Deserialize, Formula, Lazy, SerIter, Serialize};
+use alkahest::{alkahest, Deserialize, FormulaType, Lazy, SerIter, Serialize};
 
 use rand::{
     distributions::{Alphanumeric, DistString},
@@ -68,13 +68,13 @@ pub struct NetPacket<G> {
 }
 
 #[derive(Debug)]
-#[alkahest(for<X: Formula> Serialize<NetPacket<X>> where G: Serialize<[X]>)]
+#[alkahest(for<X: FormulaType> Serialize<NetPacket<X>> where G: Serialize<[X]>)]
 pub struct NetPacketWrite<G> {
     pub game_messages: G,
 }
 
 #[derive(Debug)]
-#[alkahest(Deserialize<'de, NetPacket<G>> where G: Formula)]
+#[alkahest(Deserialize<'de, NetPacket<G>> where G: FormulaType)]
 pub struct NetPacketRead<'de, G> {
     pub game_messages: Lazy<'de, [G]>,
 }

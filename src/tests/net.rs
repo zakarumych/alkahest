@@ -6,7 +6,7 @@ use rand::{
 };
 
 use crate::{
-    alkahest, read_packet, write_packet_to_vec, Deserialize, Formula, Lazy, Ref, SerIter,
+    alkahest, read_packet, write_packet_to_vec, Deserialize, FormulaType, Lazy, Ref, SerIter,
     Serialize, SerializeRef,
 };
 
@@ -76,21 +76,21 @@ pub struct NetPacketFormula<F> {
 }
 
 #[derive(Debug)]
-#[alkahest(for<F: Formula> Serialize<NetPacketFormula<F>> where G: Serialize<F>)]
-#[alkahest(for<'de, F: Formula> Deserialize<'de, NetPacketFormula<F>> where G: Deserialize<'de, F>)]
+#[alkahest(for<F: FormulaType> Serialize<NetPacketFormula<F>> where G: Serialize<F>)]
+#[alkahest(for<'de, F: FormulaType> Deserialize<'de, NetPacketFormula<F>> where G: Deserialize<'de, F>)]
 pub struct NetPacket<G> {
     pub game_messages: Vec<G>,
 }
 
 #[derive(Debug)]
-#[alkahest(for<F: Formula> Serialize<NetPacketFormula<F>> where G: Serialize<[F]>)]
-#[alkahest(for<F: Formula> SerializeRef<NetPacketFormula<F>> where G: SerializeRef<[F]>)]
+#[alkahest(for<F: FormulaType> Serialize<NetPacketFormula<F>> where G: Serialize<[F]>)]
+#[alkahest(for<F: FormulaType> SerializeRef<NetPacketFormula<F>> where G: SerializeRef<[F]>)]
 pub struct NetPacketWrite<G> {
     pub game_messages: G,
 }
 
 #[derive(Debug)]
-#[alkahest(Deserialize<'de, NetPacketFormula<F>> where F: Formula)]
+#[alkahest(Deserialize<'de, NetPacketFormula<F>> where F: FormulaType)]
 pub struct NetPacketRead<'de, F> {
     pub game_messages: Lazy<'de, [F]>,
 }

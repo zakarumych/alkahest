@@ -10,7 +10,7 @@ use crate::{
     deserialize::{
         deserialize, deserialize_in_place_with_size, deserialize_with_size, Deserialize,
     },
-    formula::Formula,
+    formula::FormulaType,
     lazy::Lazy,
     r#as::As,
     reference::Ref,
@@ -20,7 +20,7 @@ use crate::{
 
 fn test_type<'a, F, T, D>(value: &T, buffer: &'a mut [u8], eq: impl Fn(&T, &D) -> bool)
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     T: ?Sized,
     for<'x> &'x T: Serialize<F>,
     D: Deserialize<'a, F>,
@@ -290,7 +290,7 @@ fn test_packet() {
     }
 
     assert_eq!(
-        <GameMessage as Formula>::EXACT_SIZE,
+        <GameMessage as FormulaType>::EXACT_SIZE,
         false,
         "Enum with non-EXACT_SIZE variants are not EXACT_SIZE"
     );
@@ -303,7 +303,7 @@ fn test_packet() {
     }
 
     assert_eq!(
-        <ClientMessage as Formula>::EXACT_SIZE,
+        <ClientMessage as FormulaType>::EXACT_SIZE,
         false,
         "Enums with differently sized variants are not EXACT_SIZE"
     );
@@ -316,7 +316,7 @@ fn test_packet() {
     }
 
     assert_eq!(
-        <ServerMessage as Formula>::EXACT_SIZE,
+        <ServerMessage as FormulaType>::EXACT_SIZE,
         false,
         "Enums with differently sized variants are not EXACT_SIZE"
     );
@@ -521,21 +521,21 @@ fn test_recursive_types() {
 
     assert_eq!(de, node);
 
-    #[alkahest(Formula where T: Formula)]
+    #[alkahest(Formula where T: FormulaType)]
     struct A<T> {
         a: T,
         b: Vec<A<T>>,
     }
 
     #[derive(Debug)]
-    #[alkahest(for<U: Formula> SerializeRef<A<U>> where for<'a> &'a T: Serialize<U>)]
+    #[alkahest(for<U: FormulaType> SerializeRef<A<U>> where for<'a> &'a T: Serialize<U>)]
     struct B<T> {
         a: T,
         b: Vec<B<T>>,
     }
 
     #[derive(Debug)]
-    #[alkahest(for<'de, U: Formula> Deserialize<'de, A<U>> where T: Deserialize<'de, U>)]
+    #[alkahest(for<'de, U: FormulaType> Deserialize<'de, A<U>> where T: Deserialize<'de, U>)]
     struct C<T> {
         a: T,
         b: Vec<C<T>>,

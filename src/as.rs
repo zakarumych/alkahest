@@ -3,7 +3,7 @@ use core::marker::PhantomData;
 use crate::{
     buffer::Buffer,
     deserialize::{Deserialize, DeserializeError, Deserializer},
-    formula::{BareFormula, Formula},
+    formula::{BareFormulaType, FormulaType},
     serialize::{Serialize, Sizes},
     SerializeRef,
 };
@@ -48,9 +48,9 @@ pub struct As<F: ?Sized> {
     marker: PhantomData<fn(&F) -> &F>,
 }
 
-impl<F> Formula for As<F>
+impl<F> FormulaType for As<F>
 where
-    F: BareFormula + ?Sized,
+    F: BareFormulaType + ?Sized,
 {
     const MAX_STACK_SIZE: Option<usize> = F::MAX_STACK_SIZE;
     const EXACT_SIZE: bool = F::EXACT_SIZE;
@@ -64,7 +64,7 @@ where
 
 impl<F, T> Serialize<As<F>> for T
 where
-    F: BareFormula + ?Sized,
+    F: BareFormulaType + ?Sized,
     T: Serialize<F>,
 {
     #[inline(always)]
@@ -84,7 +84,7 @@ where
 
 impl<F, T> SerializeRef<As<F>> for T
 where
-    F: BareFormula + ?Sized,
+    F: BareFormulaType + ?Sized,
     T: ?Sized,
     for<'a> &'a T: Serialize<F>,
 {
@@ -104,7 +104,7 @@ where
 
 impl<'de, F, T> Deserialize<'de, As<F>> for T
 where
-    F: BareFormula + ?Sized,
+    F: BareFormulaType + ?Sized,
     T: Deserialize<'de, F>,
 {
     #[inline(always)]

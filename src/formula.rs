@@ -52,7 +52,7 @@ use crate::size::SIZE_STACK;
 ///
 /// struct MyFormula;
 ///
-/// impl Formula for MyFormula {
+/// impl FormulaType for MyFormula {
 ///     const MAX_STACK_SIZE: Option<usize> = Some(0);
 ///     const EXACT_SIZE: bool = true;
 ///     const HEAPLESS: bool = true;
@@ -67,19 +67,19 @@ When "derive" feature is enabled, proc-macro `alkahest(Formula)` is also availab
 ```
 # use alkahest::*;
 
-/// Formula for serializing unit structures.
+/// FormulaType for serializing unit structures.
 #[alkahest(Formula)]
 struct UnitFormula;
 
 
 # #[cfg(feature = "alloc")]
-/// Formula for serializing tuple structures with fields
+/// FormulaType for serializing tuple structures with fields
 /// that are serializable with `u8` and `String` formulas.
 #[alkahest(Formula)]
 struct TupleFormula(u8, String);
 
 # #[cfg(feature = "alloc")]
-/// Formula for serializing structures with fields
+/// FormulaType for serializing structures with fields
 /// that are serializable with `TupleFormula` and `Vec<usize>` formulas.
 #[alkahest(Formula)]
 struct StructFormula {
@@ -89,7 +89,7 @@ struct StructFormula {
 
 
 # #[cfg(feature = "alloc")]
-/// Formula for serializing enums.
+/// FormulaType for serializing enums.
 #[alkahest(Formula)]
 enum EnumFormula {
     A,
@@ -101,7 +101,7 @@ enum EnumFormula {
 Names of the formula variants and fields are important for `Serialize` and `Deserialize` proc-macros.
 "#
 )]
-pub trait Formula: 'static {
+pub trait FormulaType: 'static {
     /// Maximum size of stack this formula occupies.
     const MAX_STACK_SIZE: Option<usize>;
 
@@ -129,7 +129,7 @@ pub trait Formula: 'static {
 /// [`Vec`]: alloc::vec::Vec
 /// [`String`]: alloc::string::String
 /// [`As`]: crate::As
-pub trait BareFormula: Formula {}
+pub trait BareFormulaType: FormulaType {}
 
 #[inline(always)]
 pub(crate) const fn unwrap_size(a: Option<usize>) -> usize {
@@ -183,7 +183,7 @@ pub(crate) const fn repeat_size(a: Option<usize>, n: usize) -> Option<usize> {
 #[inline(always)]
 pub const fn reference_size<F>() -> usize
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
 {
     if F::EXACT_SIZE {
         SIZE_STACK

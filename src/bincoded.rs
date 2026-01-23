@@ -4,7 +4,7 @@ use crate::{
     buffer::Buffer,
     bytes::Bytes,
     deserialize::{Deserialize, DeserializeError, Deserializer},
-    formula::{reference_size, Formula},
+    formula::{reference_size, FormulaType},
     serialize::{write_reference, Serialize, Sizes},
     size::FixedUsizeType,
 };
@@ -17,7 +17,7 @@ use crate::{
 /// Deserializing non-compatible type will cause deserialization error.
 pub struct Bincode;
 
-impl Formula for Bincode {
+impl FormulaType for Bincode {
     const MAX_STACK_SIZE: Option<usize> = Some(reference_size::<Bytes>());
     const EXACT_SIZE: bool = true;
     const HEAPLESS: bool = false;
@@ -115,7 +115,7 @@ where
 /// Deserializing non-compatible type will cause deserialization error.
 pub struct Bincoded<T>(PhantomData<fn(&T) -> &T>);
 
-impl<T> Formula for Bincoded<T>
+impl<T> FormulaType for Bincoded<T>
 where
     T: 'static,
 {

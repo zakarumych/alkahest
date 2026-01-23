@@ -6,7 +6,7 @@ use core::{
 
 use crate::{
     deserialize::{DeIter, Deserialize, DeserializeError, Deserializer, SizedDeIter},
-    formula::{unwrap_size, BareFormula, Formula},
+    formula::{unwrap_size, BareFormulaType, FormulaType},
 };
 
 /// Wrapper for lazy deserialization.
@@ -30,7 +30,7 @@ where
 
 impl<'de, F> Lazy<'de, F>
 where
-    F: BareFormula + ?Sized,
+    F: BareFormulaType + ?Sized,
 {
     /// Deserialize the lazy value.
     ///
@@ -64,13 +64,13 @@ trait LazySizedIter<'de, F: ?Sized> {
 
     fn sized_iter_impl<T>(&self) -> SizedDeIter<'de, F, T>
     where
-        F: Formula,
+        F: FormulaType,
         T: Deserialize<'de, F>;
 }
 
 impl<'de, F> LazySizedIter<'de, F> for Lazy<'de, [F]>
 where
-    F: Formula,
+    F: FormulaType,
 {
     // Fail compilation.
     // Use `Lazy::iter` instead of `Lazy::sized_iter` for unsized formulas.
@@ -88,7 +88,7 @@ where
 
 impl<'de, F> Lazy<'de, [F]>
 where
-    F: Formula,
+    F: FormulaType,
 {
     /// Produce iterator over lazy deserialized values.
     /// # Example
@@ -169,7 +169,7 @@ where
 
 impl<'de, 'fe: 'de, F> Deserialize<'fe, F> for Lazy<'de, F>
 where
-    F: BareFormula + ?Sized,
+    F: BareFormulaType + ?Sized,
 {
     #[inline(always)]
     fn deserialize(de: Deserializer<'fe>) -> Result<Self, DeserializeError> {

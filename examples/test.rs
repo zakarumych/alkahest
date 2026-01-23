@@ -16,9 +16,9 @@ struct Test<T: ?Sized> {
 }
 
 #[derive(Clone, Copy, Debug)]
-#[alkahest(for<U: ?Sized> SerializeRef<Test<U>> where U: Formula, for<'ser> &'ser T: Serialize<U>)]
-#[alkahest(for<U: ?Sized> Serialize<Test<U>> where U: Formula, T: Serialize<U>)]
-#[alkahest(for<'de, U: ?Sized> Deserialize<'de, Test<U>> where U: Formula, T: Deserialize<'de, U>)]
+#[alkahest(for<U: ?Sized> SerializeRef<Test<U>> where U: FormulaType, for<'ser> &'ser T: Serialize<U>)]
+#[alkahest(for<U: ?Sized> Serialize<Test<U>> where U: FormulaType, T: Serialize<U>)]
+#[alkahest(for<'de, U: ?Sized> Deserialize<'de, Test<U>> where U: FormulaType, T: Deserialize<'de, U>)]
 struct TestS<T> {
     a: u32,
     b: X,

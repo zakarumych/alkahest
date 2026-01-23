@@ -1,24 +1,24 @@
 use crate::{
     buffer::Buffer,
     deserialize::{Deserialize, DeserializeError, Deserializer},
-    formula::{sum_size, BareFormula, Formula},
+    formula::{sum_size, BareFormulaType, FormulaType},
     serialize::{field_size_hint, write_bytes, write_field, Serialize, SerializeRef, Sizes},
 };
 
-impl<F> Formula for Option<F>
+impl<F> FormulaType for Option<F>
 where
-    F: Formula,
+    F: FormulaType,
 {
     const MAX_STACK_SIZE: Option<usize> = sum_size(Some(1), F::MAX_STACK_SIZE);
     const EXACT_SIZE: bool = matches!(F::MAX_STACK_SIZE, Some(0));
     const HEAPLESS: bool = F::HEAPLESS;
 }
 
-impl<F> BareFormula for Option<F> where F: Formula {}
+impl<F> BareFormulaType for Option<F> where F: FormulaType {}
 
 impl<F, T> Serialize<Option<F>> for Option<T>
 where
-    F: Formula,
+    F: FormulaType,
     T: Serialize<F>,
 {
     #[inline(always)]
@@ -53,7 +53,7 @@ where
 
 impl<F, T> SerializeRef<Option<F>> for Option<T>
 where
-    F: Formula,
+    F: FormulaType,
     for<'ser> &'ser T: Serialize<F>,
 {
     #[inline(always)]
@@ -88,7 +88,7 @@ where
 
 impl<'de, F, T> Deserialize<'de, Option<F>> for Option<T>
 where
-    F: Formula,
+    F: FormulaType,
     T: Deserialize<'de, F>,
 {
     #[inline(always)]

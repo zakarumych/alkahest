@@ -3,7 +3,7 @@ use core::mem::size_of;
 use crate::{
     buffer::Buffer,
     deserialize::{Deserialize, DeserializeError, Deserializer},
-    formula::{BareFormula, Formula},
+    formula::{BareFormulaType, FormulaType},
     serialize::{write_bytes, Serialize, SerializeRef, Sizes},
 };
 
@@ -22,13 +22,13 @@ macro_rules! impl_primitive {
     };
 
     (! $($from:ident)* < $ty:ident < $($to:ident)*) => {
-        impl Formula for $ty {
+        impl FormulaType for $ty {
             const MAX_STACK_SIZE: Option<usize> = Some(size_of::<$ty>());
             const EXACT_SIZE: bool = true;
             const HEAPLESS: bool = true;
         }
 
-        impl BareFormula for $ty {}
+        impl BareFormulaType for $ty {}
 
         impl Serialize<$ty> for $ty {
             #[inline(always)]
@@ -142,13 +142,13 @@ impl_primitive! {
     [f32 f64]
 }
 
-impl Formula for bool {
+impl FormulaType for bool {
     const MAX_STACK_SIZE: Option<usize> = Some(1);
     const EXACT_SIZE: bool = true;
     const HEAPLESS: bool = true;
 }
 
-impl BareFormula for bool {}
+impl BareFormulaType for bool {}
 
 impl Serialize<bool> for bool {
     #[inline(always)]

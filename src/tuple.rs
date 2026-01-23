@@ -1,18 +1,18 @@
 use crate::{
     buffer::Buffer,
     deserialize::{Deserialize, DeserializeError, Deserializer},
-    formula::{sum_size, BareFormula, Formula},
+    formula::{sum_size, BareFormulaType, FormulaType},
     serialize::{field_size_hint, write_field, Serialize, SerializeRef, Sizes},
     size::SIZE_STACK,
 };
 
-impl Formula for () {
+impl FormulaType for () {
     const MAX_STACK_SIZE: Option<usize> = Some(0);
     const EXACT_SIZE: bool = true;
     const HEAPLESS: bool = true;
 }
 
-impl BareFormula for () {}
+impl BareFormulaType for () {}
 
 impl Serialize<()> for () {
     #[inline(always)]
@@ -76,36 +76,36 @@ macro_rules! for_tuple_2 {
 macro_rules! formula_serialize {
     (,) => {};
     ($at:ident $($a:ident)* , $bt:ident $($b:ident)*) => {
-        impl<$($a,)* $at> Formula for ($($a,)* $at,)
+        impl<$($a,)* $at> FormulaType for ($($a,)* $at,)
         where
-            $($a: Formula,)*
-            $at: Formula + ?Sized,
+            $($a: FormulaType,)*
+            $at: FormulaType + ?Sized,
         {
             const MAX_STACK_SIZE: Option<usize> = {
                 let mut size = Some(0);
-                $(size = sum_size(size, <$a as Formula>::MAX_STACK_SIZE);)*
-                size = sum_size(size, <$at as Formula>::MAX_STACK_SIZE);
+                $(size = sum_size(size, <$a as FormulaType>::MAX_STACK_SIZE);)*
+                size = sum_size(size, <$at as FormulaType>::MAX_STACK_SIZE);
                 size
             };
 
-            const EXACT_SIZE: bool = $(<$a as Formula>::EXACT_SIZE &&)* <$at as Formula>::EXACT_SIZE;
-            const HEAPLESS: bool = $(<$a as Formula>::HEAPLESS &&)* <$at as Formula>::HEAPLESS;
+            const EXACT_SIZE: bool = $(<$a as FormulaType>::EXACT_SIZE &&)* <$at as FormulaType>::EXACT_SIZE;
+            const HEAPLESS: bool = $(<$a as FormulaType>::HEAPLESS &&)* <$at as FormulaType>::HEAPLESS;
         }
 
-        impl<$($a,)* $at> BareFormula for ($($a,)* $at,)
+        impl<$($a,)* $at> BareFormulaType for ($($a,)* $at,)
         where
-            $($a: Formula,)*
-            $at: Formula + ?Sized,
+            $($a: FormulaType,)*
+            $at: FormulaType + ?Sized,
         {
         }
 
         impl<$($a,)* $at, $($b,)* $bt> Serialize<($($a,)* $at,)> for ($($b,)* $bt,)
         where
             $(
-                $a: Formula,
+                $a: FormulaType,
                 $b: Serialize<$a>,
             )*
-            $at: Formula + ?Sized,
+            $at: FormulaType + ?Sized,
             $bt: Serialize<$at>,
         {
             #[inline]
@@ -141,10 +141,10 @@ macro_rules! formula_serialize {
         impl<$($a,)* $at, $($b,)* $bt,> SerializeRef<($($a,)* $at,)> for ($($b,)* $bt,)
         where
             $(
-                $a: Formula,
+                $a: FormulaType,
                 for<'ser> &'ser $b: Serialize<$a>,
             )*
-            $at: Formula + ?Sized,
+            $at: FormulaType + ?Sized,
             for<'ser> &'ser $bt: Serialize<$at>,
             $bt: ?Sized,
         {
@@ -182,10 +182,10 @@ macro_rules! formula_serialize {
         impl<'de, $($a,)* $at, $($b,)* $bt> Deserialize<'de, ($($a,)* $at,)> for ($($b,)* $bt,)
         where
             $(
-                $a: Formula,
+                $a: FormulaType,
                 $b: Deserialize<'de, $a>,
             )*
-            $at: Formula + ?Sized,
+            $at: FormulaType + ?Sized,
             $bt: Deserialize<'de, $at>,
         {
             #[inline]

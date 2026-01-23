@@ -2,7 +2,7 @@ use crate::{
     advanced::FixedUsizeType,
     buffer::{Buffer, BufferExhausted, CheckedFixedBuffer, DryBuffer, VecBuffer},
     deserialize::{read_reference, Deserialize, DeserializeError, Deserializer},
-    formula::{reference_size, Formula},
+    formula::{reference_size, FormulaType},
     serialize::{write_ref, write_reference, Serialize, Sizes},
     size::SIZE_STACK,
 };
@@ -16,7 +16,7 @@ use crate::{
 #[inline]
 pub fn packet_size<F, T>(value: T) -> usize
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     T: Serialize<F>,
 {
     match write_packet_into(value, DryBuffer) {
@@ -30,7 +30,7 @@ where
 #[inline(always)]
 pub fn write_packet_into<F, T, B>(value: T, mut buffer: B) -> Result<usize, B::Error>
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     T: Serialize<F>,
     B: Buffer,
 {
@@ -67,7 +67,7 @@ where
 #[inline(always)]
 pub fn write_packet<F, T>(value: T, output: &mut [u8]) -> Result<usize, BufferExhausted>
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     T: Serialize<F>,
 {
     write_packet_into::<F, T, _>(value, CheckedFixedBuffer::new(output))
@@ -81,7 +81,7 @@ where
 #[inline(always)]
 pub fn write_packet_unchecked<F, T>(value: T, output: &mut [u8]) -> usize
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     T: Serialize<F>,
 {
     match write_packet_into::<F, T, _>(value, output) {
@@ -101,7 +101,7 @@ where
 #[inline(always)]
 pub fn write_packet_to_vec<F, T>(value: T, output: &mut alloc::vec::Vec<u8>) -> usize
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     T: Serialize<F>,
 {
     match write_packet_into::<F, T, _>(value, VecBuffer::new(output)) {
@@ -120,7 +120,7 @@ where
 #[inline]
 pub fn read_packet_size<F>(input: &[u8]) -> Option<usize>
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
 {
     match F::MAX_STACK_SIZE {
         Some(0) => Some(0),
@@ -148,7 +148,7 @@ where
 #[inline]
 pub fn read_packet<'de, F, T>(input: &'de [u8]) -> Result<(T, usize), DeserializeError>
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     T: Deserialize<'de, F>,
 {
     let reference_size = reference_size::<F>();
@@ -186,7 +186,7 @@ pub fn read_packet_in_place<'de, F, T>(
     input: &'de [u8],
 ) -> Result<usize, DeserializeError>
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     T: Deserialize<'de, F> + ?Sized,
 {
     let reference_size = reference_size::<F>();

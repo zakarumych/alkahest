@@ -78,7 +78,7 @@ impl Config {
 
                         if !all_generic_field_types.is_empty() {
                             let predicates = all_generic_field_types.iter().map(|&ty| -> syn::WherePredicate {
-                                syn::parse_quote! { #ty: ::alkahest::private::Formula + ::alkahest::private::Deserialize<#de, #ty> }
+                                syn::parse_quote! { #ty: ::alkahest::private::FormulaType + ::alkahest::private::Deserialize<#de, #ty> }
                             });
 
                             formula_generics
@@ -98,7 +98,7 @@ impl Config {
 
                         if !all_generic_field_types.is_empty() {
                             let predicates = all_generic_field_types.iter().map(|&ty| -> syn::WherePredicate {
-                                syn::parse_quote! { #ty: ::alkahest::private::Formula + ::alkahest::private::Deserialize<#de, #ty> }
+                                syn::parse_quote! { #ty: ::alkahest::private::FormulaType + ::alkahest::private::Deserialize<#de, #ty> }
                             });
 
                             formula_generics

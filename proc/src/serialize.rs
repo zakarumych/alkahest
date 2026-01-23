@@ -44,7 +44,7 @@ impl Config {
                 };
 
                 // Add predicates that fields implement
-                // `T: Formula + Serialize<T>`
+                // `T: FormulaType + Serialize<T>`
                 // for fields where generics are involved.
 
                 match data {
@@ -58,14 +58,14 @@ impl Config {
                         if !all_generic_field_types.is_empty() {
                             if by_ref {
                                 let predicates = all_generic_field_types.iter().map(|ty| -> syn::WherePredicate {
-                                    syn::parse_quote! { #ty: ::alkahest::private::Formula }
+                                    syn::parse_quote! { #ty: ::alkahest::private::FormulaType }
                                 }).chain(all_generic_field_types.iter().map(|ty| -> syn::WherePredicate {
                                     syn::parse_quote! { for<'ser> &'ser #ty: ::alkahest::private::Serialize<#ty> }
                                 }));
                                 generics.make_where_clause().predicates.extend(predicates);
                             } else {
                                 let predicates = all_generic_field_types.iter().map(|ty| -> syn::WherePredicate {
-                                    syn::parse_quote! { #ty: ::alkahest::private::Formula + ::alkahest::private::Serialize<#ty> }
+                                    syn::parse_quote! { #ty: ::alkahest::private::FormulaType + ::alkahest::private::Serialize<#ty> }
                                 });
                                 generics.make_where_clause().predicates.extend(predicates);
                             }
@@ -83,14 +83,14 @@ impl Config {
                         if !all_generic_field_types.is_empty() {
                             if by_ref {
                                 let predicates = all_generic_field_types.iter().map(|ty| -> syn::WherePredicate {
-                                    syn::parse_quote! { #ty: ::alkahest::private::Formula }
+                                    syn::parse_quote! { #ty: ::alkahest::private::FormulaType }
                                 }).chain(all_generic_field_types.iter().map(|ty| -> syn::WherePredicate {
                                     syn::parse_quote! { for<'ser> &'ser #ty: ::alkahest::private::Serialize<#ty> }
                                 }));
                                 generics.make_where_clause().predicates.extend(predicates);
                             } else {
                                 let predicates = all_generic_field_types.iter().map(|ty| -> syn::WherePredicate {
-                                    syn::parse_quote! { #ty: ::alkahest::private::Formula + ::alkahest::private::Serialize<#ty> }
+                                    syn::parse_quote! { #ty: ::alkahest::private::FormulaType + ::alkahest::private::Serialize<#ty> }
                                 });
                                 generics.make_where_clause().predicates.extend(predicates);
                             }

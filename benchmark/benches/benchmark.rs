@@ -11,7 +11,7 @@ extern crate rkyv;
 #[cfg(feature = "speedy")]
 extern crate speedy;
 
-use alkahest::{alkahest, Deserialize, Formula, Lazy, SerIter, Serialize};
+use alkahest::{alkahest, Deserialize, FormulaType, Lazy, SerIter, Serialize};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 #[cfg(feature = "rkyv")]
@@ -98,13 +98,13 @@ pub struct NetPacket<G> {
 }
 
 #[derive(Debug)]
-#[alkahest(for<X: Formula> Serialize<NetPacket<X>> where G: Serialize<[X]>)]
+#[alkahest(for<X: FormulaType> Serialize<NetPacket<X>> where G: Serialize<[X]>)]
 pub struct NetPacketWrite<G> {
     pub game_messages: G,
 }
 
 #[derive(Debug)]
-#[alkahest(Deserialize<'de, NetPacket<G>> where G: Formula)]
+#[alkahest(Deserialize<'de, NetPacket<G>> where G: FormulaType)]
 pub struct NetPacketRead<'de, G> {
     pub game_messages: Lazy<'de, [G]>,
 }

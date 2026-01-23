@@ -71,7 +71,7 @@ pub use crate::{
         deserialize, deserialize_in_place, deserialize_in_place_with_size, deserialize_with_size,
         DeIter, Deserialize, DeserializeError,
     },
-    formula::Formula,
+    formula::FormulaType,
     iter::SerIter,
     lazy::Lazy,
     packet::{
@@ -103,7 +103,7 @@ pub mod advanced {
     pub use crate::{
         buffer::{Buffer, CheckedFixedBuffer, MaybeFixedBuffer},
         deserialize::Deserializer,
-        formula::{reference_size, BareFormula},
+        formula::{reference_size, BareFormulaType},
         iter::{default_iter_fast_sizes, deserialize_extend_iter, deserialize_from_iter},
         serialize::{
             field_size_hint, formula_fast_sizes, slice_writer, write_array, write_bytes,
@@ -130,7 +130,7 @@ pub mod private {
     pub use crate::{
         buffer::Buffer,
         deserialize::{Deserialize, DeserializeError, Deserializer},
-        formula::{max_size, sum_size, BareFormula, Formula},
+        formula::{max_size, sum_size, BareFormulaType, FormulaType},
         serialize::{
             formula_fast_sizes, write_exact_size_field, write_field, Serialize, SerializeRef, Sizes,
         },
@@ -141,13 +141,13 @@ pub mod private {
     pub const VARIANT_SIZE: usize = core::mem::size_of::<u32>();
     pub const VARIANT_SIZE_OPT: Option<usize> = Some(VARIANT_SIZE);
 
-    pub struct WithFormula<F: Formula + ?Sized> {
+    pub struct WithFormula<F: FormulaType + ?Sized> {
         marker: PhantomData<fn(&F) -> &F>,
     }
 
     impl<F> WithFormula<F>
     where
-        F: Formula + ?Sized,
+        F: FormulaType + ?Sized,
     {
         #[inline(always)]
         pub fn write_field<T, B>(
@@ -171,7 +171,7 @@ pub mod private {
             last: bool,
         ) -> Result<T, DeserializeError>
         where
-            F: Formula,
+            F: FormulaType,
             T: Deserialize<'de, F>,
         {
             de.read_value::<F, T>(last)
@@ -185,7 +185,7 @@ pub mod private {
             last: bool,
         ) -> Result<(), DeserializeError>
         where
-            F: Formula,
+            F: FormulaType,
             T: Deserialize<'de, F>,
         {
             de.read_in_place::<F, T>(place, last)
@@ -202,7 +202,7 @@ pub mod private {
 
     #[must_use]
     #[inline(always)]
-    pub fn with_formula<F: Formula + ?Sized, L: Formula + ?Sized>(
+    pub fn with_formula<F: FormulaType + ?Sized, L: FormulaType + ?Sized>(
         _: impl FnOnce(&F) -> &L,
     ) -> WithFormula<L> {
         WithFormula {

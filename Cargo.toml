@@ -52,4 +52,4 @@ name = "profile"
 required-features = ["derive", "alloc"]
 
 [workspace]
-members = ["proc", "benchmark"]
+members = ["proc", "benchmark", "formula", "parse"]

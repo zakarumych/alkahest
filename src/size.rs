@@ -3,7 +3,7 @@ use core::mem::size_of;
 use crate::{
     buffer::Buffer,
     deserialize::{Deserialize, DeserializeError, Deserializer},
-    formula::{BareFormula, Formula},
+    formula::{BareFormulaType, FormulaType},
     serialize::{write_bytes, Serialize, Sizes},
 };
 
@@ -55,13 +55,13 @@ pub fn isize_truncate_unchecked(value: isize) -> FixedIsizeType {
     value as FixedIsizeType
 }
 
-impl Formula for usize {
+impl FormulaType for usize {
     const MAX_STACK_SIZE: Option<usize> = Some(size_of::<FixedUsizeType>());
     const EXACT_SIZE: bool = true;
     const HEAPLESS: bool = true;
 }
 
-impl BareFormula for usize {}
+impl BareFormulaType for usize {}
 
 impl Serialize<usize> for usize {
     #[inline(always)]
@@ -106,13 +106,13 @@ impl Deserialize<'_, usize> for usize {
     }
 }
 
-impl Formula for isize {
+impl FormulaType for isize {
     const MAX_STACK_SIZE: Option<usize> = Some(size_of::<FixedIsizeType>());
     const EXACT_SIZE: bool = true;
     const HEAPLESS: bool = true;
 }
 
-impl BareFormula for isize {}
+impl BareFormulaType for isize {}
 
 impl Serialize<isize> for isize {
     #[inline(always)]

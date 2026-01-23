@@ -1,11 +1,11 @@
 use crate::{
     buffer::Buffer,
     deserialize::{Deserialize, DeserializeError, Deserializer},
-    formula::Formula,
+    formula::FormulaType,
     serialize::{write_bytes, Serialize, Sizes},
 };
 
-/// Formula for Variable-Length Quantity encoding.
+/// FormulaType for Variable-Length Quantity encoding.
 ///
 /// If bit 8 is set then bits 0-6 contain length of the value in bytes.
 /// Otherwise bits 4-7 contain the length of the value in bytes,
@@ -56,7 +56,7 @@ use crate::{
 /// ```
 pub struct Vlq;
 
-impl Formula for Vlq {
+impl FormulaType for Vlq {
     const MAX_STACK_SIZE: Option<usize> = None;
     const EXACT_SIZE: bool = false;
     const HEAPLESS: bool = true;

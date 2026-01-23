@@ -3,15 +3,16 @@ use alloc::{borrow::ToOwned, string::String};
 use crate::{
     buffer::Buffer,
     deserialize::{Deserialize, DeserializeError, Deserializer},
-    formula::{reference_size, Formula},
+    formula::{reference_size, FormulaType},
     reference::Ref,
-    serialize::{write_bytes, write_ref, write_reference, Serialize, Sizes}, SerializeRef,
+    serialize::{write_bytes, write_ref, write_reference, Serialize, Sizes},
+    SerializeRef,
 };
 
-impl Formula for String {
-    const MAX_STACK_SIZE: Option<usize> = <Ref<str> as Formula>::MAX_STACK_SIZE;
-    const EXACT_SIZE: bool = <Ref<str> as Formula>::EXACT_SIZE;
-    const HEAPLESS: bool = <Ref<str> as Formula>::HEAPLESS;
+impl FormulaType for String {
+    const MAX_STACK_SIZE: Option<usize> = <Ref<str> as FormulaType>::MAX_STACK_SIZE;
+    const EXACT_SIZE: bool = <Ref<str> as FormulaType>::EXACT_SIZE;
+    const HEAPLESS: bool = <Ref<str> as FormulaType>::HEAPLESS;
 }
 
 impl<T> Serialize<String> for T

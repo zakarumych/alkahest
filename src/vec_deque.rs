@@ -4,7 +4,7 @@ use crate::{
     buffer::Buffer,
     bytes::Bytes,
     deserialize::{Deserialize, DeserializeError, Deserializer},
-    formula::{reference_size, Formula},
+    formula::{reference_size, FormulaType},
     iter::{deserialize_extend_iter, owned_iter_fast_sizes, ref_iter_fast_sizes},
     reference::Ref,
     serialize::{
@@ -12,18 +12,18 @@ use crate::{
     },
 };
 
-impl<F> Formula for VecDeque<F>
+impl<F> FormulaType for VecDeque<F>
 where
-    F: Formula,
+    F: FormulaType,
 {
-    const MAX_STACK_SIZE: Option<usize> = <Ref<[F]> as Formula>::MAX_STACK_SIZE;
-    const EXACT_SIZE: bool = <Ref<[F]> as Formula>::EXACT_SIZE;
-    const HEAPLESS: bool = <Ref<[F]> as Formula>::HEAPLESS;
+    const MAX_STACK_SIZE: Option<usize> = <Ref<[F]> as FormulaType>::MAX_STACK_SIZE;
+    const EXACT_SIZE: bool = <Ref<[F]> as FormulaType>::EXACT_SIZE;
+    const HEAPLESS: bool = <Ref<[F]> as FormulaType>::HEAPLESS;
 }
 
 impl<F, T> Serialize<VecDeque<F>> for T
 where
-    F: Formula,
+    F: FormulaType,
     T: Serialize<[F]>,
 {
     #[inline(always)]
@@ -48,7 +48,7 @@ where
 
 impl<F, T> SerializeRef<VecDeque<F>> for T
 where
-    F: Formula,
+    F: FormulaType,
     T: ?Sized,
     for<'a> &'a T: Serialize<[F]>,
 {
@@ -74,7 +74,7 @@ where
 
 impl<'de, F, T> Deserialize<'de, VecDeque<F>> for T
 where
-    F: Formula,
+    F: FormulaType,
     T: Deserialize<'de, [F]>,
 {
     #[inline(always)]
@@ -92,7 +92,7 @@ where
 
 impl<F, T> Serialize<[F]> for VecDeque<T>
 where
-    F: Formula,
+    F: FormulaType,
     T: Serialize<F>,
 {
     #[inline(always)]
@@ -111,7 +111,7 @@ where
 
 impl<F, T> SerializeRef<[F]> for VecDeque<T>
 where
-    F: Formula,
+    F: FormulaType,
     for<'ser> &'ser T: Serialize<F>,
 {
     #[inline(always)]
@@ -130,7 +130,7 @@ where
 
 impl<'de, F, T> Deserialize<'de, [F]> for VecDeque<T>
 where
-    F: Formula,
+    F: FormulaType,
     T: Deserialize<'de, F>,
 {
     #[inline(always)]
@@ -154,7 +154,7 @@ where
 
 impl<'de, F, T, const N: usize> Deserialize<'de, [F; N]> for VecDeque<T>
 where
-    F: Formula,
+    F: FormulaType,
     T: Deserialize<'de, F>,
 {
     #[inline(always)]

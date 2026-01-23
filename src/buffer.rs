@@ -35,8 +35,8 @@ pub trait Buffer {
     /// Moves bytes from stack to heap.
     fn move_to_heap(&mut self, heap: usize, stack: usize, len: usize);
 
-    /// Reserves heap space and returns a buffer over it.
-    /// Returned buffer is always of `FixedBuffer` type.
+    /// Reserves heap space and returns a mutable bytes slice reference.
+    /// Which can be used as [`Buffer`].
     ///
     /// If buffer cannot reserve heap space, it may return either
     /// `Err` or `Ok([])`.
@@ -131,10 +131,13 @@ impl<'a> CheckedFixedBuffer<'a> {
 
 impl<'a> Buffer for CheckedFixedBuffer<'a> {
     type Error = BufferExhausted;
-    type Reborrow<'b> = CheckedFixedBuffer<'b> where 'a: 'b;
+    type Reborrow<'b>
+        = CheckedFixedBuffer<'b>
+    where
+        'a: 'b;
 
     #[inline(always)]
-    fn reborrow(&mut self) -> Self::Reborrow<'_> {
+    fn reborrow(&mut self) -> CheckedFixedBuffer<'_> {
         CheckedFixedBuffer { buf: self.buf }
     }
 
@@ -196,7 +199,10 @@ impl<'a> Buffer for CheckedFixedBuffer<'a> {
 impl<'a> Buffer for &'a mut [u8] {
     type Error = Infallible;
 
-    type Reborrow<'b> = &'b mut [u8] where 'a: 'b;
+    type Reborrow<'b>
+        = &'b mut [u8]
+    where
+        'a: 'b;
 
     #[inline(always)]
     fn reborrow(&mut self) -> &'_ mut [u8] {
@@ -265,10 +271,13 @@ impl<'a> MaybeFixedBuffer<'a> {
 impl<'a> Buffer for MaybeFixedBuffer<'a> {
     type Error = Infallible;
 
-    type Reborrow<'b> = MaybeFixedBuffer<'b> where 'a: 'b;
+    type Reborrow<'b>
+        = MaybeFixedBuffer<'b>
+    where
+        'a: 'b;
 
     #[inline(always)]
-    fn reborrow(&mut self) -> Self::Reborrow<'_> {
+    fn reborrow(&mut self) -> MaybeFixedBuffer<'_> {
         MaybeFixedBuffer {
             buf: self.buf,
             exhausted: self.exhausted,
@@ -375,10 +384,13 @@ impl VecBuffer<'_> {
 #[cfg(feature = "alloc")]
 impl<'a> Buffer for VecBuffer<'a> {
     type Error = Infallible;
-    type Reborrow<'b> = VecBuffer<'b> where 'a: 'b;
+    type Reborrow<'b>
+        = VecBuffer<'b>
+    where
+        'a: 'b;
 
     #[inline(always)]
-    fn reborrow(&mut self) -> Self::Reborrow<'_> {
+    fn reborrow(&mut self) -> VecBuffer<'_> {
         VecBuffer { buf: self.buf }
     }
 

@@ -1,7 +1,7 @@
 use crate::{
     buffer::Buffer,
     deserialize::{Deserialize, DeserializeError, Deserializer},
-    formula::{BareFormula, Formula},
+    formula::{BareFormulaType, FormulaType},
     serialize::{write_bytes, SerializeRef, Sizes},
 };
 
@@ -9,13 +9,13 @@ use crate::{
 /// Serializable from anything that implements `AsRef<[u8]>`.
 pub struct Bytes;
 
-impl Formula for Bytes {
+impl FormulaType for Bytes {
     const MAX_STACK_SIZE: Option<usize> = None;
     const EXACT_SIZE: bool = false;
     const HEAPLESS: bool = true;
 }
 
-impl BareFormula for Bytes {}
+impl BareFormulaType for Bytes {}
 
 impl SerializeRef<Bytes> for [u8] {
     #[inline(always)]

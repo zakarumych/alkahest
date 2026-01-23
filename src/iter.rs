@@ -1,7 +1,7 @@
 use crate::{
     buffer::Buffer,
     deserialize::DeserializeError,
-    formula::Formula,
+    formula::FormulaType,
     serialize::{field_size_hint, write_slice, Serialize, Sizes},
     size::SIZE_STACK,
 };
@@ -12,7 +12,7 @@ const ITER_UPPER: usize = 4;
 #[inline(always)]
 pub fn default_iter_fast_sizes<F, I>(iter: &I) -> Option<Sizes>
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     I: Iterator,
     I::Item: Serialize<F>,
 {
@@ -37,7 +37,7 @@ where
 #[inline]
 pub fn ref_iter_fast_sizes<'a, F, I, T: 'a>(iter: I) -> Option<Sizes>
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     I: Iterator<Item = &'a T>,
     T: Serialize<F>,
 {
@@ -72,7 +72,7 @@ where
 #[inline]
 pub fn owned_iter_fast_sizes<F, I, T>(iter: I) -> Option<Sizes>
 where
-    F: Formula + ?Sized,
+    F: FormulaType + ?Sized,
     I: Iterator<Item = T>,
     T: Serialize<F>,
 {
@@ -118,7 +118,7 @@ pub struct SerIter<T>(pub T);
 
 impl<F, T, I> Serialize<[F]> for SerIter<I>
 where
-    F: Formula,
+    F: FormulaType,
     I: Iterator<Item = T>,
     T: Serialize<F>,
 {
@@ -138,7 +138,7 @@ where
 
 impl<F, T> Serialize<[F]> for core::ops::Range<T>
 where
-    F: Formula,
+    F: FormulaType,
     T: Serialize<F>,
     core::ops::Range<T>: Iterator<Item = T>,
 {
@@ -158,7 +158,7 @@ where
 
 impl<F, T> Serialize<[F]> for core::ops::RangeInclusive<T>
 where
-    F: Formula,
+    F: FormulaType,
     T: Serialize<F>,
     core::ops::RangeInclusive<T>: Iterator<Item = T>,
 {
@@ -178,7 +178,7 @@ where
 
 impl<F, X, Y, T> Serialize<[F]> for core::iter::Chain<X, Y>
 where
-    F: Formula,
+    F: FormulaType,
     X: Iterator<Item = T>,
     Y: Iterator<Item = T>,
     T: Serialize<F>,
@@ -199,7 +199,7 @@ where
 
 impl<'a, F, I, T> Serialize<[F]> for core::iter::Cloned<I>
 where
-    F: Formula,
+    F: FormulaType,
     I: Iterator<Item = &'a T>,
     T: Clone + Serialize<F> + 'a,
 {
@@ -219,7 +219,7 @@ where
 
 impl<'a, F, I, T> Serialize<[F]> for core::iter::Copied<I>
 where
-    F: Formula,
+    F: FormulaType,
     I: Iterator<Item = &'a T>,
     T: Copy + Serialize<F> + 'a,
 {
@@ -239,7 +239,7 @@ where
 
 impl<F, T> Serialize<[F]> for core::iter::Empty<T>
 where
-    F: Formula,
+    F: FormulaType,
     T: Copy + Serialize<F>,
 {
     #[inline(always)]
@@ -260,7 +260,7 @@ where
 // But lib makes exception for `usize`s that are derived from actual sizes.
 impl<F, I, T> Serialize<[(usize, F)]> for core::iter::Enumerate<I>
 where
-    F: Formula,
+    F: FormulaType,
     I: Iterator<Item = T>,
     T: Serialize<F>,
 {
@@ -280,7 +280,7 @@ where
 
 impl<F, I, T, P> Serialize<[F]> for core::iter::Filter<I, P>
 where
-    F: Formula,
+    F: FormulaType,
     I: Iterator<Item = T>,
     P: FnMut(&T) -> bool,
     T: Serialize<F>,
@@ -301,7 +301,7 @@ where
 
 impl<F, I, T, P> Serialize<[F]> for core::iter::FilterMap<I, P>
 where
-    F: Formula,
+    F: FormulaType,
     I: Iterator,
     P: FnMut(I::Item) -> Option<T>,
     T: Serialize<F>,
@@ -322,7 +322,7 @@ where
 
 impl<F, I, X, U, T> Serialize<[F]> for core::iter::FlatMap<I, U, X>
 where
-    F: Formula,
+    F: FormulaType,
     I: Iterator,
     X: FnMut(I::Item) -> U,
     U: IntoIterator<Item = T>,
@@ -344,7 +344,7 @@ where
 
 impl<F, I, T> Serialize<[F]> for core::iter::Flatten<I>
 where
-    F: Formula,
+    F: FormulaType,
     I: Iterator,
     I::Item: IntoIterator<Item = T>,
     T: Serialize<F>,
@@ -365,7 +365,7 @@ where
 
 impl<F, P, T> Serialize<[F]> for core::iter::FromFn<P>
 where
-    F: Formula,
+    F: FormulaType,
     P: FnMut() -> Option<T>,
     T: Serialize<F>,
 {
@@ -385,7 +385,7 @@ where
 
 impl<F, I, T> Serialize<[F]> for core::iter::Fuse<I>
 where
-    F: Formula,
+    F: FormulaType,
     I: Iterator<Item = T>,
     T: Serialize<F>,
 {
@@ -405,7 +405,7 @@ where
 
 impl<F, I, T, X> Serialize<[F]> for core::iter::Inspect<I, X>
 where
-    F: Formula,
+    F: FormulaType,
     I: Iterator<Item = T>,
     T: Serialize<F>,
     X: FnMut(&T),
@@ -426,7 +426,7 @@ where
 
 impl<F, I, T, P> Serialize<[F]> for core::iter::Map<I, P>
 where
-    F: Formula,
+    F: FormulaType,
     I: Iterator,
     P: FnMut(I::Item) -> T,
     T: Serialize<F>,
@@ -447,7 +447,7 @@ where
 
 impl<F, I, T, P> Serialize<[F]> for core::iter::MapWhile<I, P>
 where
-    F: Formula,
+    F: FormulaType,
     I: Iterator,
     P: FnMut(I::Item) -> Option<T>,
     T: Serialize<F>,
@@ -468,7 +468,7 @@ where
 
 impl<F, T> Serialize<[F]> for core::iter::Once<T>
 where
-    F: Formula,
+    F: FormulaType,
     T: Serialize<F>,
 {
     #[inline(always)]
@@ -487,7 +487,7 @@ where
 
 impl<F, T, P> Serialize<[F]> for core::iter::OnceWith<P>
 where
-    F: Formula,
+    F: FormulaType,
     P: FnOnce() -> T,
     T: Serialize<F>,
 {
@@ -507,7 +507,7 @@ where
 
 impl<F, I, T> Serialize<[F]> for core::iter::Peekable<I>
 where
-    F: Formula,
+    F: FormulaType,
     I: Iterator<Item = T>,
     T: Serialize<F>,
 {
@@ -527,7 +527,7 @@ where
 
 impl<F, I, T> Serialize<[F]> for core::iter::Rev<I>
 where
-    F: Formula,
+    F: FormulaType,
     I: DoubleEndedIterator<Item = T>,
     T: Serialize<F>,
 {
@@ -547,7 +547,7 @@ where
 
 impl<F, I, St, P, T> Serialize<[F]> for core::iter::Scan<I, St, P>
 where
-    F: Formula,
+    F: FormulaType,
     I: Iterator,
     P: FnMut(&mut St, I::Item) -> Option<T>,
     T: Serialize<F>,
@@ -568,7 +568,7 @@ where
 
 impl<F, I, T> Serialize<[F]> for core::iter::Skip<I>
 where
-    F: Formula,
+    F: FormulaType,
     I: Iterator<Item = T>,
     T: Serialize<F>,
 {
@@ -588,7 +588,7 @@ where
 
 impl<F, I, P, T> Serialize<[F]> for core::iter::SkipWhile<I, P>
 where
-    F: Formula,
+    F: FormulaType,
     I: Iterator<Item = T>,
     P: FnMut(&T) -> bool,
     T: Serialize<F>,
@@ -609,7 +609,7 @@ where
 
 impl<F, I, T> Serialize<[F]> for core::iter::StepBy<I>
 where
-    F: Formula,
+    F: FormulaType,
     I: Iterator<Item = T>,
     T: Serialize<F>,
 {
@@ -629,7 +629,7 @@ where
 
 impl<F, T, P> Serialize<[F]> for core::iter::Successors<T, P>
 where
-    F: Formula,
+    F: FormulaType,
     P: FnMut(&T) -> Option<T>,
     T: Serialize<F>,
 {
@@ -649,7 +649,7 @@ where
 
 impl<F, I, T> Serialize<[F]> for core::iter::Take<I>
 where
-    F: Formula,
+    F: FormulaType,
     I: Iterator<Item = T>,
     T: Serialize<F>,
 {
@@ -669,7 +669,7 @@ where
 
 impl<F, I, P, T> Serialize<[F]> for core::iter::TakeWhile<I, P>
 where
-    F: Formula,
+    F: FormulaType,
     I: Iterator<Item = T>,
     P: FnMut(&T) -> bool,
     T: Serialize<F>,
@@ -690,8 +690,8 @@ where
 
 impl<FX, FY, X, Y> Serialize<[(FX, FY)]> for core::iter::Zip<X, Y>
 where
-    FX: Formula,
-    FY: Formula,
+    FX: FormulaType,
+    FY: FormulaType,
     X: Iterator,
     Y: Iterator,
     X::Item: Serialize<FX>,
