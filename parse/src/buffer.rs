@@ -1,4 +1,4 @@
-use std::{ops::Deref, rc::Rc};
+use alloc::{rc::Rc, string::String};
 
 // Cheaply cloneable buffer for parsing.
 #[derive(Clone)]
@@ -14,18 +14,8 @@ impl Buffer {
     pub fn as_str(&self) -> &str {
         self.string.as_str()
     }
-}
 
-impl Deref for Buffer {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        self.as_str()
-    }
-}
-
-impl AsRef<str> for Buffer {
-    fn as_ref(&self) -> &str {
-        self.as_str()
+    pub fn len(&self) -> usize {
+        self.string.len()
     }
 }

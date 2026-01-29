@@ -17,7 +17,10 @@ proc-macro = true
 evolution = []
 
 [dependencies]
+alkahest-parse.workspace = true
+alkahest-rust-gen.workspace = true
+
 proc-macro2 = "1.0"
 syn = { version = "2.0", features = ["derive"] }
 quote = "1.0"
-proc-easy = { version = "0.3.0" }
+proc-easy = { version = "0.4.0" }

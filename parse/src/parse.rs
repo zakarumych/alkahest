@@ -25,10 +25,6 @@ impl ParseStream {
         self.pos >= self.end
     }
 
-    pub(crate) fn buffer(&self) -> &Buffer {
-        &self.input
-    }
-
     /// Peeks at the next character in the stream without consuming it.
     pub fn fork(&self) -> Self {
         ParseStream {
@@ -52,14 +48,36 @@ impl ParseStream {
         let len = n.min(self.end - self.pos);
         let start = self.pos;
         self.pos += len;
-        &self.input[start..self.pos]
+        &self.input.as_str()[start..self.pos]
     }
 
     pub fn peek_char(&self) -> Option<char> {
         self.as_str().chars().next()
     }
 
-    pub fn as_str(&self) -> &str {
+    pub fn match_indices<P: Fn(char) -> bool>(
+        &self,
+        p: P,
+    ) -> impl Iterator<Item = (usize, char)> + use<'_, P> {
+        self.as_str().char_indices().filter(move |&(_, c)| p(c))
+    }
+
+    pub fn str_until<P: Fn(char) -> bool>(&self, p: P) -> &str {
+        match self.as_str().find(p) {
+            None => self.as_str(),
+            Some(pos) => &self.as_str()[..pos],
+        }
+    }
+
+    pub fn chars(&self) -> impl Iterator<Item = char> + '_ {
+        self.as_str().chars()
+    }
+
+    pub fn char_indices(&self) -> impl Iterator<Item = (usize, char)> + '_ {
+        self.as_str().char_indices()
+    }
+
+    fn as_str(&self) -> &str {
         &self.input.as_str()[self.pos..self.end]
     }
 

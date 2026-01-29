@@ -1,4 +1,6 @@
-use std::{fmt, rc::Rc};
+use core::fmt;
+
+use alloc::{borrow::ToOwned, rc::Rc, vec};
 
 use crate::{Span, parse::ParseStream};
 
@@ -23,6 +25,12 @@ impl fmt::Display for LexErrorKind {
 pub struct LexError {
     span: Span,
     kind: LexErrorKind,
+}
+
+impl fmt::Display for LexError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} @ {}..{}", self.kind, self.span.start, self.span.end)
+    }
 }
 
 impl LexError {
@@ -176,44 +184,38 @@ impl Ident {
     }
 
     pub fn parse(stream: &mut ParseStream) -> Result<Self, LexError> {
-        let start_pos = stream.pos();
-        let mut end_pos = start_pos;
-
-        let s = stream.buffer().as_str();
-
-        let mut chars = s[start_pos..].chars();
-
-        let first_char = chars.next().ok_or(LexError {
-            span: Span::new(start_pos, start_pos),
-            kind: LexErrorKind::UnexpectedEndOfInput,
-        })?;
-
-        if !unicode_ident::is_xid_start(first_char) {
-            return Err(LexError {
-                span: Span::new(start_pos, start_pos + first_char.len_utf8()),
-                kind: LexErrorKind::UnexpectedCharacter(first_char),
-            });
-        }
-
-        end_pos += first_char.len_utf8();
-
-        for ch in chars {
-            if !unicode_ident::is_xid_continue(ch) {
-                break;
+        match stream.peek_char() {
+            Some(c) => {
+                if !unicode_ident::is_xid_start(c) {
+                    return Err(LexError {
+                        span: Span::new(stream.pos(), stream.pos() + c.len_utf8()),
+                        kind: LexErrorKind::UnexpectedCharacter(c),
+                    });
+                }
             }
-            end_pos += ch.len_utf8();
-        }
+            None => {
+                return Err(LexError {
+                    span: Span::new(stream.pos(), stream.pos()),
+                    kind: LexErrorKind::UnexpectedEndOfInput,
+                });
+            }
+        };
 
-        let ident_str = &s[start_pos..end_pos];
-        let ident = Rc::from(ident_str);
+        // It is already checked that first character is xid_start
+        // xid_continue is superset of xid_start, so it will pass this predicate too.
+        let ident_string = stream
+            .str_until(|c| !unicode_ident::is_xid_continue(c))
+            .to_owned();
 
-        stream.consume(end_pos - start_pos);
+        let start = stream.pos();
+        stream.consume(ident_string.len());
+        let end = stream.pos();
 
-        Ok(Ident::new(ident, Span::new(start_pos, end_pos)))
+        Ok(Ident::new(Rc::from(ident_string), Span::new(start, end)))
     }
 }
 
-enum LiteralKind {
+pub enum LiteralKind {
     Number,
     Char,
     String,
@@ -258,39 +260,33 @@ impl Literal {
 
         match stream.peek_char() {
             Some(c) if c.is_ascii_digit() => {
-                // Parse number literal
-                let mut end_pos = start_pos;
+                let mut len = usize::MAX;
                 let mut has_point = false;
                 let mut has_exponent = false;
 
-                let s = stream.buffer().as_str();
-                let chars = s[start_pos..].chars();
-
-                for ch in chars {
+                // Parse number literal
+                for (pos, ch) in stream.char_indices() {
                     if ch.is_ascii_digit() || ch == '_' {
-                        end_pos += ch.len_utf8();
                         continue;
                     }
 
                     if !has_point && ch == '.' {
                         has_point = true;
-                        end_pos += ch.len_utf8();
                         continue;
                     }
 
                     if !has_exponent && (ch == 'e' || ch == 'E') {
                         has_exponent = true;
-                        end_pos += ch.len_utf8();
                         continue;
                     }
 
+                    len = pos;
                     break;
                 }
 
-                let literal_str = &s[start_pos..end_pos];
+                let literal_str = stream.consume(len);
                 let literal = Rc::from(literal_str);
-
-                stream.consume(end_pos - start_pos);
+                let end_pos = stream.pos();
 
                 Ok(Literal::new(
                     literal,
@@ -300,42 +296,44 @@ impl Literal {
             }
             Some('"') => {
                 // Parse string literal
-                let mut end_pos = start_pos + 1; // Skip opening quote
 
-                let s = stream.buffer().as_str();
-                let mut chars = s[end_pos..].chars();
+                let mut chars = stream.char_indices();
+                let _ = chars.next().unwrap(); // Skip opening quote
 
-                while let Some(ch) = chars.next() {
-                    end_pos += ch.len_utf8();
+                while let Some((pos, ch)) = chars.next() {
                     if ch == '"' {
-                        break;
+                        drop(chars);
+
+                        let len = pos + 1;
+
+                        let literal_str = stream.consume(len);
+                        let literal = Rc::from(literal_str);
+
+                        let end_pos = stream.pos();
+
+                        return Ok(Literal::new(
+                            literal,
+                            LiteralKind::String,
+                            Span::new(start_pos, end_pos),
+                        ));
                     }
                     if ch == '\\' {
                         // Skip escaped character
-                        if let Some(esc_ch) = chars.next() {
-                            end_pos += esc_ch.len_utf8();
-                        }
+                        if chars.next().is_none() {}
                     }
                 }
 
-                let literal_str = &s[start_pos..end_pos];
-                let literal = Rc::from(literal_str);
-
-                stream.consume(end_pos - start_pos);
-
-                Ok(Literal::new(
-                    literal,
-                    LiteralKind::String,
-                    Span::new(start_pos, end_pos),
-                ))
+                Err(LexError {
+                    span: stream.span(),
+                    kind: LexErrorKind::UnexpectedEndOfInput,
+                })
             }
 
             Some(c) if c == '\'' => {
                 // Parse char literal
                 let mut end_pos = start_pos + 1; // Skip opening quote
 
-                let s = stream.buffer().as_str();
-                let mut chars = s[end_pos..].chars();
+                let mut chars = stream.chars();
 
                 while let Some(ch) = chars.next() {
                     end_pos += ch.len_utf8();
@@ -349,11 +347,10 @@ impl Literal {
                         }
                     }
                 }
+                drop(chars);
 
-                let literal_str = &s[start_pos..end_pos];
+                let literal_str = stream.consume(end_pos - start_pos);
                 let literal = Rc::from(literal_str);
-
-                stream.consume(end_pos - start_pos);
 
                 Ok(Literal::new(
                     literal,
@@ -447,18 +444,20 @@ impl Group {
 
         let mut stack = vec![];
 
-        let s = stream.as_str();
+        let mut close_delim_found_at = None;
 
-        for (at, d) in s.match_indices(|ch: char| matches!(ch, '(' | ')' | '{' | '}' | '[' | ']')) {
+        for (at, d) in
+            stream.match_indices(|ch: char| matches!(ch, '(' | ')' | '{' | '}' | '[' | ']'))
+        {
             match d {
-                "(" => stack.push(Delimiter::Parenthesis),
-                "{" => stack.push(Delimiter::Brace),
-                "[" => stack.push(Delimiter::Bracket),
-                ")" | "]" | "}" => {
+                '(' => stack.push(Delimiter::Parenthesis),
+                '{' => stack.push(Delimiter::Brace),
+                '[' => stack.push(Delimiter::Bracket),
+                ')' | ']' | '}' => {
                     let close_delim = match d {
-                        ")" => Delimiter::Parenthesis,
-                        "}" => Delimiter::Brace,
-                        "]" => Delimiter::Bracket,
+                        ')' => Delimiter::Parenthesis,
+                        '}' => Delimiter::Brace,
+                        ']' => Delimiter::Bracket,
                         _ => unreachable!(),
                     };
 
@@ -471,17 +470,8 @@ impl Group {
                                 });
                             }
 
-                            let mut group_stream = stream.fork();
-                            group_stream.cut_at(at);
-                            stream.consume(at + 1);
-
-                            return Ok(Group::new(
-                                open_delim,
-                                TokenStream {
-                                    inner: group_stream,
-                                },
-                                Span::new(start_pos, stream.pos()),
-                            ));
+                            close_delim_found_at = Some(at);
+                            break;
                         }
                         Some(inner_delim) => {
                             if inner_delim != close_delim {
@@ -497,10 +487,23 @@ impl Group {
             }
         }
 
-        Err(LexError {
-            span: Span::new(start_pos, start_pos + s.len()),
-            kind: LexErrorKind::UnclosedDelimiter,
-        })
+        match close_delim_found_at {
+            None => Err(LexError {
+                span: stream.span(),
+                kind: LexErrorKind::UnclosedDelimiter,
+            }),
+            Some(at) => {
+                let mut group_stream = stream.fork();
+                group_stream.cut_at(at);
+                stream.consume(at + 1);
+
+                return Ok(Group::new(
+                    open_delim,
+                    TokenStream::new(group_stream),
+                    Span::new(start_pos, stream.pos()),
+                ));
+            }
+        }
     }
 }
 

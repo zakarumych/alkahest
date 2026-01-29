@@ -1,10 +1,9 @@
 use core::mem::size_of;
 
 use crate::{
-    buffer::Buffer,
     deserialize::{Deserialize, DeserializeError, Deserializer},
-    formula::{BareFormulaType, FormulaType},
-    serialize::{write_bytes, Serialize, SerializeRef, Sizes},
+    formula::Formula,
+    serialize::{Serialize, Serializer, Sizes},
 };
 
 macro_rules! impl_primitive {
@@ -22,21 +21,19 @@ macro_rules! impl_primitive {
     };
 
     (! $($from:ident)* < $ty:ident < $($to:ident)*) => {
-        impl FormulaType for $ty {
+        impl<const SIZE_BYTES: u8> Formula<SIZE_BYTES> for $ty {
             const MAX_STACK_SIZE: Option<usize> = Some(size_of::<$ty>());
             const EXACT_SIZE: bool = true;
             const HEAPLESS: bool = true;
         }
 
-        impl BareFormulaType for $ty {}
-
-        impl Serialize<$ty> for $ty {
+        impl<const SIZE_BYTES: u8> Serialize<$ty, SIZE_BYTES> for $ty {
             #[inline(always)]
-            fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
+            fn serialize<S>(&self, mut serializer: S) -> Result<(), S::Error>
             where
-                B: Buffer,
+                S: Serializer<SIZE_BYTES>,
             {
-                write_bytes(&self.to_le_bytes(), sizes, buffer)
+                serializer.write_bytes(&self.to_le_bytes())
             }
 
             #[inline(always)]
@@ -46,13 +43,13 @@ macro_rules! impl_primitive {
         }
 
         $(
-            impl Serialize<$ty> for $from {
+            impl<const SIZE_BYTES: u8> Serialize<$ty, SIZE_BYTES> for $from {
                 #[inline(always)]
-                fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
+                fn serialize<S>(&self, mut serializer: S) -> Result<(), S::Error>
                 where
-                    B: Buffer,
+                    S: Serializer<SIZE_BYTES>,
                 {
-                    write_bytes(&$ty::from(self).to_le_bytes(), sizes, buffer)
+                    serializer.write_bytes(&$ty::from(*self).to_le_bytes())
                 }
 
                 #[inline(always)]
@@ -62,25 +59,14 @@ macro_rules! impl_primitive {
             }
         )*
 
-        impl SerializeRef<$ty> for $ty {
-            #[inline(always)]
-            fn serialize<B>(&self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
-            where
-                B: Buffer,
-            {
-                write_bytes(&self.to_le_bytes(), sizes, buffer)
-            }
 
-            #[inline(always)]
-            fn size_hint(&self) -> Option<Sizes> {
-                Some(Sizes{ heap: 0, stack: size_of::<$ty>()})
-            }
-        }
-
-        impl Deserialize<'_, $ty> for $ty
+        impl<'de, const SIZE_BYTES: u8> Deserialize<'de, $ty, SIZE_BYTES> for $ty
         {
             #[inline(always)]
-            fn deserialize(mut de: Deserializer) -> Result<Self, DeserializeError> {
+            fn deserialize<D>(mut de: D) -> Result<Self, DeserializeError>
+            where
+                D: Deserializer<'de, SIZE_BYTES>,
+             {
                 let input = de.read_byte_array::<{size_of::<$ty>()}>()?;
                 // de.finish()?;
                 let value = <$ty>::from_le_bytes(input);
@@ -88,7 +74,10 @@ macro_rules! impl_primitive {
             }
 
             #[inline(always)]
-            fn deserialize_in_place(&mut self, mut de: Deserializer) -> Result<(), DeserializeError> {
+            fn deserialize_in_place<D>(&mut self, mut de: D) -> Result<(), DeserializeError>
+            where
+                D: Deserializer<'de, SIZE_BYTES>,
+            {
                 let input = de.read_byte_array::<{size_of::<$ty>()}>()?;
                 // de.finish()?;
                 let value = <$ty>::from_le_bytes(input);
@@ -98,35 +87,24 @@ macro_rules! impl_primitive {
         }
 
         $(
-            impl SerializeRef<$ty> for $from {
-                #[inline(always)]
-                fn serialize<B>(&self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
-                where
-                    B: Buffer,
-                {
-                    write_bytes(&$ty::from(*self).to_le_bytes(), sizes, buffer)
-                }
-
-                #[inline(always)]
-                fn size_hint(&self) -> Option<Sizes> {
-                    Some(Sizes{ heap: 0, stack: size_of::<$ty>()})
-                }
-            }
-
-            impl Deserialize<'_, $from> for $ty
+            impl<'de, const SIZE_BYTES: u8> Deserialize<'de, $from, SIZE_BYTES> for $ty
             {
                 #[inline(always)]
-                fn deserialize(mut de: Deserializer) -> Result<Self, DeserializeError> {
+                fn deserialize<D>(mut de: D) -> Result<Self, DeserializeError>
+                where
+                    D: Deserializer<'de, SIZE_BYTES>,
+                {
                     let input = de.read_byte_array::<{size_of::<$from>()}>()?;
-                    // de.finish()?;
                     let value = <$from>::from_le_bytes(input);
                     return Ok($ty::from(value));
                 }
 
                 #[inline(always)]
-                fn deserialize_in_place(&mut self, mut de: Deserializer) -> Result<(), DeserializeError> {
+                fn deserialize_in_place<D>(&mut self, mut de: D) -> Result<(), DeserializeError>
+                where
+                    D: Deserializer<'de, SIZE_BYTES>,
+                {
                     let input = de.read_byte_array::<{size_of::<$from>()}>()?;
-                    // de.finish()?;
                     let value = <$from>::from_le_bytes(input);
                     *self = $ty::from(value);
                     Ok(())
@@ -142,22 +120,20 @@ impl_primitive! {
     [f32 f64]
 }
 
-impl FormulaType for bool {
+impl<const SIZE_BYTES: u8> Formula<SIZE_BYTES> for bool {
     const MAX_STACK_SIZE: Option<usize> = Some(1);
     const EXACT_SIZE: bool = true;
     const HEAPLESS: bool = true;
 }
 
-impl BareFormulaType for bool {}
-
-impl Serialize<bool> for bool {
+impl<const SIZE_BYTES: u8> Serialize<bool, SIZE_BYTES> for bool {
     #[inline(always)]
-    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
+    fn serialize<S>(&self, mut serializer: S) -> Result<(), S::Error>
     where
         Self: Sized,
-        B: Buffer,
+        S: Serializer<SIZE_BYTES>,
     {
-        write_bytes(&[u8::from(self)], sizes, buffer)
+        serializer.write_bytes(&[u8::from(*self)])
     }
 
     #[inline(always)]
@@ -169,33 +145,21 @@ impl Serialize<bool> for bool {
     }
 }
 
-impl Serialize<bool> for &bool {
+impl<'de, const SIZE_BYTES: u8> Deserialize<'de, bool, SIZE_BYTES> for bool {
     #[inline(always)]
-    fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
+    fn deserialize<D>(mut de: D) -> Result<Self, DeserializeError>
     where
-        B: Buffer,
+        D: Deserializer<'de, SIZE_BYTES>,
     {
-        <u8 as Serialize<u8>>::serialize(u8::from(*self), sizes, buffer)
-    }
-
-    #[inline(always)]
-    fn size_hint(&self) -> Option<Sizes> {
-        Some(Sizes {
-            heap: 0,
-            stack: size_of::<u8>(),
-        })
-    }
-}
-
-impl Deserialize<'_, bool> for bool {
-    #[inline(always)]
-    fn deserialize(mut de: Deserializer) -> Result<Self, DeserializeError> {
         let byte = de.read_byte()?;
         Ok(byte != 0)
     }
 
     #[inline(always)]
-    fn deserialize_in_place(&mut self, mut de: Deserializer) -> Result<(), DeserializeError> {
+    fn deserialize_in_place<D>(&mut self, mut de: D) -> Result<(), DeserializeError>
+    where
+        D: Deserializer<'de, SIZE_BYTES>,
+    {
         let byte = de.read_byte()?;
         *self = byte != 0;
         Ok(())

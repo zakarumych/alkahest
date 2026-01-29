@@ -32,7 +32,7 @@ pub trait Buffer {
     /// If buffer cannot add padding bytes, it should return `Err`.
     fn pad_stack(&mut self, heap: usize, stack: usize, len: usize) -> Result<(), Self::Error>;
 
-    /// Moves bytes from stack to heap.
+    /// Moves `len` bytes from stack to heap.
     fn move_to_heap(&mut self, heap: usize, stack: usize, len: usize);
 
     /// Reserves heap space and returns a mutable bytes slice reference.

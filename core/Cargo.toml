@@ -1,0 +1,12 @@
+[package]
+name = "alkahest-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+
+
+[features]
+std = ["alloc"]
+alloc = []
+default = ["std"]

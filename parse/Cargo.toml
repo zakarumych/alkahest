@@ -1,7 +1,8 @@
 [package]
 name = "alkahest-parse"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+description = "Parser for the Alkahest formula language"
 
 [dependencies]
-unicode-ident = "1.0"
+unicode-ident.workspace = true

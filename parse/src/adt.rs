@@ -1,4 +1,6 @@
-use std::{fmt, ops::Deref, rc::Rc, str::FromStr};
+use core::{fmt, ops::Deref, str::FromStr};
+
+use alloc::{rc::Rc, string::String, vec::Vec};
 
 use crate::{
     Span,
@@ -96,7 +98,7 @@ macro_rules! single_punct_token {
         impl Parser for $name {
             fn parse(stream: &mut TokenStream) -> Result<Self, ParseError> {
                 match stream.next()? {
-                    Token::Punct(punct) if punct.eq_str(std::stringify!($p)) => {
+                    Token::Punct(punct) if punct.eq_str(stringify!($p)) => {
                         Ok($name { _private: () })
                     }
                     token => Err(ParseError {
@@ -128,11 +130,11 @@ macro_rules! double_punct_token {
             fn parse(stream: &mut TokenStream) -> Result<Self, ParseError> {
                 match stream.next()? {
                     Token::Punct(punct_a)
-                        if punct_a.eq_str(std::stringify!($a))
+                        if punct_a.eq_str(stringify!($a))
                             && punct_a.spacing() == Spacing::Joint =>
                     {
                         match stream.next()? {
-                            Token::Punct(punct_b) if punct_b.eq_str(std::stringify!($b)) => {
+                            Token::Punct(punct_b) if punct_b.eq_str(stringify!($b)) => {
                                 Ok($name { _private: () })
                             }
                             token => Err(ParseError {
@@ -178,7 +180,7 @@ macro_rules! keyword_token {
         impl Parser for $name {
             fn parse(stream: &mut TokenStream) -> Result<Self, ParseError> {
                 match stream.next()? {
-                    Token::Ident(ident) if ident.as_str() == std::stringify!($name) => {
+                    Token::Ident(ident) if ident.as_str() == stringify!($name) => {
                         Ok($name { _private: () })
                     }
                     token => Err(ParseError {
@@ -250,7 +252,7 @@ macro_rules! parse_braced {
     };
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct Ident(Rc<str>);
 
@@ -313,7 +315,7 @@ impl Parser for u32 {
 }
 
 /// A reference to a symbol (e.g., formula name).
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Symbol(Rc<str>);
 
 struct SkipLastIterator<I>
@@ -401,56 +403,44 @@ impl Parser for Symbol {
     }
 }
 
-#[derive(Clone)]
-pub struct NamedFormula {
-    pub name: Ident,
-    pub formula: Formula,
+/// Formula of an element.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Element {
+    pub indirect: bool,
+    pub kind: ElementKind,
 }
 
-/// Data formula.
-#[derive(Clone)]
-pub enum Formula {
-    /// A reference to another formula.
-    Symbol(Symbol),
+impl Parser for Element {
+    fn parse(stream: &mut TokenStream) -> Result<Self, ParseError>
+    where
+        Self: Sized,
+    {
+        let mut indirect = false;
+        if stream.peek::<Token![&]>() {
+            let _amp = stream.parse::<Token![&]>()?;
+            indirect = true;
+        }
 
-    /// A formula of reference.
-    /// Encoded as a pointer to another location that holds the actual data.
-    Reference { formula: Rc<Formula> },
+        let kind = stream.parse::<ElementKind>()?;
 
-    /// A sequence of elements with the same formula.
-    ///
-    /// Length bounds are inclusive.
-    ///
-    /// Bounds affect how length is serialized.
-    List {
-        element: Rc<Formula>,
-        min_len: u32,
-        max_len: u32,
-    },
-
-    /// A fixed-length sequence of elements with different formulas.
-    Tuple { elements: Rc<[Formula]> },
-
-    /// A fixed-length structure with named fields.
-    Record { fields: Rc<[NamedFormula]> },
-
-    /// An alternative among different variants.
-    Variant { variants: Rc<[NamedFormula]> },
+        Ok(Element { indirect, kind })
+    }
 }
 
-struct ListFormula {
-    element: Formula,
-    min_len: u32,
-    max_len: u32,
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct List {
+    pub element: Rc<Element>,
+    pub min_len: u32,
+    pub max_len: u32,
 }
 
-impl Parser for ListFormula {
+impl Parser for List {
     fn parse(stream: &mut TokenStream) -> Result<Self, ParseError> {
-        let element = stream.parse::<Formula>()?;
+        let element = stream.parse::<Element>()?;
 
         if !stream.peek::<Token![;]>() {
-            return Ok(ListFormula {
-                element,
+            return Ok(List {
+                element: Rc::new(element),
                 min_len: 0,
                 max_len: u32::MAX,
             });
@@ -460,8 +450,8 @@ impl Parser for ListFormula {
         let size = stream.parse::<u32>()?;
 
         if !stream.peek::<Token![:]>() {
-            return Ok(ListFormula {
-                element,
+            return Ok(List {
+                element: Rc::new(element),
                 min_len: size,
                 max_len: size,
             });
@@ -470,24 +460,25 @@ impl Parser for ListFormula {
         let _colon = stream.parse::<Token![:]>()?;
         let max_size = stream.parse::<u32>()?;
 
-        Ok(ListFormula {
-            element,
+        Ok(List {
+            element: Rc::new(element),
             min_len: size,
             max_len: max_size,
         })
     }
 }
 
-struct TupleFormula {
-    elements: Vec<Formula>,
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Tuple {
+    pub elements: Rc<[Element]>,
 }
 
-impl Parser for TupleFormula {
+impl Parser for Tuple {
     fn parse(stream: &mut TokenStream) -> Result<Self, ParseError> {
         let mut elements = Vec::new();
 
         while !stream.is_empty() {
-            let element = stream.parse::<Formula>()?;
+            let element = stream.parse::<Element>()?;
             elements.push(element);
 
             if stream.peek::<Comma>() {
@@ -497,26 +488,79 @@ impl Parser for TupleFormula {
             }
         }
 
-        Ok(TupleFormula { elements })
+        Ok(Tuple {
+            elements: Rc::from(elements),
+        })
     }
 }
 
-struct RecordFormula {
-    fields: Vec<NamedFormula>,
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ElementKind {
+    /// A reference to another formula.
+    Symbol(Symbol),
+
+    /// A sequence of elements with the same formula.
+    ///
+    /// Length bounds are inclusive.
+    ///
+    /// Bounds affect how length is serialized.
+    List(List),
+
+    /// A fixed-length sequence of elements with different formulas.
+    Tuple(Tuple),
 }
 
-impl Parser for RecordFormula {
+impl Parser for ElementKind {
+    fn parse(stream: &mut TokenStream) -> Result<Self, ParseError>
+    where
+        Self: Sized,
+    {
+        if stream.peek::<Ident>() {
+            let symbol = stream.parse::<Symbol>()?;
+            return Ok(ElementKind::Symbol(symbol));
+        }
+
+        if stream.peek::<Bracket>() {
+            let list = parse_bracketed!(List in stream);
+
+            return Ok(ElementKind::List(list));
+        }
+
+        if stream.peek::<Parenthesis>() {
+            let tuple = parse_parenthesised!(Tuple in stream);
+            return Ok(ElementKind::Tuple(tuple));
+        }
+
+        Err(ParseError {
+            span: stream.span(),
+            kind: ParseErrorKind::ExpectedFormulaRef,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct NamedElement {
+    pub name: Ident,
+    pub element: Element,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Record {
+    pub fields: Rc<[NamedElement]>,
+}
+
+impl Parser for Record {
     fn parse(stream: &mut TokenStream) -> Result<Self, ParseError> {
         let mut fields = Vec::new();
 
         while !stream.is_empty() {
             let field_name = stream.parse::<Ident>()?;
             let _colon = stream.parse::<Token![:]>()?;
-            let field_formula = stream.parse::<Formula>()?;
+            let field_element = stream.parse::<Element>()?;
 
-            fields.push(NamedFormula {
+            fields.push(NamedElement {
                 name: field_name,
-                formula: field_formula,
+                element: field_element,
             });
 
             if stream.peek::<Comma>() {
@@ -526,15 +570,35 @@ impl Parser for RecordFormula {
             }
         }
 
-        Ok(RecordFormula { fields })
+        Ok(Record {
+            fields: Rc::from(fields),
+        })
     }
 }
 
-struct VariantFormula {
-    variants: Vec<NamedFormula>,
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Variant {
+    Unit,
+
+    /// A fixed-length sequence of elements with different formulas.
+    Tuple(Tuple),
+
+    /// A fixed-length structure with named fields.
+    Record(Record),
 }
 
-impl Parser for VariantFormula {
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct NamedVariant {
+    pub name: Ident,
+    pub variant: Variant,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Variants {
+    pub variants: Rc<[NamedVariant]>,
+}
+
+impl Parser for Variants {
     fn parse(stream: &mut TokenStream) -> Result<Self, ParseError> {
         let mut variants = Vec::new();
 
@@ -542,75 +606,61 @@ impl Parser for VariantFormula {
             let _pipe = stream.parse::<Token![|]>()?;
             let variant_name = stream.parse::<Ident>()?;
 
-            // If variant name is followed by next variant, comma, or is at the end, it is a unit variant.
-            // This makes it impossible to define variant which formula is an enum.
-            if stream.peek::<Token![|]>() || stream.is_empty() || stream.peek::<Token![,]>() {
-                // Variant without associated formula (unit variant).
-                variants.push(NamedFormula {
+            if stream.peek::<Parenthesis>() {
+                let tuple_formula = parse_parenthesised!(Tuple in stream);
+
+                variants.push(NamedVariant {
                     name: variant_name,
-                    formula: Formula::Tuple {
-                        elements: Rc::from([]),
-                    },
+                    variant: Variant::Tuple(tuple_formula),
                 });
-                continue;
+            } else if stream.peek::<Brace>() {
+                let record_formula = parse_braced!(Record in stream);
+
+                variants.push(NamedVariant {
+                    name: variant_name,
+                    variant: Variant::Record(record_formula),
+                });
+            } else {
+                variants.push(NamedVariant {
+                    name: variant_name,
+                    variant: Variant::Unit,
+                });
             }
-
-            let variant_formula = stream.parse::<Formula>()?;
-
-            variants.push(NamedFormula {
-                name: variant_name,
-                formula: variant_formula,
-            });
         }
 
-        Ok(VariantFormula { variants })
+        Ok(Variants {
+            variants: Rc::from(variants),
+        })
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Formula {
+    /// A fixed-length sequence of elements with different formulas.
+    Tuple(Tuple),
+
+    /// A fixed-length structure with named fields.
+    Record(Record),
+
+    /// An alternative among different variants.
+    Variants(Variants),
 }
 
 impl Parser for Formula {
     fn parse(stream: &mut TokenStream) -> Result<Self, ParseError> {
-        if stream.peek::<Ident>() {
-            let symbol = stream.parse::<Symbol>()?;
-            return Ok(Formula::Symbol(symbol));
-        }
-
-        if stream.peek::<Token![&]>() {
-            let _amp = stream.parse::<Token![&]>()?;
-            let formula = stream.parse::<Formula>()?;
-            return Ok(Formula::Reference {
-                formula: Rc::new(formula),
-            });
-        }
-
-        if stream.peek::<Bracket>() {
-            let list_formula = parse_bracketed!(ListFormula in stream);
-
-            return Ok(Formula::List {
-                element: Rc::new(list_formula.element),
-                min_len: list_formula.min_len,
-                max_len: list_formula.max_len,
-            });
-        }
-
         if stream.peek::<Parenthesis>() {
-            let tuple_formula = parse_parenthesised!(TupleFormula in stream);
-            return Ok(Formula::Tuple {
-                elements: Rc::from(tuple_formula.elements),
-            });
+            let tuple_formula = parse_parenthesised!(Tuple in stream);
+            return Ok(Formula::Tuple(tuple_formula));
         }
 
         if stream.peek::<Brace>() {
-            let record_formula = parse_braced!(RecordFormula in stream);
-            return Ok(Formula::Record {
-                fields: Rc::from(record_formula.fields),
-            });
+            let record_formula = parse_braced!(Record in stream);
+            return Ok(Formula::Record(record_formula));
         }
 
         if stream.peek::<Token![|]>() {
-            let variant_formula = stream.parse::<VariantFormula>()?;
-            return Ok(Formula::Variant {
-                variants: Rc::from(variant_formula.variants),
-            });
+            let variants_formula = stream.parse::<Variants>()?;
+            return Ok(Formula::Variants(variants_formula));
         }
 
         Err(ParseError {
@@ -620,10 +670,17 @@ impl Parser for Formula {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct NamedFormula {
+    pub name: Ident,
+    pub formula: Formula,
+}
+
 /// Represents entire source file containing Alkahest formulas.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Module {
     /// List of formulas defined in the document.
-    pub formulas: Vec<NamedFormula>,
+    pub formulas: Rc<[NamedFormula]>,
 }
 
 impl Parser for Module {
@@ -640,7 +697,9 @@ impl Parser for Module {
             formulas.push(NamedFormula { name, formula });
         }
 
-        Ok(Module { formulas })
+        Ok(Module {
+            formulas: Rc::from(formulas),
+        })
     }
 }
 
@@ -650,7 +709,21 @@ pub enum ParseErrorKind {
     Unexpected,
     UnexpectedToken,
     ExpectedFormula,
+    ExpectedFormulaRef,
     Custom(String),
+}
+
+impl fmt::Display for ParseErrorKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ParseErrorKind::LexError(kind) => write!(f, "{:?}", kind),
+            ParseErrorKind::Unexpected => write!(f, "Unexpected token"),
+            ParseErrorKind::UnexpectedToken => write!(f, "Unexpected token"),
+            ParseErrorKind::ExpectedFormula => write!(f, "Expected formula"),
+            ParseErrorKind::ExpectedFormulaRef => write!(f, "Expected formula reference"),
+            ParseErrorKind::Custom(msg) => write!(f, "{}", msg),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -659,7 +732,17 @@ pub struct ParseError {
     kind: ParseErrorKind,
 }
 
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} @ {}..{}", self.kind, self.span.start, self.span.end)
+    }
+}
+
 impl ParseError {
+    pub(crate) fn new(span: Span, kind: ParseErrorKind) -> Self {
+        ParseError { span, kind }
+    }
+
     pub fn span(&self) -> Span {
         self.span
     }
@@ -678,19 +761,7 @@ impl From<LexError> for ParseError {
     }
 }
 
-impl fmt::Display for ParseErrorKind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ParseErrorKind::LexError(kind) => write!(f, "{:?}", kind),
-            ParseErrorKind::Unexpected => write!(f, "Unexpected token"),
-            ParseErrorKind::UnexpectedToken => write!(f, "Unexpected token"),
-            ParseErrorKind::ExpectedFormula => write!(f, "Expected formula"),
-            ParseErrorKind::Custom(msg) => write!(f, "{}", msg),
-        }
-    }
-}
-
-pub fn parse_string(source: String) -> Result<Module, ParseError> {
+pub fn parse_module(source: String) -> Result<Module, ParseError> {
     let mut token_stream = TokenStream::new(ParseStream::new(Buffer::from_string(source)));
     let module = token_stream.parse::<Module>()?;
 
@@ -706,6 +777,8 @@ pub fn parse_string(source: String) -> Result<Module, ParseError> {
 
 #[cfg(test)]
 mod tests {
+    use alloc::string::ToString;
+
     use super::*;
 
     fn parse_formula(source: &str) -> Result<Formula, ParseError> {
@@ -714,26 +787,34 @@ mod tests {
         stream.parse::<Formula>()
     }
 
+    fn parse_element(source: &str) -> Result<Element, ParseError> {
+        let mut stream =
+            TokenStream::new(ParseStream::new(Buffer::from_string(source.to_string())));
+        stream.parse::<Element>()
+    }
+
     fn parse_module(source: &str) -> Result<Module, ParseError> {
-        parse_string(source.to_string())
+        let mut stream =
+            TokenStream::new(ParseStream::new(Buffer::from_string(source.to_string())));
+        stream.parse::<Module>()
     }
 
     #[test]
     fn test_symbol_simple() {
-        let formula = parse_formula("MyType").unwrap();
-        match formula {
-            Formula::Symbol(sym) => assert_eq!(sym.name(), "MyType"),
+        let element = parse_element("MyType").unwrap();
+        match element.kind {
+            ElementKind::Symbol(sym) => assert_eq!(sym.name(), "MyType"),
             _ => panic!("Expected Symbol"),
         }
     }
 
     #[test]
     fn test_symbol_with_path() {
-        let formula = parse_formula("module::Type").unwrap();
-        match formula {
-            Formula::Symbol(sym) => {
+        let element = parse_element("module::Type").unwrap();
+        match element.kind {
+            ElementKind::Symbol(sym) => {
                 assert_eq!(sym.name(), "Type");
-                assert_eq!(sym.path().collect::<Vec<_>>(), vec!["module"]);
+                assert_eq!(sym.path().collect::<Vec<_>>(), alloc::vec!["module"]);
             }
             _ => panic!("Expected Symbol"),
         }
@@ -741,11 +822,11 @@ mod tests {
 
     #[test]
     fn test_symbol_nested_path() {
-        let formula = parse_formula("a::b::c::Type").unwrap();
-        match formula {
-            Formula::Symbol(sym) => {
+        let element = parse_element("a::b::c::Type").unwrap();
+        match element.kind {
+            ElementKind::Symbol(sym) => {
                 assert_eq!(sym.name(), "Type");
-                assert_eq!(sym.path().collect::<Vec<_>>(), vec!["a", "b", "c"]);
+                assert_eq!(sym.path().collect::<Vec<_>>(), alloc::vec!["a", "b", "c"]);
             }
             _ => panic!("Expected Symbol"),
         }
@@ -753,29 +834,30 @@ mod tests {
 
     #[test]
     fn test_reference() {
-        let formula = parse_formula("&MyType").unwrap();
-        match formula {
-            Formula::Reference { formula: inner } => match inner.as_ref() {
-                Formula::Symbol(sym) => assert_eq!(sym.name(), "MyType"),
-                _ => panic!("Expected Symbol inside Reference"),
-            },
-            _ => panic!("Expected Reference"),
+        let element = parse_element("&MyType").unwrap();
+
+        assert!(element.indirect);
+
+        match element.kind {
+            ElementKind::Symbol(sym) => assert_eq!(sym.name(), "MyType"),
+            _ => panic!("Expected Symbol inside Reference"),
         }
     }
 
     #[test]
     fn test_list_unbounded() {
-        let formula = parse_formula("[u32]").unwrap();
-        match formula {
-            Formula::List {
+        let element = parse_element("[u32]").unwrap();
+        match element.kind {
+            ElementKind::List(List {
                 element,
                 min_len,
                 max_len,
-            } => {
+            }) => {
                 assert_eq!(min_len, 0);
                 assert_eq!(max_len, u32::MAX);
-                match element.as_ref() {
-                    Formula::Symbol(sym) => assert_eq!(sym.name(), "u32"),
+                assert_eq!(element.indirect, false);
+                match &element.kind {
+                    ElementKind::Symbol(sym) => assert_eq!(sym.name(), "u32"),
                     _ => panic!("Expected Symbol"),
                 }
             }
@@ -785,17 +867,18 @@ mod tests {
 
     #[test]
     fn test_list_fixed_length() {
-        let formula = parse_formula("[u32; 10]").unwrap();
-        match formula {
-            Formula::List {
+        let element = parse_element("[u32; 10]").unwrap();
+        match element.kind {
+            ElementKind::List(List {
                 element,
                 min_len,
                 max_len,
-            } => {
+            }) => {
                 assert_eq!(min_len, 10);
                 assert_eq!(max_len, 10);
-                match element.as_ref() {
-                    Formula::Symbol(sym) => assert_eq!(sym.name(), "u32"),
+                assert_eq!(element.indirect, false);
+                match &element.kind {
+                    ElementKind::Symbol(sym) => assert_eq!(sym.name(), "u32"),
                     _ => panic!("Expected Symbol"),
                 }
             }
@@ -805,17 +888,18 @@ mod tests {
 
     #[test]
     fn test_list_bounded() {
-        let formula = parse_formula("[u32; 5:10]").unwrap();
-        match formula {
-            Formula::List {
+        let element = parse_element("[u32; 5:10]").unwrap();
+        match element.kind {
+            ElementKind::List(List {
                 element,
                 min_len,
                 max_len,
-            } => {
+            }) => {
                 assert_eq!(min_len, 5);
                 assert_eq!(max_len, 10);
-                match element.as_ref() {
-                    Formula::Symbol(sym) => assert_eq!(sym.name(), "u32"),
+                assert_eq!(element.indirect, false);
+                match &element.kind {
+                    ElementKind::Symbol(sym) => assert_eq!(sym.name(), "u32"),
                     _ => panic!("Expected Symbol"),
                 }
             }
@@ -825,21 +909,19 @@ mod tests {
 
     #[test]
     fn test_list_of_references() {
-        let formula = parse_formula("[&Data; 1:100]").unwrap();
-        match formula {
-            Formula::List {
+        let element = parse_element("[&Data; 1:100]").unwrap();
+        match element.kind {
+            ElementKind::List(List {
                 element,
                 min_len,
                 max_len,
-            } => {
+            }) => {
                 assert_eq!(min_len, 1);
                 assert_eq!(max_len, 100);
-                match element.as_ref() {
-                    Formula::Reference { formula: inner } => match inner.as_ref() {
-                        Formula::Symbol(sym) => assert_eq!(sym.name(), "Data"),
-                        _ => panic!("Expected Symbol"),
-                    },
-                    _ => panic!("Expected Reference"),
+                assert_eq!(element.indirect, true);
+                match &element.kind {
+                    ElementKind::Symbol(sym) => assert_eq!(sym.name(), "Data"),
+                    _ => panic!("Expected Symbol"),
                 }
             }
             _ => panic!("Expected List"),
@@ -848,11 +930,11 @@ mod tests {
 
     #[test]
     fn test_deeply_nested() {
-        let formula = parse_formula("[[u32]]").unwrap();
-        match formula {
-            Formula::List { element, .. } => match element.as_ref() {
-                Formula::List { element: inner, .. } => match inner.as_ref() {
-                    Formula::Symbol(sym) => assert_eq!(sym.name(), "u32"),
+        let element = parse_element("[[u32]]").unwrap();
+        match element.kind {
+            ElementKind::List(List { element, .. }) => match &element.kind {
+                ElementKind::List(List { element: inner, .. }) => match &inner.kind {
+                    ElementKind::Symbol(sym) => assert_eq!(sym.name(), "u32"),
                     _ => panic!("Expected Symbol"),
                 },
                 _ => panic!("Expected List"),
@@ -863,9 +945,9 @@ mod tests {
 
     #[test]
     fn test_tuple_empty() {
-        let formula = parse_formula("()").unwrap();
-        match formula {
-            Formula::Tuple { elements } => {
+        let element = parse_element("()").unwrap();
+        match element.kind {
+            ElementKind::Tuple(Tuple { elements }) => {
                 assert_eq!(elements.len(), 0);
             }
             _ => panic!("Expected Tuple"),
@@ -874,12 +956,13 @@ mod tests {
 
     #[test]
     fn test_tuple_single_element() {
-        let formula = parse_formula("(u32)").unwrap();
-        match formula {
-            Formula::Tuple { elements } => {
+        let element = parse_element("(u32)").unwrap();
+        match element.kind {
+            ElementKind::Tuple(Tuple { elements }) => {
                 assert_eq!(elements.len(), 1);
-                match &elements[0] {
-                    Formula::Symbol(sym) => assert_eq!(sym.name(), "u32"),
+                assert_eq!(elements[0].indirect, false);
+                match &elements[0].kind {
+                    ElementKind::Symbol(sym) => assert_eq!(sym.name(), "u32"),
                     _ => panic!("Expected Symbol"),
                 }
             }
@@ -889,20 +972,23 @@ mod tests {
 
     #[test]
     fn test_tuple_multiple_elements() {
-        let formula = parse_formula("(u32, string, bool)").unwrap();
-        match formula {
-            Formula::Tuple { elements } => {
+        let element = parse_element("(u32, &string, bool)").unwrap();
+        match element.kind {
+            ElementKind::Tuple(Tuple { elements }) => {
                 assert_eq!(elements.len(), 3);
-                match &elements[0] {
-                    Formula::Symbol(sym) => assert_eq!(sym.name(), "u32"),
+                assert_eq!(elements[0].indirect, false);
+                assert_eq!(elements[1].indirect, true);
+                assert_eq!(elements[2].indirect, false);
+                match &elements[0].kind {
+                    ElementKind::Symbol(sym) => assert_eq!(sym.name(), "u32"),
                     _ => panic!("Expected Symbol"),
                 }
-                match &elements[1] {
-                    Formula::Symbol(sym) => assert_eq!(sym.name(), "string"),
+                match &elements[1].kind {
+                    ElementKind::Symbol(sym) => assert_eq!(sym.name(), "string"),
                     _ => panic!("Expected Symbol"),
                 }
-                match &elements[2] {
-                    Formula::Symbol(sym) => assert_eq!(sym.name(), "bool"),
+                match &elements[2].kind {
+                    ElementKind::Symbol(sym) => assert_eq!(sym.name(), "bool"),
                     _ => panic!("Expected Symbol"),
                 }
             }
@@ -912,21 +998,25 @@ mod tests {
 
     #[test]
     fn test_tuple_with_complex_types() {
-        let formula = parse_formula("([u32; 5], &Data)").unwrap();
-        match formula {
-            Formula::Tuple { elements } => {
+        let element = parse_element("([u32; 5], &Data)").unwrap();
+        match element.kind {
+            ElementKind::Tuple(Tuple { elements }) => {
                 assert_eq!(elements.len(), 2);
-                match &elements[0] {
-                    Formula::List {
+
+                assert_eq!(elements[0].indirect, false);
+                match &elements[0].kind {
+                    ElementKind::List(List {
                         min_len, max_len, ..
-                    } => {
+                    }) => {
                         assert_eq!(*min_len, 5);
                         assert_eq!(*max_len, 5);
                     }
                     _ => panic!("Expected List"),
                 }
-                match &elements[1] {
-                    Formula::Reference { .. } => {}
+
+                assert_eq!(elements[1].indirect, true);
+                match &elements[1].kind {
+                    ElementKind::Symbol(sym) => assert_eq!(sym.name(), "Data"),
                     _ => panic!("Expected Reference"),
                 }
             }
@@ -938,11 +1028,12 @@ mod tests {
     fn test_record_single_field() {
         let formula = parse_formula("{x: u32}").unwrap();
         match formula {
-            Formula::Record { fields } => {
+            Formula::Record(Record { fields }) => {
                 assert_eq!(fields.len(), 1);
                 assert_eq!(fields[0].name.as_str(), "x");
-                match &fields[0].formula {
-                    Formula::Symbol(sym) => assert_eq!(sym.name(), "u32"),
+                assert_eq!(fields[0].element.indirect, false);
+                match &fields[0].element.kind {
+                    ElementKind::Symbol(sym) => assert_eq!(sym.name(), "u32"),
                     _ => panic!("Expected Symbol"),
                 }
             }
@@ -954,7 +1045,7 @@ mod tests {
     fn test_record_multiple_fields() {
         let formula = parse_formula("{x: u32, y: string, z: bool}").unwrap();
         match formula {
-            Formula::Record { fields } => {
+            Formula::Record(Record { fields }) => {
                 assert_eq!(fields.len(), 3);
                 assert_eq!(fields[0].name.as_str(), "x");
                 assert_eq!(fields[1].name.as_str(), "y");
@@ -968,22 +1059,23 @@ mod tests {
     fn test_record_with_complex_types() {
         let formula = parse_formula("{data: [u32; 10], ptr: &Data}").unwrap();
         match formula {
-            Formula::Record { fields } => {
+            Formula::Record(Record { fields }) => {
                 assert_eq!(fields.len(), 2);
                 assert_eq!(fields[0].name.as_str(), "data");
-                match &fields[0].formula {
-                    Formula::List {
+                match &fields[0].element.kind {
+                    ElementKind::List(List {
                         min_len, max_len, ..
-                    } => {
+                    }) => {
                         assert_eq!(*min_len, 10);
                         assert_eq!(*max_len, 10);
                     }
                     _ => panic!("Expected List"),
                 }
                 assert_eq!(fields[1].name.as_str(), "ptr");
-                match &fields[1].formula {
-                    Formula::Reference { .. } => {}
-                    _ => panic!("Expected Reference"),
+                assert_eq!(fields[1].element.indirect, true);
+                match &fields[1].element.kind {
+                    ElementKind::Symbol(sym) => assert_eq!(sym.name(), "Data"),
+                    _ => panic!("Expected Symbol"),
                 }
             }
             _ => panic!("Expected Record"),
@@ -991,30 +1083,22 @@ mod tests {
     }
 
     #[test]
-    fn test_nested_structures() {
-        let formula = parse_formula("({x: u32, y: string})").unwrap();
-        match formula {
-            Formula::Tuple { elements } => {
-                assert_eq!(elements.len(), 1);
-                match &elements[0] {
-                    Formula::Record { fields } => assert_eq!(fields.len(), 2),
-                    _ => panic!("Expected Record"),
-                }
-            }
-            _ => panic!("Expected Tuple"),
-        }
-    }
-
-    #[test]
     fn test_variant_single() {
-        let formula = parse_formula("|Foo u32").unwrap();
+        let formula = parse_formula("|Foo(u32)").unwrap();
         match formula {
-            Formula::Variant { variants } => {
+            Formula::Variants(Variants { variants }) => {
                 assert_eq!(variants.len(), 1);
                 assert_eq!(variants[0].name.as_str(), "Foo");
-                match &variants[0].formula {
-                    Formula::Symbol(sym) => assert_eq!(sym.name(), "u32"),
-                    _ => panic!("Expected Symbol"),
+                match &variants[0].variant {
+                    Variant::Tuple(Tuple { elements }) => {
+                        assert_eq!(elements.len(), 1);
+                        assert_eq!(elements[0].indirect, false);
+                        match &elements[0].kind {
+                            ElementKind::Symbol(sym) => assert_eq!(sym.name(), "u32"),
+                            _ => panic!("Expected Symbol"),
+                        }
+                    }
+                    _ => panic!("Expected Tuple variant"),
                 }
             }
             _ => panic!("Expected Variant"),
@@ -1023,9 +1107,9 @@ mod tests {
 
     #[test]
     fn test_variant_multiple() {
-        let formula = parse_formula("|None |Some u32").unwrap();
+        let formula = parse_formula("|None |Some(u32)").unwrap();
         match formula {
-            Formula::Variant { variants } => {
+            Formula::Variants(Variants { variants }) => {
                 assert_eq!(variants.len(), 2);
                 assert_eq!(variants[0].name.as_str(), "None");
                 assert_eq!(variants[1].name.as_str(), "Some");
@@ -1036,43 +1120,79 @@ mod tests {
 
     #[test]
     fn test_variant_with_complex_types() {
-        let formula = parse_formula("|Ok {value: u32} |Err &string").unwrap();
+        let formula = parse_formula("|Ok {value: u32} |Err(&string)").unwrap();
         match formula {
-            Formula::Variant { variants } => {
+            Formula::Variants(Variants { variants }) => {
                 assert_eq!(variants.len(), 2);
                 assert_eq!(variants[0].name.as_str(), "Ok");
-                match &variants[0].formula {
-                    Formula::Record { .. } => {}
+                match &variants[0].variant {
+                    Variant::Record(Record { fields }) => {
+                        assert_eq!(fields.len(), 1);
+                        assert_eq!(fields[0].name.as_str(), "value");
+                        assert_eq!(fields[0].element.indirect, false);
+                        match &fields[0].element.kind {
+                            ElementKind::Symbol(sym) => assert_eq!(sym.name(), "u32"),
+                            _ => panic!("Expected Symbol"),
+                        }
+                    }
                     _ => panic!("Expected Record"),
                 }
                 assert_eq!(variants[1].name.as_str(), "Err");
-                match &variants[1].formula {
-                    Formula::Reference { .. } => {}
-                    _ => panic!("Expected Reference"),
+                match &variants[1].variant {
+                    Variant::Tuple(Tuple { elements }) => {
+                        assert_eq!(elements.len(), 1);
+                        assert_eq!(elements[0].indirect, true);
+                        match &elements[0].kind {
+                            ElementKind::Symbol(sym) => assert_eq!(sym.name(), "string"),
+                            _ => panic!("Expected Symbol"),
+                        }
+                    }
+                    _ => panic!("Expected Tuple variant"),
                 }
             }
-            _ => panic!("Expected Variant"),
+            _ => panic!("Expected Variants"),
         }
     }
 
     #[test]
     fn test_module_simple() {
-        let module = parse_module("formula MyType = u32;").unwrap();
+        let module = parse_module("formula MyType = (u32);").unwrap();
         assert_eq!(module.formulas.len(), 1);
         assert_eq!(module.formulas[0].name.as_str(), "MyType");
         match &module.formulas[0].formula {
-            Formula::Symbol(sym) => assert_eq!(sym.name(), "u32"),
+            Formula::Tuple(Tuple { elements }) => {
+                assert_eq!(elements.len(), 1);
+                assert_eq!(elements[0].indirect, false);
+                match &elements[0].kind {
+                    ElementKind::Symbol(sym) => assert_eq!(sym.name(), "u32"),
+                    _ => panic!("Expected Symbol"),
+                }
+            }
             _ => panic!("Expected Symbol"),
         }
     }
 
     #[test]
     fn test_module_multiple_formulas() {
-        let source = "formula A = u32; formula B = string; formula C = {x: u32};";
+        let source = "formula A = (u32); formula B = (string); formula C = {x: u32}; formula D = |Foo |Bar(u32) |Baz {a: A, b: B, c: C};";
         let module = parse_module(source).unwrap();
-        assert_eq!(module.formulas.len(), 3);
+        assert_eq!(module.formulas.len(), 4);
         assert_eq!(module.formulas[0].name.as_str(), "A");
         assert_eq!(module.formulas[1].name.as_str(), "B");
         assert_eq!(module.formulas[2].name.as_str(), "C");
+        assert_eq!(module.formulas[3].name.as_str(), "D");
+    }
+
+    #[test]
+    fn test_multiline() {
+        let source = r#"    
+formula Foo = {
+    a: u32,
+    b: u32,
+};
+"#;
+        let module = parse_module(source).unwrap();
+        assert_eq!(module.formulas.len(), 1);
+        assert_eq!(module.formulas[0].name.as_str(), "Foo");
     }
 }

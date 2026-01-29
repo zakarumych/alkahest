@@ -3,6 +3,10 @@
 //!
 //! This module provides functionality for parsing Alkahest formulas from authored source files.
 
+#![no_std]
+
+extern crate alloc;
+
 // mod adt;
 mod adt;
 mod buffer;
@@ -30,4 +34,7 @@ impl Span {
     }
 }
 
-pub use adt::{Formula, Module, NamedFormula, ParseError, Symbol, parse_string};
+pub use adt::{
+    Element, ElementKind, Formula, List, Module, NamedElement, NamedVariant, ParseError, Record,
+    Symbol, Tuple, Variant, Variants, parse_module,
+};

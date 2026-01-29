@@ -1,0 +1,16 @@
+[package]
+name = "alkahest"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+alkahest-core = { workspace = true }
+alkahest-proc = { workspace = true, optional = true }
+
+[features]
+proc = ["dep:alkahest-proc"]
+
+[[example]]
+name = "new"
+path = "examples/new.rs"
+required-features = ["proc"]
