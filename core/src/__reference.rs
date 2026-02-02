@@ -64,7 +64,7 @@ impl<T> AsRef<T> for Reference<T>
 where
     T: ?Sized + 'static,
 {
-    #[inline(always)]
+    #[inline]
     fn as_ref(&self) -> &T {
         match self {
             #[cfg(feature = "alloc")]
@@ -78,7 +78,7 @@ impl<T> Clone for Reference<T>
 where
     T: ?Sized + 'static,
 {
-    #[inline(always)]
+    #[inline]
     fn clone(&self) -> Self {
         match self {
             #[cfg(feature = "alloc")]

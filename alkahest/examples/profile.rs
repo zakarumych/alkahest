@@ -57,7 +57,7 @@ pub struct LazyMesh<'a> {
     pub triangles: Lazy<'a, [Triangle]>,
 }
 
-#[inline(always)]
+#[inline]
 fn do_serialize(mesh: &Mesh, buffer: &mut [u8]) -> usize {
     alkahest::write_packet_unchecked::<MeshFormula, _>(&mesh, buffer)
 }

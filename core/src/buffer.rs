@@ -15,6 +15,16 @@ pub trait Buffer {
     where
         Self: 'a;
 
+    /// Reserved heap buffer type.
+    ///
+    /// It is always infallible buffer.
+    /// In practice it is usually a mutable byte slice.
+    ///
+    /// Except for `DryBuffer` which reserves as `DryBuffer`.
+    type ReservedHeap<'a>: Buffer<Error = Infallible>
+    where
+        Self: 'a;
+
     /// Reborrow this buffer.
     fn reborrow(&mut self) -> Self::Reborrow<'_>;
 
@@ -35,25 +45,23 @@ pub trait Buffer {
     /// Moves `len` bytes from stack to heap.
     fn move_to_heap(&mut self, heap: usize, stack: usize, len: usize);
 
-    /// Reserves heap space and returns a mutable bytes slice reference.
-    /// Which can be used as [`Buffer`].
+    /// Reserves heap space and returns buffer that ends at the reserved heap top.
+    /// Thus reserved heap acts as stack for the returned buffer.
+    /// This avoids serialization to stack and moving data to heap later.
+    /// Only usable when serialized length, including both heap and stack parts, is known in advance.
     ///
-    /// If buffer cannot reserve heap space, it may return either
-    /// `Err` or `Ok([])`.
-    /// If `Ok([])` is returned serializer should skip writing this
-    /// part of the data and continue writing the rest.
+    /// Trivial for heapless, exact-sized formulas, enumerations with heapless, exact-sized variants
+    /// and known length sequences of such formulas.
     ///
     /// # Errors
     ///
     /// If buffer cannot reserve heap space, it should return `Err`.
-    /// If nothing needs to be written to the reserved heap,
-    /// it should return `Ok([])`.
     fn reserve_heap(
         &mut self,
         heap: usize,
         stack: usize,
         len: usize,
-    ) -> Result<&mut [u8], Self::Error>;
+    ) -> Result<Self::ReservedHeap<'_>, Self::Error>;
 }
 
 /// No-op buffer that does not write anything.
@@ -64,13 +72,14 @@ pub struct DryBuffer;
 impl Buffer for DryBuffer {
     type Error = Infallible;
     type Reborrow<'a> = Self;
+    type ReservedHeap<'a> = Self;
 
-    #[inline(always)]
+    #[inline]
     fn reborrow(&mut self) -> DryBuffer {
         *self
     }
 
-    #[inline(always)]
+    #[inline]
     fn write_stack(
         &mut self,
         _heap: usize,
@@ -80,22 +89,22 @@ impl Buffer for DryBuffer {
         Ok(())
     }
 
-    #[inline(always)]
+    #[inline]
     fn pad_stack(&mut self, _heap: usize, _stack: usize, _len: usize) -> Result<(), Infallible> {
         Ok(())
     }
 
-    #[inline(always)]
+    #[inline]
     fn move_to_heap(&mut self, _heap: usize, _stack: usize, _len: usize) {}
 
-    #[inline(always)]
+    #[inline]
     fn reserve_heap(
         &mut self,
         _heap: usize,
         _stack: usize,
         _len: usize,
-    ) -> Result<&mut [u8], Infallible> {
-        Ok(&mut [])
+    ) -> Result<Self, Infallible> {
+        Ok(DryBuffer)
     }
 }
 
@@ -108,14 +117,14 @@ impl Buffer for DryBuffer {
 pub struct BufferExhausted;
 
 impl fmt::Display for BufferExhausted {
-    #[inline(always)]
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "buffer exhausted")
     }
 }
 
-/// Fixed buffer without bound checks.
-/// If buffer is too small to fit serialized data, it will panic.
+/// Fixed buffer with bound checks.
+/// If buffer is too small to fit serialized data, it will return error.
 #[repr(transparent)]
 pub struct CheckedFixedBuffer<'a> {
     buf: &'a mut [u8],
@@ -123,7 +132,7 @@ pub struct CheckedFixedBuffer<'a> {
 
 impl<'a> CheckedFixedBuffer<'a> {
     /// Creates a new buffer.
-    #[inline(always)]
+    #[inline]
     pub fn new(buf: &'a mut [u8]) -> Self {
         CheckedFixedBuffer { buf }
     }
@@ -131,17 +140,23 @@ impl<'a> CheckedFixedBuffer<'a> {
 
 impl<'a> Buffer for CheckedFixedBuffer<'a> {
     type Error = BufferExhausted;
+
     type Reborrow<'b>
         = CheckedFixedBuffer<'b>
     where
         'a: 'b;
 
-    #[inline(always)]
+    type ReservedHeap<'b>
+        = &'b mut [u8]
+    where
+        'a: 'b;
+
+    #[inline]
     fn reborrow(&mut self) -> CheckedFixedBuffer<'_> {
         CheckedFixedBuffer { buf: self.buf }
     }
 
-    #[inline(always)]
+    #[inline]
     fn write_stack(
         &mut self,
         heap: usize,
@@ -157,7 +172,7 @@ impl<'a> Buffer for CheckedFixedBuffer<'a> {
         Ok(())
     }
 
-    #[inline(always)]
+    #[inline]
     fn pad_stack(&mut self, heap: usize, stack: usize, len: usize) -> Result<(), BufferExhausted> {
         debug_assert!(heap + stack <= self.buf.len());
         if self.buf.len() - heap - stack < len {
@@ -172,7 +187,7 @@ impl<'a> Buffer for CheckedFixedBuffer<'a> {
         Ok(())
     }
 
-    #[inline(always)]
+    #[inline]
     fn move_to_heap(&mut self, heap: usize, stack: usize, len: usize) {
         debug_assert!(heap + stack <= self.buf.len());
         let start = self.buf.len() - stack;
@@ -180,7 +195,7 @@ impl<'a> Buffer for CheckedFixedBuffer<'a> {
         self.buf.copy_within(start..end, heap);
     }
 
-    #[inline(always)]
+    #[inline]
     fn reserve_heap(
         &mut self,
         heap: usize,
@@ -196,7 +211,10 @@ impl<'a> Buffer for CheckedFixedBuffer<'a> {
     }
 }
 
+/// Fixed buffer without bound checks.
+/// If buffer is too small to fit serialized data, it will panic.
 impl<'a> Buffer for &'a mut [u8] {
+    // Panics rather than returning an error.
     type Error = Infallible;
 
     type Reborrow<'b>
@@ -204,12 +222,17 @@ impl<'a> Buffer for &'a mut [u8] {
     where
         'a: 'b;
 
-    #[inline(always)]
+    type ReservedHeap<'b>
+        = &'b mut [u8]
+    where
+        'a: 'b;
+
+    #[inline]
     fn reborrow(&mut self) -> &'_ mut [u8] {
         self
     }
 
-    #[inline(always)]
+    #[inline]
     fn write_stack(&mut self, heap: usize, stack: usize, bytes: &[u8]) -> Result<(), Infallible> {
         debug_assert!(heap + stack <= self.len());
         let at = self.len() - stack - bytes.len();
@@ -217,7 +240,7 @@ impl<'a> Buffer for &'a mut [u8] {
         Ok(())
     }
 
-    #[inline(always)]
+    #[inline]
     fn pad_stack(&mut self, heap: usize, stack: usize, len: usize) -> Result<(), Infallible> {
         debug_assert!(heap + stack <= self.len());
         assert!(self.len() - heap - stack >= len);
@@ -230,7 +253,7 @@ impl<'a> Buffer for &'a mut [u8] {
         Ok(())
     }
 
-    #[inline(always)]
+    #[inline]
     fn move_to_heap(&mut self, heap: usize, stack: usize, len: usize) {
         debug_assert!(stack >= len);
         debug_assert!(heap + stack <= self.len());
@@ -239,7 +262,7 @@ impl<'a> Buffer for &'a mut [u8] {
         self.copy_within(start..end, heap);
     }
 
-    #[inline(always)]
+    #[inline]
     fn reserve_heap(
         &mut self,
         heap: usize,
@@ -276,7 +299,12 @@ impl<'a> Buffer for MaybeFixedBuffer<'a> {
     where
         'a: 'b;
 
-    #[inline(always)]
+    type ReservedHeap<'b>
+        = &'b mut [u8]
+    where
+        'a: 'b;
+
+    #[inline]
     fn reborrow(&mut self) -> MaybeFixedBuffer<'_> {
         MaybeFixedBuffer {
             buf: self.buf,
@@ -284,7 +312,7 @@ impl<'a> Buffer for MaybeFixedBuffer<'a> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn write_stack(&mut self, heap: usize, stack: usize, bytes: &[u8]) -> Result<(), Infallible> {
         if !*self.exhausted {
             debug_assert!(heap + stack <= self.buf.len());
@@ -300,7 +328,7 @@ impl<'a> Buffer for MaybeFixedBuffer<'a> {
         Ok(())
     }
 
-    #[inline(always)]
+    #[inline]
     fn pad_stack(&mut self, heap: usize, stack: usize, len: usize) -> Result<(), Infallible> {
         if !*self.exhausted {
             debug_assert!(heap + stack <= self.buf.len());
@@ -311,7 +339,7 @@ impl<'a> Buffer for MaybeFixedBuffer<'a> {
         Ok(())
     }
 
-    #[inline(always)]
+    #[inline]
     fn move_to_heap(&mut self, heap: usize, stack: usize, len: usize) {
         debug_assert!(stack >= len);
         if !*self.exhausted {
@@ -322,7 +350,7 @@ impl<'a> Buffer for MaybeFixedBuffer<'a> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn reserve_heap(
         &mut self,
         heap: usize,
@@ -389,12 +417,17 @@ impl<'a> Buffer for VecBuffer<'a> {
     where
         'a: 'b;
 
-    #[inline(always)]
+    type ReservedHeap<'b>
+        = &'b mut [u8]
+    where
+        'a: 'b;
+
+    #[inline]
     fn reborrow(&mut self) -> VecBuffer<'_> {
         VecBuffer { buf: self.buf }
     }
 
-    #[inline(always)]
+    #[inline]
     fn write_stack(&mut self, heap: usize, stack: usize, bytes: &[u8]) -> Result<(), Infallible> {
         debug_assert!(heap + stack <= self.buf.len());
         self.reserve(heap, stack, bytes.len());
@@ -403,7 +436,7 @@ impl<'a> Buffer for VecBuffer<'a> {
         Ok(())
     }
 
-    #[inline(always)]
+    #[inline]
     fn pad_stack(&mut self, heap: usize, stack: usize, len: usize) -> Result<(), Infallible> {
         debug_assert!(heap + stack <= self.buf.len());
         self.reserve(heap, stack, len);
@@ -416,7 +449,7 @@ impl<'a> Buffer for VecBuffer<'a> {
         Ok(())
     }
 
-    #[inline(always)]
+    #[inline]
     fn move_to_heap(&mut self, heap: usize, stack: usize, len: usize) {
         debug_assert!(heap + stack <= self.buf.len());
         debug_assert!(stack >= len);
@@ -424,7 +457,7 @@ impl<'a> Buffer for VecBuffer<'a> {
         self.buf.copy_within(at..at + len, heap);
     }
 
-    #[inline(always)]
+    #[inline]
     fn reserve_heap(
         &mut self,
         heap: usize,

@@ -1,5 +1,5 @@
 [workspace]
-members = ["parse", "rust-gen", "core", "proc", "alkahest"]
+members = ["parse", "core", "proc", "alkahest"]
 resolver = "3"
 edition = "2024"
 
@@ -10,7 +10,6 @@ edition = "2024"
 [workspace.dependencies]
 alkahest-core = { path = "core" }
 alkahest-parse = { path = "parse" }
-alkahest-rust-gen = { path = "rust-gen" }
 alkahest-proc = { path = "proc" }
 
 unicode-ident = "1.0"

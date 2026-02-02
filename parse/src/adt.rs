@@ -28,6 +28,7 @@ impl Peek for Ident {
     }
 }
 
+// ()
 struct Parenthesis;
 
 impl Peek for Parenthesis {
@@ -37,21 +38,23 @@ impl Peek for Parenthesis {
     }
 }
 
-struct Bracket;
-
-impl Peek for Bracket {
-    #[inline]
-    fn peek(stream: &TokenStream) -> bool {
-        stream.is_delim_next(Delimiter::Bracket)
-    }
-}
-
+// {}
 struct Brace;
 
 impl Peek for Brace {
     #[inline]
     fn peek(stream: &TokenStream) -> bool {
         stream.is_delim_next(Delimiter::Brace)
+    }
+}
+
+// []
+struct Bracket;
+
+impl Peek for Bracket {
+    #[inline]
+    fn peek(stream: &TokenStream) -> bool {
+        stream.is_delim_next(Delimiter::Bracket)
     }
 }
 
@@ -66,6 +69,9 @@ impl TokenStream {
 }
 
 macro_rules! Token {
+    (.) => {
+        Dot
+    };
     (,) => {
         Comma
     };
@@ -162,6 +168,7 @@ macro_rules! double_punct_token {
     };
 }
 
+single_punct_token!(. as Dot);
 single_punct_token!(, as Comma);
 single_punct_token!(; as Semicolon);
 single_punct_token!(: as Colon);
@@ -203,13 +210,14 @@ macro_rules! keyword_token {
 }
 
 keyword_token!(formula);
+keyword_token!(pour);
 
 macro_rules! parse_group {
-    (@ $delimiter:ident $group:ident $stream:ident) => {
+    (@ $delimiter:ident $stream:ident $closure:expr) => {
         match $stream.next()? {
             Token::Group(group) if group.delimiter() == Delimiter::$delimiter => {
                 let mut group_stream = group.stream();
-                let parsed = <$group as Parser>::parse(&mut group_stream)?;
+                let parsed = $closure(&mut group_stream)?;
                 if !group_stream.is_empty() {
                     return Err(ParseError {
                         span: group_stream.span(),
@@ -236,20 +244,73 @@ macro_rules! parse_group {
 
 macro_rules! parse_parenthesised {
     ($group:ident in $stream:ident) => {
-        parse_group!(@ Parenthesis $group $stream)
+        parse_group!(@ Parenthesis $stream <$group as Parser>::parse)
+    };
+
+    ($stream:ident => $body:expr) => {
+        parse_group!(@ Parenthesis $stream |$stream: &mut TokenStream| -> Result<_, ParseError> { $body })
     };
 }
 
 macro_rules! parse_bracketed {
     ($group:ident in $stream:ident) => {
-        parse_group!(@ Bracket $group $stream)
+        parse_group!(@ Bracket $stream <$group as Parser>::parse)
+    };
+
+    ($stream:ident => $body:expr) => {
+        parse_group!(@ Bracket $stream |$stream: &mut TokenStream| -> Result<_, ParseError> { $body })
     };
 }
 
 macro_rules! parse_braced {
     ($group:ident in $stream:ident) => {
-        parse_group!(@ Brace $group $stream)
+        parse_group!(@ Brace $stream <$group as Parser>::parse)
     };
+
+    ($stream:ident => $body:expr) => {
+        parse_group!(@ Brace $stream |$stream: &mut TokenStream| -> Result<_, ParseError> { $body })
+    };
+}
+
+macro_rules! parse_terminated {
+    (by $delim:ident in $stream:ident => $body:expr) => {{
+        struct ParseTerminated<'a, F> {
+            stream: &'a mut TokenStream,
+            f: F,
+            exhausted: bool,
+        }
+
+        impl<'a, F, T> Iterator for ParseTerminated<'a, F>
+        where
+            F: FnMut(&mut TokenStream) -> Result<T, ParseError>,
+        {
+            type Item = Result<T, ParseError>;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                if self.exhausted || self.stream.is_empty() {
+                    return None;
+                }
+
+                let element = (self.f)(self.stream);
+
+                if self.stream.peek::<$delim>() {
+                    match self.stream.parse::<$delim>() {
+                        Ok(_) => Some(element),
+                        Err(err) => Some(Err(err))
+                    }
+                } else {
+                    self.exhausted = true;
+                    Some(element)
+                }
+            }
+        }
+
+        ParseTerminated { stream: $stream, f: |$stream: &mut TokenStream| -> Result<_, ParseError> { $body }, exhausted: false }
+    }};
+
+    ($element:ident by $delim:ident in $stream:ident) => {{
+        parse_terminated!(by $delim in $stream => $element::parse($stream))
+    }};
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -269,14 +330,14 @@ impl Ident {
 impl Deref for Ident {
     type Target = str;
 
-    #[inline(always)]
+    #[inline]
     fn deref(&self) -> &str {
         self.0.as_ref()
     }
 }
 
 impl AsRef<str> for Ident {
-    #[inline(always)]
+    #[inline]
     fn as_ref(&self) -> &str {
         self.0.as_ref()
     }
@@ -316,7 +377,7 @@ impl Parser for u32 {
 
 /// A reference to a symbol (e.g., formula name).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Symbol(Rc<str>);
+pub struct Path(Rc<str>);
 
 struct SkipLastIterator<I>
 where
@@ -369,37 +430,43 @@ where
     }
 }
 
-impl Symbol {
+impl Path {
     pub fn path(&self) -> impl Iterator<Item = &str> + '_ {
         SkipLastIterator {
-            iter: self.0.split("::"),
+            iter: self.0.split('.'),
             last: None,
         }
     }
 
     pub fn name(&self) -> &str {
-        match self.0.rsplit_once("::") {
+        match self.0.rsplit_once('.') {
             Some((_, name)) => name,
             None => &self.0,
         }
     }
 }
 
-impl Parser for Symbol {
+impl Parser for Path {
     fn parse(stream: &mut TokenStream) -> Result<Self, ParseError> {
         let mut full_name = String::new();
+
+        if stream.peek::<Token![.]>() {
+            // Leading dot indicates global path.
+            let _dot = stream.parse::<Token![.]>()?;
+            full_name.push('.');
+        }
 
         let first_ident = stream.parse::<Ident>()?;
         full_name.push_str(first_ident.as_str());
 
-        while stream.peek::<Token![::]>() {
-            let _double_colon = stream.parse::<Token![::]>()?;
+        while stream.peek::<Token![.]>() {
+            let _dot = stream.parse::<Token![.]>()?;
             let next_ident = stream.parse::<Ident>()?;
-            full_name.push_str("::");
+            full_name.push('.');
             full_name.push_str(&next_ident.as_str());
         }
 
-        Ok(Symbol(Rc::from(full_name)))
+        Ok(Path(Rc::from(full_name)))
     }
 }
 
@@ -475,21 +542,10 @@ pub struct Tuple {
 
 impl Parser for Tuple {
     fn parse(stream: &mut TokenStream) -> Result<Self, ParseError> {
-        let mut elements = Vec::new();
-
-        while !stream.is_empty() {
-            let element = stream.parse::<Element>()?;
-            elements.push(element);
-
-            if stream.peek::<Comma>() {
-                let _comma = stream.parse::<Comma>()?;
-            } else {
-                break;
-            }
-        }
+        let elements = parse_terminated!(Element by Comma in stream);
 
         Ok(Tuple {
-            elements: Rc::from(elements),
+            elements: elements.collect::<Result<_, ParseError>>()?,
         })
     }
 }
@@ -497,7 +553,7 @@ impl Parser for Tuple {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ElementKind {
     /// A reference to another formula.
-    Symbol(Symbol),
+    Symbol(Path),
 
     /// A sequence of elements with the same formula.
     ///
@@ -516,7 +572,7 @@ impl Parser for ElementKind {
         Self: Sized,
     {
         if stream.peek::<Ident>() {
-            let symbol = stream.parse::<Symbol>()?;
+            let symbol = stream.parse::<Path>()?;
             return Ok(ElementKind::Symbol(symbol));
         }
 
@@ -551,27 +607,19 @@ pub struct Record {
 
 impl Parser for Record {
     fn parse(stream: &mut TokenStream) -> Result<Self, ParseError> {
-        let mut fields = Vec::new();
-
-        while !stream.is_empty() {
+        let fields = parse_terminated!(by Comma in stream => {
             let field_name = stream.parse::<Ident>()?;
             let _colon = stream.parse::<Token![:]>()?;
             let field_element = stream.parse::<Element>()?;
 
-            fields.push(NamedElement {
+            Ok(NamedElement {
                 name: field_name,
                 element: field_element,
-            });
-
-            if stream.peek::<Comma>() {
-                let _comma = stream.parse::<Comma>()?;
-            } else {
-                break;
-            }
-        }
+            })
+        });
 
         Ok(Record {
-            fields: Rc::from(fields),
+            fields: fields.collect::<Result<_, ParseError>>()?,
         })
     }
 }
@@ -594,9 +642,7 @@ pub struct NamedVariant {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Variants {
-    pub variants: Rc<[NamedVariant]>,
-}
+pub struct Variants(pub Rc<[NamedVariant]>);
 
 impl Parser for Variants {
     fn parse(stream: &mut TokenStream) -> Result<Self, ParseError> {
@@ -628,14 +674,15 @@ impl Parser for Variants {
             }
         }
 
-        Ok(Variants {
-            variants: Rc::from(variants),
-        })
+        Ok(Variants(Rc::from(variants)))
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Formula {
+    /// An empty formula.
+    Unit,
+
     /// A fixed-length sequence of elements with different formulas.
     Tuple(Tuple),
 
@@ -671,34 +718,134 @@ impl Parser for Formula {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct NamedFormula {
+pub struct Definition {
     pub name: Ident,
+    pub generics: Rc<[Ident]>,
     pub formula: Formula,
+}
+
+impl Peek for Definition {
+    fn peek(stream: &TokenStream) -> bool {
+        stream.peek::<formula>()
+    }
+}
+
+impl Parser for Definition {
+    fn parse(stream: &mut TokenStream) -> Result<Self, ParseError> {
+        formula::parse(stream)?;
+        let name = stream.parse::<Ident>()?;
+        let mut generics = Vec::new();
+
+        while stream.peek::<Ident>() {
+            let generic = stream.parse::<Ident>()?;
+            generics.push(generic);
+        }
+
+        if stream.peek::<Token![;]>() {
+            let _semicolon = stream.parse::<Token![;]>()?;
+
+            return Ok(Definition {
+                name,
+                generics: Rc::from(generics),
+                formula: Formula::Unit,
+            });
+        }
+
+        let _eq = stream.parse::<Token![=]>()?;
+        let formula = stream.parse::<Formula>()?;
+        let _semicolon = stream.parse::<Token![;]>()?;
+
+        Ok(Definition {
+            name,
+            generics: Rc::from(generics),
+            formula,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ImportTree {
+    pub path: Path,
+    pub branches: Option<Rc<[ImportTree]>>,
+}
+
+impl Parser for ImportTree {
+    fn parse(stream: &mut TokenStream) -> Result<Self, ParseError> {
+        let first_ident = stream.parse::<Ident>()?;
+
+        let mut full_path = String::new();
+        full_path.push_str(first_ident.as_str());
+
+        while stream.peek::<Token![.]>() {
+            let _dot = stream.parse::<Token![.]>()?;
+
+            if stream.peek::<Brace>() {
+                let branches = parse_braced!(stream => {
+                    Ok(parse_terminated!(ImportTree by Comma in stream).collect::<Result<_, ParseError>>()?)
+                });
+                return Ok(ImportTree {
+                    path: Path(Rc::from(full_path)),
+                    branches: Some(branches),
+                });
+            }
+
+            let next_ident = stream.parse::<Ident>()?;
+            full_path.push('.');
+            full_path.push_str(&next_ident.as_str());
+        }
+
+        Ok(ImportTree {
+            path: Path(Rc::from(full_path)),
+            branches: None,
+        })
+    }
 }
 
 /// Represents entire source file containing Alkahest formulas.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Module {
+    pub imports: Rc<[ImportTree]>,
+
     /// List of formulas defined in the document.
-    pub formulas: Rc<[NamedFormula]>,
+    pub definitions: Rc<[Definition]>,
 }
 
 impl Parser for Module {
     fn parse(stream: &mut TokenStream) -> Result<Self, ParseError> {
-        let mut formulas = Vec::new();
+        let mut imports = Vec::new();
+        let mut definitions = Vec::new();
 
         while !stream.is_empty() {
-            formula::parse(stream)?;
-            let name = stream.parse::<Ident>()?;
-            let _eq = stream.parse::<Token![=]>()?;
-            let formula = stream.parse::<Formula>()?;
-            let _semicolon = stream.parse::<Token![;]>()?;
+            if stream.peek::<formula>() {
+                let definition = stream.parse::<Definition>()?;
+                definitions.push(definition);
+            } else if stream.peek::<pour>() {
+                let _pour = stream.parse::<pour>()?;
 
-            formulas.push(NamedFormula { name, formula });
+                if stream.peek::<Brace>() {
+                    parse_braced!(stream => {
+                        for tree in parse_terminated!(ImportTree by Comma in stream) {
+                            imports.push(tree?);
+                        }
+                        Ok(())
+                    });
+                } else {
+                    let import_tree = stream.parse::<ImportTree>()?;
+                    imports.push(import_tree);
+                }
+
+                stream.parse::<Token![;]>()?;
+            } else {
+                return Err(ParseError {
+                    span: stream.span(),
+                    kind: ParseErrorKind::Unexpected,
+                });
+            }
         }
 
         Ok(Module {
-            formulas: Rc::from(formulas),
+            imports: Rc::from(imports),
+            definitions: Rc::from(definitions),
         })
     }
 }
@@ -1086,7 +1233,7 @@ mod tests {
     fn test_variant_single() {
         let formula = parse_formula("|Foo(u32)").unwrap();
         match formula {
-            Formula::Variants(Variants { variants }) => {
+            Formula::Variants(Variants(variants)) => {
                 assert_eq!(variants.len(), 1);
                 assert_eq!(variants[0].name.as_str(), "Foo");
                 match &variants[0].variant {
@@ -1109,7 +1256,7 @@ mod tests {
     fn test_variant_multiple() {
         let formula = parse_formula("|None |Some(u32)").unwrap();
         match formula {
-            Formula::Variants(Variants { variants }) => {
+            Formula::Variants(Variants(variants)) => {
                 assert_eq!(variants.len(), 2);
                 assert_eq!(variants[0].name.as_str(), "None");
                 assert_eq!(variants[1].name.as_str(), "Some");
@@ -1122,7 +1269,7 @@ mod tests {
     fn test_variant_with_complex_types() {
         let formula = parse_formula("|Ok {value: u32} |Err(&string)").unwrap();
         match formula {
-            Formula::Variants(Variants { variants }) => {
+            Formula::Variants(Variants(variants)) => {
                 assert_eq!(variants.len(), 2);
                 assert_eq!(variants[0].name.as_str(), "Ok");
                 match &variants[0].variant {
@@ -1157,9 +1304,9 @@ mod tests {
     #[test]
     fn test_module_simple() {
         let module = parse_module("formula MyType = (u32);").unwrap();
-        assert_eq!(module.formulas.len(), 1);
-        assert_eq!(module.formulas[0].name.as_str(), "MyType");
-        match &module.formulas[0].formula {
+        assert_eq!(module.definitions.len(), 1);
+        assert_eq!(module.definitions[0].name.as_str(), "MyType");
+        match &module.definitions[0].formula {
             Formula::Tuple(Tuple { elements }) => {
                 assert_eq!(elements.len(), 1);
                 assert_eq!(elements[0].indirect, false);
@@ -1176,11 +1323,11 @@ mod tests {
     fn test_module_multiple_formulas() {
         let source = "formula A = (u32); formula B = (string); formula C = {x: u32}; formula D = |Foo |Bar(u32) |Baz {a: A, b: B, c: C};";
         let module = parse_module(source).unwrap();
-        assert_eq!(module.formulas.len(), 4);
-        assert_eq!(module.formulas[0].name.as_str(), "A");
-        assert_eq!(module.formulas[1].name.as_str(), "B");
-        assert_eq!(module.formulas[2].name.as_str(), "C");
-        assert_eq!(module.formulas[3].name.as_str(), "D");
+        assert_eq!(module.definitions.len(), 4);
+        assert_eq!(module.definitions[0].name.as_str(), "A");
+        assert_eq!(module.definitions[1].name.as_str(), "B");
+        assert_eq!(module.definitions[2].name.as_str(), "C");
+        assert_eq!(module.definitions[3].name.as_str(), "D");
     }
 
     #[test]
@@ -1192,7 +1339,7 @@ formula Foo = {
 };
 "#;
         let module = parse_module(source).unwrap();
-        assert_eq!(module.formulas.len(), 1);
-        assert_eq!(module.formulas[0].name.as_str(), "Foo");
+        assert_eq!(module.definitions.len(), 1);
+        assert_eq!(module.definitions[0].name.as_str(), "Foo");
     }
 }

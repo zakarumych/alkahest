@@ -372,9 +372,9 @@ impl Literal {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Delimiter {
-    Parenthesis,
-    Brace,
-    Bracket,
+    Parenthesis, // ()
+    Brace,       // {}
+    Bracket,     // []
 }
 
 pub struct Group {

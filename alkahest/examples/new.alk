@@ -1,5 +1,16 @@
 
+formula Empty;
+
 formula Foo = {
     a: u32,
     b: u32,
+};
+
+formula Bar = {
+    x: Foo,
+    y: u64,
+};
+
+formula Baz a = {
+    items: [a; 4],
 };
