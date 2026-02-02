@@ -1342,4 +1342,12 @@ formula Foo = {
         assert_eq!(module.definitions.len(), 1);
         assert_eq!(module.definitions[0].name.as_str(), "Foo");
     }
+
+    #[test]
+    fn test_either() {
+        let source = "formula Either a b = |A(a) |B(b);";
+
+        let module = parse_module(source).unwrap();
+        assert_eq!(module.definitions.len(), 1);
+    }
 }

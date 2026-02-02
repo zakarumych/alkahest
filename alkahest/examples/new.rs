@@ -10,6 +10,12 @@ struct Foo {
     b: u32,
 }
 
+#[derive(Serialize)]
+#[alkahest(new::Side@Left)]
+struct Left {
+    a: u8,
+}
+
 fn main() {
     use new::Foo;
 }

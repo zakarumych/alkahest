@@ -144,16 +144,26 @@ pub mod private {
         }
     }
 
+    pub const fn __Alkahest_discriminant_size(count: usize) -> usize {
+        match count {
+            0..=0xFF => 1,
+            0x100..=0xFFFF => 2,
+            0x10000..=0xFFFFFFFF => 4,
+            _ => panic!("Too many enum variants"),
+        }
+    }
+
     /// Helper function to serialize enum discriminant.
     #[inline(always)]
     pub fn __Alkahest_serialize_discriminant<S>(
         idx: usize,
-        size: usize,
+        count: usize,
         serializer: &mut S,
     ) -> Result<(), S::Error>
     where
         S: Serializer,
     {
+        let size = __Alkahest_discriminant_size(count);
         let bytes = idx.to_le_bytes();
         debug_assert!(bytes[size..].iter().all(|&b| b == 0));
         serializer.write_bytes(&bytes[..size])

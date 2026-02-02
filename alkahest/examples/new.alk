@@ -14,3 +14,7 @@ formula Bar = {
 formula Baz a = {
     items: [a; 4],
 };
+
+formula Either a b = |A(a) |B(b);
+
+formula Side = |Left { a: u8 } |Right { b: u16 } ;

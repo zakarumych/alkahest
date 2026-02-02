@@ -343,12 +343,16 @@ fn definition_to_tokens(definition: &Definition, tokens: &mut TokenStream) {
 
                 self.0.lt_token.to_tokens(&mut tokens);
 
-                for param in self.0.params.pairs() {
-                    if let syn::GenericParam::Type(ty_param) = param.value() {
-                        ty_param.ident.to_tokens(&mut tokens);
-                        param.punct().to_tokens(&mut tokens);
+                tokens.append(Group::new(Delimiter::Parenthesis, {
+                    let mut tokens = TokenStream::new();
+                    for param in self.0.params.pairs() {
+                        if let syn::GenericParam::Type(ty_param) = param.value() {
+                            ty_param.ident.to_tokens(&mut tokens);
+                            param.punct().to_tokens(&mut tokens);
+                        }
                     }
-                }
+                    tokens
+                }));
 
                 self.0.gt_token.to_tokens(&mut tokens);
 
@@ -368,16 +372,8 @@ fn definition_to_tokens(definition: &Definition, tokens: &mut TokenStream) {
 
     match &definition.formula {
         Formula::Unit => {
-            let fields = if generics.type_params().count() == 0 {
-                quote::quote! {}
-            } else {
-                let field_tys = generics.type_params().map(|param| &param.ident);
-
-                quote::quote! {(__Alkahest_PhantomData<(#( #field_tys, )*)>)}
-            };
-
             tokens.extend(quote::quote! {
-                    pub struct #ident #generics #fields;
+                    pub struct #ident #generics #size_fields;
 
                     impl #impl_generics #ident #ty_generics #where_clause {
                         const __Alkahest_FIELD_COUNT: usize = 0;
@@ -561,12 +557,13 @@ fn definition_to_tokens(definition: &Definition, tokens: &mut TokenStream) {
 
                 pub struct #ident #generics { #(pub #field_names: #field_tys,)* }
 
+                #[doc(hidden)]
                 impl #impl_generics #ident #ty_generics #where_clause {
                     #(
-                        const #field_order_names: usize = #fields_order;
+                        pub const #field_order_names: usize = #fields_order;
                     )*
 
-                    const __Alkahest_FIELD_COUNT: usize = #fields_count;
+                    pub const __Alkahest_FIELD_COUNT: usize = #fields_count;
                 }
 
                 impl #formula_impl_generics __Alkahest_Formula for #ident #formula_ty_generics #formula_where_clause {
@@ -579,164 +576,184 @@ fn definition_to_tokens(definition: &Definition, tokens: &mut TokenStream) {
         Formula::Variants(Variants(variants)) => {
             // Extract information about each variant
             let variants = variants.iter().map(|named_variant| {
+                let variant_name = into_ident(named_variant.name.as_str());
+
                 // Extract information about each field of the variant
-                let (fields, stack_size, heap_size, inhabited) = match &named_variant.variant {
-                    Variant::Unit => (
-                        syn::Fields::Unit,
-                        quote::quote! { __Alkahest_SizeBound::Exact(0) },
-                        quote::quote! { __Alkahest_SizeBound::Exact(0) },
-                        quote::quote! { true },
-                    ),
-                    Variant::Tuple(tuple) => {
-                        // Extract information about each field
-                        let fields = tuple.elements.iter().map(|element| {
-                            let element = element_to_tokens(element);
+                let (fields, stack_size, heap_size, inhabited, fields_order) =
+                    match &named_variant.variant {
+                        Variant::Unit => (
+                            syn::Fields::Unit,
+                            quote::quote! { __Alkahest_SizeBound::Exact(0) },
+                            quote::quote! { __Alkahest_SizeBound::Exact(0) },
+                            quote::quote! { true },
+                            None,
+                        ),
+                        Variant::Tuple(tuple) => {
+                            // Extract information about each field
+                            let fields = tuple.elements.iter().map(|element| {
+                                let element = element_to_tokens(element);
 
-                            let stack_size = quote::quote! {
-                                __Alkahest_stack_size::<#element, __SIZE_BYTES>()
+                                let stack_size = quote::quote! {
+                                    __Alkahest_stack_size::<#element, __SIZE_BYTES>()
+                                };
+
+                                let heap_size = quote::quote! {
+                                    __Alkahest_heap_size::<#element, __SIZE_BYTES>()
+                                };
+
+                                let inhabited = quote::quote! {
+                                    __Alkahest_inhabited::<#element>()
+                                };
+
+                                let field = syn::Field {
+                                    attrs: Vec::new(),
+                                    vis: syn::Visibility::Inherited,
+                                    mutability: syn::FieldMutability::None,
+                                    ident: None,
+                                    colon_token: None,
+                                    ty: element,
+                                };
+
+                                (field, stack_size, heap_size, inhabited)
+                            });
+
+                            let (fields, field_stack_sizes, field_heap_sizes, field_inhabiteds): (
+                                Punctuated<_, syn::Token![,]>,
+                                Vec<_>,
+                                Vec<_>,
+                                Vec<_>,
+                            ) = fields.collect();
+
+                            let mut field_stack_sizes = field_stack_sizes.iter();
+                            let mut field_heap_sizes = field_heap_sizes.iter();
+                            let mut field_inhabiteds = field_inhabiteds.iter();
+
+                            // Generate stack size expression.
+                            let stack_size = match field_stack_sizes.next() {
+                                None => quote::quote! {__Alkahest_SizeBound::Exact(0)},
+                                Some(first) => {
+                                    quote::quote! { #first #( .add(#field_stack_sizes) )* }
+                                }
                             };
 
-                            let heap_size = quote::quote! {
-                                __Alkahest_heap_size::<#element, __SIZE_BYTES>()
+                            // Generate heap size expression.
+                            let heap_size = match field_heap_sizes.next() {
+                                None => quote::quote! {__Alkahest_SizeBound::Exact(0)},
+                                Some(first) => {
+                                    quote::quote! { #first #( .add(#field_heap_sizes) )* }
+                                }
                             };
 
-                            let inhabited = quote::quote! {
-                                __Alkahest_inhabited::<#element>()
+                            // Generate inhabited expression.
+                            let inhabited = match field_inhabiteds.next() {
+                                None => quote::quote! { true },
+                                Some(first) => {
+                                    quote::quote! { #first #( && #field_inhabiteds )* }
+                                }
                             };
 
-                            let field = syn::Field {
-                                attrs: Vec::new(),
-                                vis: syn::Visibility::Inherited,
-                                mutability: syn::FieldMutability::None,
-                                ident: None,
-                                colon_token: None,
-                                ty: element,
+                            let fields = syn::Fields::Unnamed(syn::FieldsUnnamed {
+                                paren_token: syn::token::Paren(Span::call_site()),
+                                unnamed: fields,
+                            });
+
+                            (fields, stack_size, heap_size, inhabited, None)
+                        }
+                        Variant::Record(record) => {
+                            // Extract information about each field
+                            let fields = record.fields.iter().map(|field| {
+                                let element = element_to_tokens(&field.element);
+
+                                let stack_size = quote::quote! {
+                                    __Alkahest_stack_size::<#element, __SIZE_BYTES>()
+                                };
+
+                                let heap_size = quote::quote! {
+                                    __Alkahest_heap_size::<#element, __SIZE_BYTES>()
+                                };
+
+                                let inhabited = quote::quote! {
+                                    __Alkahest_inhabited::<#element>()
+                                };
+
+                                let field = syn::Field {
+                                    attrs: Vec::new(),
+                                    vis: syn::Visibility::Inherited,
+                                    mutability: syn::FieldMutability::None,
+                                    ident: Some(into_ident(&field.name)),
+                                    colon_token: Some(syn::Token![:](Span::call_site())),
+                                    ty: element,
+                                };
+
+                                (field, stack_size, heap_size, inhabited)
+                            });
+
+                            let (fields, field_stack_sizes, field_heap_sizes, field_inhabiteds): (
+                                Punctuated<_, syn::Token![,]>,
+                                Vec<_>,
+                                Vec<_>,
+                                Vec<_>,
+                            ) = fields.collect();
+
+                            let mut field_stack_sizes = field_stack_sizes.iter();
+                            let mut field_heap_sizes = field_heap_sizes.iter();
+                            let mut field_inhabiteds = field_inhabiteds.iter();
+
+                            // Generate stack size expression.
+                            let stack_size = match field_stack_sizes.next() {
+                                None => quote::quote! {__Alkahest_SizeBound::Exact(0)},
+                                Some(first) => {
+                                    quote::quote! { #first #( .add(#field_stack_sizes) )* }
+                                }
                             };
 
-                            (field, stack_size, heap_size, inhabited)
-                        });
-
-                        let (fields, field_stack_sizes, field_heap_sizes, field_inhabiteds): (
-                            Punctuated<_, syn::Token![,]>,
-                            Vec<_>,
-                            Vec<_>,
-                            Vec<_>,
-                        ) = fields.collect();
-
-                        let mut field_stack_sizes = field_stack_sizes.iter();
-                        let mut field_heap_sizes = field_heap_sizes.iter();
-                        let mut field_inhabiteds = field_inhabiteds.iter();
-
-                        // Generate stack size expression.
-                        let stack_size = match field_stack_sizes.next() {
-                            None => quote::quote! {__Alkahest_SizeBound::Exact(0)},
-                            Some(first) => {
-                                quote::quote! { #first #( .add(#field_stack_sizes) )* }
-                            }
-                        };
-
-                        // Generate heap size expression.
-                        let heap_size = match field_heap_sizes.next() {
-                            None => quote::quote! {__Alkahest_SizeBound::Exact(0)},
-                            Some(first) => {
-                                quote::quote! { #first #( .add(#field_heap_sizes) )* }
-                            }
-                        };
-
-                        // Generate inhabited expression.
-                        let inhabited = match field_inhabiteds.next() {
-                            None => quote::quote! { true },
-                            Some(first) => {
-                                quote::quote! { #first #( && #field_inhabiteds )* }
-                            }
-                        };
-
-                        let fields = syn::Fields::Unnamed(syn::FieldsUnnamed {
-                            paren_token: syn::token::Paren(Span::call_site()),
-                            unnamed: fields,
-                        });
-
-                        (fields, stack_size, heap_size, inhabited)
-                    }
-                    Variant::Record(record) => {
-                        // Extract information about each field
-                        let fields = record.fields.iter().map(|field| {
-                            let element = element_to_tokens(&field.element);
-
-                            let stack_size = quote::quote! {
-                                __Alkahest_stack_size::<#element, __SIZE_BYTES>()
+                            // Generate heap size expression.
+                            let heap_size = match field_heap_sizes.next() {
+                                None => quote::quote! {__Alkahest_SizeBound::Exact(0)},
+                                Some(first) => {
+                                    quote::quote! { #first #( .add(#field_heap_sizes) )* }
+                                }
                             };
 
-                            let heap_size = quote::quote! {
-                                __Alkahest_heap_size::<#element, __SIZE_BYTES>()
+                            // Generate inhabited expression.
+                            let inhabited = match field_inhabiteds.next() {
+                                None => quote::quote! { true },
+                                Some(first) => {
+                                    quote::quote! { #first #( && #field_inhabiteds )* }
+                                }
                             };
 
-                            let inhabited = quote::quote! {
-                                __Alkahest_inhabited::<#element>()
-                            };
+                            let fields = syn::Fields::Named(syn::FieldsNamed {
+                                brace_token: syn::token::Brace(Span::call_site()),
+                                named: fields,
+                            });
 
-                            let field = syn::Field {
-                                attrs: Vec::new(),
-                                vis: syn::Visibility::Inherited,
-                                mutability: syn::FieldMutability::None,
-                                ident: Some(into_ident(&field.name)),
-                                colon_token: Some(syn::Token![:](Span::call_site())),
-                                ty: element,
-                            };
+                            let field_order_names = fields.iter().map(|field| {
+                                quote::format_ident!(
+                                    "__Alkahest_ORDER_OF_{}_{}",
+                                    variant_name,
+                                    field.ident.as_ref().unwrap()
+                                )
+                            });
 
-                            (field, stack_size, heap_size, inhabited)
-                        });
+                            let fields_order = (0..fields.len())
+                                .map(|order| proc_macro2::Literal::usize_unsuffixed(order));
 
-                        let (fields, field_stack_sizes, field_heap_sizes, field_inhabiteds): (
-                            Punctuated<_, syn::Token![,]>,
-                            Vec<_>,
-                            Vec<_>,
-                            Vec<_>,
-                        ) = fields.collect();
+                            let fields_order = quote::quote! {#(
+                                pub const #field_order_names: usize = #fields_order;
+                            )*};
 
-                        let mut field_stack_sizes = field_stack_sizes.iter();
-                        let mut field_heap_sizes = field_heap_sizes.iter();
-                        let mut field_inhabiteds = field_inhabiteds.iter();
-
-                        // Generate stack size expression.
-                        let stack_size = match field_stack_sizes.next() {
-                            None => quote::quote! {__Alkahest_SizeBound::Exact(0)},
-                            Some(first) => {
-                                quote::quote! { #first #( .add(#field_stack_sizes) )* }
-                            }
-                        };
-
-                        // Generate heap size expression.
-                        let heap_size = match field_heap_sizes.next() {
-                            None => quote::quote! {__Alkahest_SizeBound::Exact(0)},
-                            Some(first) => {
-                                quote::quote! { #first #( .add(#field_heap_sizes) )* }
-                            }
-                        };
-
-                        // Generate inhabited expression.
-                        let inhabited = match field_inhabiteds.next() {
-                            None => quote::quote! { true },
-                            Some(first) => {
-                                quote::quote! { #first #( && #field_inhabiteds )* }
-                            }
-                        };
-
-                        let fields = syn::Fields::Named(syn::FieldsNamed {
-                            brace_token: syn::token::Brace(Span::call_site()),
-                            named: fields,
-                        });
-
-                        (fields, stack_size, heap_size, inhabited)
-                    }
-                };
+                            (fields, stack_size, heap_size, inhabited, Some(fields_order))
+                        }
+                    };
 
                 (
-                    into_ident(named_variant.name.as_str()),
+                    variant_name,
                     fields,
                     stack_size,
                     heap_size,
                     inhabited,
+                    fields_order,
                 )
             });
 
@@ -746,25 +763,20 @@ fn definition_to_tokens(definition: &Definition, tokens: &mut TokenStream) {
                 variant_stack_sizes,
                 variant_heap_sizes,
                 variant_inhabiteds,
-            ): (Vec<_>, Vec<_>, Vec<_>, Vec<_>, Vec<_>) = variants.collect();
+                variant_fields_orders,
+            ): (Vec<_>, Vec<_>, Vec<_>, Vec<_>, Vec<_>, Vec<_>) = variants.collect();
 
-            let discriminant_size = match variant_stack_sizes.len() {
+            let discriminant_count = match variant_stack_sizes.len() {
                 0 => {
                     quote::quote! {0usize}
                 }
                 _ => {
                     quote::quote! {{
                         // Count number of inhabitated variants
-                        let __inhabited_count = #(if #variant_inhabiteds { 1 } else { 0 } )+*;
+                        let __inhabited_count: usize = #(if #variant_inhabiteds { 1 } else { 0 } )+*;
 
                         /// Calculates the number of bytes required to store the discriminant
-                        match __inhabited_count {
-                            0..=1 => 0,
-                            2..=255 => 1,
-                            256..=65535 => 2,
-                            65536..=4294967295 => 4,
-                            _ => __SIZE_BYTES as usize,
-                        }
+                        __inhabited_count
                     }}
                 }
             };
@@ -791,8 +803,8 @@ fn definition_to_tokens(definition: &Definition, tokens: &mut TokenStream) {
                         )*
 
                         match __max_size {
-                            __Alkahest_None => __Alkahest_SizeBound::Exact(Self::__Alkahest_DISCRIMINANT_SIZE),
-                            __Alkahest_Some(size) => size.add(__Alkahest_SizeBound::Exact(Self::__Alkahest_DISCRIMINANT_SIZE)),
+                            __Alkahest_None => __Alkahest_SizeBound::Exact(__Alkahest_discriminant_size(<#ident #formula_ty_generics>::__Alkahest_DISCRIMINANT_COUNT)),
+                            __Alkahest_Some(size) => size.add(__Alkahest_SizeBound::Exact(__Alkahest_discriminant_size(<#ident #formula_ty_generics>::__Alkahest_DISCRIMINANT_COUNT))),
                         }
                     }}
                 }
@@ -806,7 +818,7 @@ fn definition_to_tokens(definition: &Definition, tokens: &mut TokenStream) {
                     // Take max size among inhabitated variants
 
                     quote::quote! {{
-                        let mut __max_size = None;
+                        let mut __max_size = __Alkahest_None;
 
                         #(
                             if #variant_inhabiteds {
@@ -831,15 +843,15 @@ fn definition_to_tokens(definition: &Definition, tokens: &mut TokenStream) {
             let inhabited = match variant_inhabited_iter.next() {
                 None => quote::quote! { false },
                 Some(first) => {
-                    quote::quote! { #first #( || #variant_inhabited_iter )* }
+                    quote::quote! { (#first) #( || (#variant_inhabited_iter) )* }
                 }
             };
 
-            let variant_order_names = variant_names
+            let variant_discriminant_names = variant_names
                 .iter()
-                .map(|name| quote::format_ident!("__Alkahest_ORDER_OF_{}", name));
+                .map(|name| quote::format_ident!("__Alkahest_DISCRIMINANT_OF_{}", name));
 
-            let variant_order = (0..variant_names.len()).map(|idx| {
+            let variant_discriminants = (0..variant_names.len()).map(|idx| {
                 let inhabited = &variant_inhabiteds[idx];
 
                 match idx {
@@ -858,6 +870,24 @@ fn definition_to_tokens(definition: &Definition, tokens: &mut TokenStream) {
             });
 
             tokens.extend(quote::quote! {
+
+                pub enum #ident #generics {
+                    #(
+                        #variant_names #variant_fields,
+                    )*
+                }
+
+                #[doc(hidden)]
+                impl #formula_impl_generics #ident #formula_ty_generics #formula_where_clause {
+                    #(
+                        pub const #variant_discriminant_names: usize = #variant_discriminants;
+                    )*
+
+                    #(#variant_fields_orders)*
+
+                    pub const __Alkahest_DISCRIMINANT_COUNT: usize = #discriminant_count;
+                }
+
                 pub struct #stack_size_ident #size_generics #size_fields;
 
                 impl #size_impl_generics __Alkahest_SizeType for #stack_size_ident #size_ty_generics #size_where_clause {
@@ -868,20 +898,6 @@ fn definition_to_tokens(definition: &Definition, tokens: &mut TokenStream) {
 
                 impl #size_impl_generics __Alkahest_SizeType for #heap_size_ident #size_ty_generics #size_where_clause {
                     const VALUE: __Alkahest_SizeBound = #heap_size;
-                }
-
-                pub enum #ident #generics {
-                    #(
-                        #variant_names #variant_fields,
-                    )*
-                };
-
-                impl #formula_impl_generics #ident #formula_ty_generics #formula_where_clause {
-                    #(
-                        const #variant_order_names: usize = #variant_order;
-                    )*
-
-                    __Alkahest_DISCRIMINANT_SIZE: usize = #discriminant_size;
                 }
 
                 impl #formula_impl_generics __Alkahest_Formula for #ident #formula_ty_generics #formula_where_clause {

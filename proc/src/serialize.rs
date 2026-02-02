@@ -64,13 +64,13 @@ fn with_element(
         },
         Some(variant) => match &field.ident {
             Some(ident) => quote::quote! {
-                ::alkahest::private::__Alkahest_with_element(|__formula_ref: &#formula| { match *__formula__ref { #formula_name :: #variant { ref #ident, .. } => #ident, _ => unreachable!() } })
+                ::alkahest::private::__Alkahest_with_element(|__formula_ref: &#formula| { match *__formula_ref { #formula_name :: #variant { ref #ident, .. } => #ident, _ => unreachable!() } })
             },
             None => {
                 let underscores = std::iter::repeat(syn::Token![_](Span::call_site())).take(idx);
 
                 quote::quote! {
-                    ::alkahest::private::__Alkahest_with_element(|__formula_ref: &#formula| { match *__formula__ref { #formula_name :: #variant ( #(#underscores,)* ref field, .. ) => field, _ => unreachable!() } })
+                    ::alkahest::private::__Alkahest_with_element(|__formula_ref: &#formula| { match *__formula_ref { #formula_name :: #variant ( #(#underscores,)* ref field, .. ) => field, _ => unreachable!() } })
                 }
             }
         },
@@ -136,15 +136,15 @@ fn derive_impl(mut input: syn::DeriveInput) -> syn::Result<proc_macro2::TokenStr
     match input.data {
         syn::Data::Struct(data) => {
             let variant_idx_serialize = variant.map(|variant| {
-                let idx = quote::format_ident!("__Alkahest_ORDER_OF_{}", variant);
+                let idx = quote::format_ident!("__Alkahest_DISCRIMINANT_OF_{}", variant);
                 quote::quote! {
-                    ::alkahest::private::__Alkahest_serialize_discriminant(#idx, <#formula>::__Alkahest_DISCRIMINANT_SIZE, &mut __serializer)?;
+                    ::alkahest::private::__Alkahest_serialize_discriminant(<#formula>::#idx, <#formula>::__Alkahest_DISCRIMINANT_COUNT, &mut __serializer)?;
                 }
             });
 
             let add_discriminant_size = if variant.is_some() {
                 quote::quote! {
-                    total.add_stack(<#formula>::__Alkahest_DISCRIMINANT_SIZE);
+                    total.add_stack(::alkahest::private::__Alkahest_discriminant_size(<#formula>::__Alkahest_DISCRIMINANT_COUNT));
                 }
             } else {
                 quote::quote! {}
@@ -152,6 +152,19 @@ fn derive_impl(mut input: syn::DeriveInput) -> syn::Result<proc_macro2::TokenStr
 
             let bind_self_fields = bind_self_fields(name, None, &data.fields);
             let fields = data.fields.iter().enumerate().map(|(idx, field)| {
+                let check_idx = field.ident.as_ref().map(|name| {
+                    let ident = match variant {
+                        None => quote::format_ident!("__Alkahest_ORDER_OF_{}", name),
+                        Some(variant) => {
+                            quote::format_ident!("__Alkahest_ORDER_OF_{}_{}", variant, name)
+                        }
+                    };
+
+                    quote::quote! {
+                        const { assert!(<#formula>::#ident == #idx); }
+                    }
+                });
+
                 let with_element = with_element(formula, variant, idx, field);
                 let bound_field = bound_field(idx, field);
 
@@ -163,10 +176,14 @@ fn derive_impl(mut input: syn::DeriveInput) -> syn::Result<proc_macro2::TokenStr
                     total += #with_element.size_hint::<_, __SIZE_BYTES>(#bound_field)?;
                 };
 
-                (serialize, add_size_hint)
+                (serialize, add_size_hint, check_idx)
             });
 
-            let (fields_serialize, fields_add_size_hint): (Vec<_>, Vec<_>) = fields.unzip();
+            let (fields_serialize, fields_add_size_hint, fields_check_idx): (
+                Vec<_>,
+                Vec<_>,
+                Vec<_>,
+            ) = fields.collect();
 
             Ok(quote::quote! {
                 impl #impl_generics ::alkahest::private::__Alkahest_Serialize<#formula> for #name #ty_generics #where_clause {
@@ -175,6 +192,8 @@ fn derive_impl(mut input: syn::DeriveInput) -> syn::Result<proc_macro2::TokenStr
                     where
                         S: ::alkahest::private::__Alkahest_Serializer,
                     {
+                        #(#fields_check_idx)*
+
                         let #bind_self_fields = self;
                         #variant_idx_serialize
                         #(#fields_serialize)*
@@ -219,6 +238,14 @@ fn derive_impl(mut input: syn::DeriveInput) -> syn::Result<proc_macro2::TokenStr
                 };
 
                 let fields = data_variant.fields.iter().enumerate().map(|(idx, field)| {
+                    let check_idx = field.ident.as_ref().map(|name| {
+                        let ident = quote::format_ident!("__Alkahest_ORDER_OF_{}_{}", variant, name);
+
+                        quote::quote! {
+                            const { assert!(<#formula>::#ident == #idx); }
+                        }
+                    });
+
                     let with_element = with_element(formula, Some(variant), idx, field);
                     let bound_field = bound_field(idx, field);
 
@@ -230,15 +257,17 @@ fn derive_impl(mut input: syn::DeriveInput) -> syn::Result<proc_macro2::TokenStr
                         total += #with_element.size_hint::<_, __SIZE_BYTES>(#bound_field)?;
                     };
 
-                    (serialize, add_size_hint)
+                    (serialize, add_size_hint, check_idx)
                 });
 
-                let (fields_serialize, fields_add_size_hint): (Vec<_>, Vec<_>) = fields.unzip();
+                let (fields_serialize, fields_add_size_hint, fields_check_idx): (Vec<_>, Vec<_>, Vec<_>) = fields.collect();
 
                 let bind_self_fields = bind_self_fields(name, Some(variant), &data_variant.fields);
 
                 let variant_serialize = quote::quote! {
                     #bind_self_fields => {
+                        #(#fields_check_idx)*
+
                         let #bind_self_fields = self;
                         #variant_idx_serialize
                         #(#fields_serialize)*
