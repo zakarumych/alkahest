@@ -197,6 +197,39 @@ fn tuple_to_tokens(tuple: &Tuple) -> syn::TypeTuple {
 
 fn element_to_tokens(element: &Element) -> syn::Type {
     let ty = match &element.kind {
+        ElementKind::Never => syn::Type::Path(syn::TypePath {
+            qself: None,
+            path: syn::Path {
+                leading_colon: None,
+                segments: std::iter::once(syn::PathSegment {
+                    ident: into_ident("__Alkahest_Never"),
+                    arguments: syn::PathArguments::None,
+                })
+                .collect(),
+            },
+        }),
+        ElementKind::Option(element) => syn::Type::Path(syn::TypePath {
+            qself: None,
+            path: syn::Path {
+                leading_colon: None,
+                segments: std::iter::once(syn::PathSegment {
+                    ident: into_ident("__Alkahest_Option"),
+                    arguments: syn::PathArguments::AngleBracketed(
+                        syn::AngleBracketedGenericArguments {
+                            colon2_token: None,
+                            lt_token: syn::Token![<](Span::call_site()),
+                            args: std::iter::once(syn::GenericArgument::Type(element_to_tokens(
+                                element,
+                            )))
+                            .collect(),
+                            gt_token: syn::Token![>](Span::call_site()),
+                        },
+                    ),
+                })
+                .collect(),
+            },
+        }),
+
         ElementKind::Symbol(symbol) => syn::Type::Path(syn::TypePath {
             qself: None,
             path: path_to_tokens(symbol),

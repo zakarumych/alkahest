@@ -31,3 +31,11 @@ proc_easy::easy_parse! {
         pub where_clause: Option<syn::WhereClause>,
     }
 }
+
+proc_easy::easy_parse! {
+    pub struct DeserializeArgs {
+        pub formula: syn::Path,
+        pub variant: proc_easy::EasyMaybe<Variant>,
+        pub where_clause: Option<syn::WhereClause>,
+    }
+}

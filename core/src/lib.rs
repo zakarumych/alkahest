@@ -42,13 +42,13 @@ mod element;
 mod formula;
 // mod iter;
 mod list;
+mod never;
 mod option;
 mod primitive;
 mod serialize;
 mod slice;
 mod str;
 mod tuple;
-mod void;
 
 #[cfg(feature = "alloc")]
 mod vec;
@@ -77,11 +77,11 @@ pub mod private {
                 SizeType as __Alkahest_SizeType, UnboundedSize as __Alkahest_UnboundedSize,
             },
             list::{Array as __Alkahest_Array, List as __Alkahest_List},
+            never::Never::{self as __Alkahest_Never, self}, // unprefixed name can be referenced in source code, prefixed name avoids shadowing and is used in macro-generated code
             serialize::{
                 Serialize as __Alkahest_Serialize, Serializer as __Alkahest_Serializer,
                 Sizes as __Alkahest_Sizes,
             },
-            void::Void::{self as __Alkahest_Void, self}, // unprefixed name can be referenced in source code, prefixed name avoids shadowing and is used in macro-generated code
         },
         core::{
             marker::PhantomData as __Alkahest_PhantomData,

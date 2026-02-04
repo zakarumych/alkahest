@@ -18,3 +18,7 @@ formula Baz a = {
 formula Either a b = |A(a) |B(b);
 
 formula Side = |Left { a: u8 } |Right { b: u16 } ;
+
+formula X = {
+    never: ?!,
+};

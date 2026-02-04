@@ -1,4 +1,4 @@
-use core::{fmt, ops::Deref, str::FromStr};
+use core::{fmt, ops::Deref, option, str::FromStr};
 
 use alloc::{rc::Rc, string::String, vec::Vec};
 
@@ -93,6 +93,12 @@ macro_rules! Token {
     (|) => {
         Pipe
     };
+    (!) => {
+        Bang
+    };
+    (?) => {
+        Question
+    };
 }
 
 macro_rules! single_punct_token {
@@ -126,47 +132,47 @@ macro_rules! single_punct_token {
     };
 }
 
-macro_rules! double_punct_token {
-    ($a:tt $b:tt as $name:ident) => {
-        pub struct $name {
-            _private: (),
-        }
+// macro_rules! double_punct_token {
+//     ($a:tt $b:tt as $name:ident) => {
+//         pub struct $name {
+//             _private: (),
+//         }
 
-        impl Parser for $name {
-            fn parse(stream: &mut TokenStream) -> Result<Self, ParseError> {
-                match stream.next()? {
-                    Token::Punct(punct_a)
-                        if punct_a.eq_str(stringify!($a))
-                            && punct_a.spacing() == Spacing::Joint =>
-                    {
-                        match stream.next()? {
-                            Token::Punct(punct_b) if punct_b.eq_str(stringify!($b)) => {
-                                Ok($name { _private: () })
-                            }
-                            token => Err(ParseError {
-                                span: token.span(),
-                                kind: ParseErrorKind::UnexpectedToken,
-                            }),
-                        }
-                    }
-                    token => Err(ParseError {
-                        span: token.span(),
-                        kind: ParseErrorKind::UnexpectedToken,
-                    }),
-                }
-            }
-        }
+//         impl Parser for $name {
+//             fn parse(stream: &mut TokenStream) -> Result<Self, ParseError> {
+//                 match stream.next()? {
+//                     Token::Punct(punct_a)
+//                         if punct_a.eq_str(stringify!($a))
+//                             && punct_a.spacing() == Spacing::Joint =>
+//                     {
+//                         match stream.next()? {
+//                             Token::Punct(punct_b) if punct_b.eq_str(stringify!($b)) => {
+//                                 Ok($name { _private: () })
+//                             }
+//                             token => Err(ParseError {
+//                                 span: token.span(),
+//                                 kind: ParseErrorKind::UnexpectedToken,
+//                             }),
+//                         }
+//                     }
+//                     token => Err(ParseError {
+//                         span: token.span(),
+//                         kind: ParseErrorKind::UnexpectedToken,
+//                     }),
+//                 }
+//             }
+//         }
 
-        impl Peek for $name {
-            fn peek(stream: &TokenStream) -> bool {
-                if !stream.is_punct_next() {
-                    return false;
-                }
-                stream.fork().parse::<Self>().is_ok()
-            }
-        }
-    };
-}
+//         impl Peek for $name {
+//             fn peek(stream: &TokenStream) -> bool {
+//                 if !stream.is_punct_next() {
+//                     return false;
+//                 }
+//                 stream.fork().parse::<Self>().is_ok()
+//             }
+//         }
+//     };
+// }
 
 single_punct_token!(. as Dot);
 single_punct_token!(, as Comma);
@@ -175,20 +181,24 @@ single_punct_token!(: as Colon);
 single_punct_token!(= as Equal);
 single_punct_token!(& as Ampersand);
 single_punct_token!(| as Pipe);
-double_punct_token!(: : as DoubleColon);
+single_punct_token!(! as Bang);
+single_punct_token!(? as Question);
 
 macro_rules! keyword_token {
-    ($name:ident) => {
+    (@ $name:ident) => {
+        keyword_token!(@ $name as $name);
+    };
+    (@ $name:ident as $as:ident) => {
         #[allow(non_camel_case_types)]
-        pub struct $name {
+        pub struct $as {
             _private: (),
         }
 
-        impl Parser for $name {
+        impl Parser for $as {
             fn parse(stream: &mut TokenStream) -> Result<Self, ParseError> {
                 match stream.next()? {
                     Token::Ident(ident) if ident.as_str() == stringify!($name) => {
-                        Ok($name { _private: () })
+                        Ok($as { _private: () })
                     }
                     token => Err(ParseError {
                         span: token.span(),
@@ -198,7 +208,7 @@ macro_rules! keyword_token {
             }
         }
 
-        impl Peek for $name {
+        impl Peek for $as {
             fn peek(stream: &TokenStream) -> bool {
                 if !stream.is_ident_next() {
                     return false;
@@ -207,10 +217,29 @@ macro_rules! keyword_token {
             }
         }
     };
+    ($($name:ident $(as $as:ident)?),+ $(,)?) => {
+        $(keyword_token!(@ $name $(as $as)?);)+
+    };
 }
 
-keyword_token!(formula);
-keyword_token!(pour);
+keyword_token!(
+    formula,
+    import,
+    bool as Bool,
+    string,
+    u8 as U8,
+    u16 as U16,
+    u32 as U32,
+    u64 as U64,
+    u128 as U128,
+    i8 as I8,
+    i16 as I16,
+    i32 as I32,
+    i64 as I64,
+    i128 as I128,
+    f32 as F32,
+    f64 as F64
+);
 
 macro_rules! parse_group {
     (@ $delimiter:ident $stream:ident $closure:expr) => {
@@ -483,6 +512,7 @@ impl Parser for Element {
         Self: Sized,
     {
         let mut indirect = false;
+
         if stream.peek::<Token![&]>() {
             let _amp = stream.parse::<Token![&]>()?;
             indirect = true;
@@ -552,8 +582,14 @@ impl Parser for Tuple {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ElementKind {
+    /// An uninhabited element.
+    Never,
+
     /// A reference to another formula.
     Symbol(Path),
+
+    /// An optional element.
+    Option(Rc<Element>),
 
     /// A sequence of elements with the same formula.
     ///
@@ -571,6 +607,18 @@ impl Parser for ElementKind {
     where
         Self: Sized,
     {
+        if stream.peek::<Token![!]>() {
+            let _bang = stream.parse::<Token![!]>()?;
+            return Ok(ElementKind::Never);
+        }
+
+        if stream.peek::<Token![?]>() {
+            let _question = stream.parse::<Token![?]>()?;
+
+            let element = stream.parse::<Element>()?;
+            return Ok(ElementKind::Option(Rc::new(element)));
+        }
+
         if stream.peek::<Ident>() {
             let symbol = stream.parse::<Path>()?;
             return Ok(ElementKind::Symbol(symbol));
@@ -819,8 +867,8 @@ impl Parser for Module {
             if stream.peek::<formula>() {
                 let definition = stream.parse::<Definition>()?;
                 definitions.push(definition);
-            } else if stream.peek::<pour>() {
-                let _pour = stream.parse::<pour>()?;
+            } else if stream.peek::<import>() {
+                let _import = stream.parse::<import>()?;
 
                 if stream.peek::<Brace>() {
                     parse_braced!(stream => {
