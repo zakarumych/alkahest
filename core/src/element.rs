@@ -34,25 +34,25 @@ pub trait Element: 'static {
     /// Value must implement `Serialize` for this element's formula.
     fn serialize<T, S>(value: &T, serializer: &mut S) -> Result<(), S::Error>
     where
-        T: Serialize<Self::Formula>,
+        T: Serialize<Self::Formula> + ?Sized,
         S: Serializer;
 
     /// Gets size hint for serializing value using this element.
     fn size_hint<T, const SIZE_BYTES: u8>(value: &T) -> Option<Sizes>
     where
-        T: Serialize<Self::Formula>;
+        T: Serialize<Self::Formula> + ?Sized;
 
-    fn read<'de, T, D>(deserializer: &mut D) -> Result<T, DeserializeError>
+    fn deserialize<'de, T, D>(deserializer: &mut D) -> Result<T, DeserializeError>
     where
         T: Deserialize<'de, Self::Formula>,
         D: Deserializer<'de>;
 
-    fn read_in_place<'de, T, D>(
+    fn deserialize_in_place<'de, T, D>(
         place: &mut T,
         deserializer: &mut D,
     ) -> Result<(), DeserializeError>
     where
-        T: Deserialize<'de, Self::Formula>,
+        T: Deserialize<'de, Self::Formula> + ?Sized,
         D: Deserializer<'de>;
 }
 
@@ -70,7 +70,7 @@ where
     #[inline(always)]
     fn serialize<T, S>(value: &T, serializer: &mut S) -> Result<(), S::Error>
     where
-        T: Serialize<F>,
+        T: Serialize<F> + ?Sized,
         S: Serializer,
     {
         serializer.write_direct::<F, T>(value)
@@ -79,13 +79,13 @@ where
     #[inline(always)]
     fn size_hint<T, const SIZE_BYTES: u8>(value: &T) -> Option<Sizes>
     where
-        T: Serialize<F>,
+        T: Serialize<F> + ?Sized,
     {
         value.size_hint::<SIZE_BYTES>()
     }
 
     #[inline(always)]
-    fn read<'de, T, D>(deserializer: &mut D) -> Result<T, DeserializeError>
+    fn deserialize<'de, T, D>(deserializer: &mut D) -> Result<T, DeserializeError>
     where
         T: Deserialize<'de, F>,
         D: Deserializer<'de>,
@@ -94,9 +94,12 @@ where
     }
 
     #[inline(always)]
-    fn read_in_place<'de, T, D>(place: &mut T, deserializer: &mut D) -> Result<(), DeserializeError>
+    fn deserialize_in_place<'de, T, D>(
+        place: &mut T,
+        deserializer: &mut D,
+    ) -> Result<(), DeserializeError>
     where
-        T: Deserialize<'de, F>,
+        T: Deserialize<'de, F> + ?Sized,
         D: Deserializer<'de>,
     {
         deserializer.read_direct_in_place::<F, T>(place)
@@ -123,7 +126,7 @@ where
     #[inline(always)]
     fn serialize<T, S>(value: &T, serializer: &mut S) -> Result<(), S::Error>
     where
-        T: Serialize<F>,
+        T: Serialize<F> + ?Sized,
         S: Serializer,
     {
         serializer.write_indirect::<F, T>(value)
@@ -132,7 +135,7 @@ where
     #[inline(always)]
     fn size_hint<T, const SIZE_BYTES: u8>(value: &T) -> Option<Sizes>
     where
-        T: Serialize<F>,
+        T: Serialize<F> + ?Sized,
     {
         let heap = value.size_hint::<SIZE_BYTES>()?.total();
         Some(Sizes {
@@ -142,7 +145,7 @@ where
     }
 
     #[inline(always)]
-    fn read<'de, T, D>(deserializer: &mut D) -> Result<T, DeserializeError>
+    fn deserialize<'de, T, D>(deserializer: &mut D) -> Result<T, DeserializeError>
     where
         T: Deserialize<'de, F>,
         D: Deserializer<'de>,
@@ -151,9 +154,12 @@ where
     }
 
     #[inline(always)]
-    fn read_in_place<'de, T, D>(place: &mut T, deserializer: &mut D) -> Result<(), DeserializeError>
+    fn deserialize_in_place<'de, T, D>(
+        place: &mut T,
+        deserializer: &mut D,
+    ) -> Result<(), DeserializeError>
     where
-        T: Deserialize<'de, F>,
+        T: Deserialize<'de, F> + ?Sized,
         D: Deserializer<'de>,
     {
         deserializer.read_indirect_in_place::<F, T>(place)

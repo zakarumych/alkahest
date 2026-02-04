@@ -54,6 +54,7 @@ pub enum Spacing {
 #[derive(Clone)]
 pub struct Punct {
     ch: char,
+    #[allow(unused)]
     spacing: Spacing,
     span: Span,
 }
@@ -69,6 +70,7 @@ impl Punct {
         self.span
     }
 
+    #[allow(unused)]
     #[inline]
     pub fn char(&self) -> char {
         self.ch
@@ -80,6 +82,7 @@ impl Punct {
         self.ch.encode_utf8(&mut buf) == s
     }
 
+    #[allow(unused)]
     #[inline]
     pub fn spacing(&self) -> Spacing {
         self.spacing
@@ -219,11 +222,13 @@ pub enum LiteralKind {
     Number,
     Char,
     String,
+    #[allow(unused)]
     Bytes,
 }
 
 pub struct Literal {
     value: Rc<str>,
+    #[allow(unused)]
     kind: LiteralKind,
     span: Span,
 }
@@ -243,6 +248,7 @@ impl Literal {
         &*self.value
     }
 
+    #[allow(unused)]
     pub(crate) fn clone_rc_str(&self) -> Rc<str> {
         self.value.clone()
     }
@@ -609,6 +615,7 @@ impl TokenStream {
         Ident::is_ident(&self.inner)
     }
 
+    #[allow(unused)]
     pub fn is_literal_next(&self) -> bool {
         Literal::is_literal(&self.inner)
     }

@@ -450,7 +450,23 @@ where
         F: Formula + ?Sized,
         T: Serialize<F> + ?Sized,
     {
+        const {
+            assert!(F::INHABITED);
+        }
+
         self.write_padding()?;
+
+        if let SizeBound::Exact(0) | SizeBound::Bounded(0) = stack_size::<F, SIZE_BYTES>() {
+            debug_assert!(matches!(
+                heap_size::<F, SIZE_BYTES>(),
+                SizeBound::Exact(0) | SizeBound::Bounded(0)
+            ));
+
+            // No need to serialize zero-sized value.
+            // In release builds we simply skip serialization.
+            #[cfg(not(debug_assertions))]
+            return Ok(());
+        }
 
         let old_stack = self.sizes.stack;
 
@@ -488,6 +504,10 @@ where
         F: Formula + ?Sized,
         T: Serialize<F> + ?Sized,
     {
+        const {
+            assert!(F::INHABITED);
+        }
+
         // Can we get size hint for the value?
         match size_hint::<F, T, SIZE_BYTES>(&value) {
             None => {

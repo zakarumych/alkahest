@@ -101,7 +101,7 @@ where
             if is_some == 0 {
                 Ok(None)
             } else {
-                E::read(&mut de).map(Some)
+                E::deserialize(&mut de).map(Some)
             }
         } else {
             // For uninhabited option type, we can only have None
@@ -120,9 +120,9 @@ where
                 *self = None;
             } else {
                 match self {
-                    Some(value) => E::read_in_place(value, &mut de)?,
+                    Some(value) => E::deserialize_in_place(value, &mut de)?,
                     None => {
-                        *self = Some(E::read(&mut de)?);
+                        *self = Some(E::deserialize(&mut de)?);
                     }
                 }
             }

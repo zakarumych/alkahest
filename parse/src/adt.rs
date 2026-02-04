@@ -1,11 +1,11 @@
-use core::{fmt, ops::Deref, option, str::FromStr};
+use core::{fmt, ops::Deref, str::FromStr};
 
-use alloc::{rc::Rc, string::String, vec::Vec};
+use alloc::{rc::Rc, vec::Vec};
 
 use crate::{
     Span,
     buffer::Buffer,
-    lex::{Delimiter, LexError, LexErrorKind, Spacing, Token, TokenStream},
+    lex::{Delimiter, LexError, LexErrorKind, Token, TokenStream},
     parse::ParseStream,
 };
 
@@ -226,7 +226,7 @@ keyword_token!(
     formula,
     import,
     bool as Bool,
-    string,
+    string as String,
     u8 as U8,
     u16 as U16,
     u32 as U32,
@@ -477,12 +477,30 @@ impl Path {
 
 impl Parser for Path {
     fn parse(stream: &mut TokenStream) -> Result<Self, ParseError> {
-        let mut full_name = String::new();
+        let mut full_name = alloc::string::String::new();
 
         if stream.peek::<Token![.]>() {
-            // Leading dot indicates global path.
             let _dot = stream.parse::<Token![.]>()?;
             full_name.push('.');
+            if stream.peek::<Token![.]>() {
+                let _dot = stream.parse::<Token![.]>()?;
+                full_name.push('.');
+                if stream.peek::<Token![.]>() {
+                    let _dot = stream.parse::<Token![.]>()?;
+                    full_name.push('.');
+
+                    if stream.peek::<Token![.]>() {
+                        // Three leading dots is the maximum allowed
+                        // One for parent path
+                        // Two for root path
+                        // Three for external path
+                        return Err(ParseError {
+                            span: stream.span(),
+                            kind: ParseErrorKind::UnexpectedToken,
+                        });
+                    }
+                }
+            }
         }
 
         let first_ident = stream.parse::<Ident>()?;
@@ -580,10 +598,42 @@ impl Parser for Tuple {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum ElementKind {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Builtin {
     /// An uninhabited element.
     Never,
+    Bool,
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
+    I8,
+    I16,
+    I32,
+    I64,
+    I128,
+    F32,
+    F64,
+    String,
+}
+
+macro_rules! parse_builtin {
+    (@ $name:ident in $stream:ident) => {
+        if $stream.peek::<$name>() {
+            let _ = $stream.parse::<$name>()?;
+            return Ok(ElementKind::Builtin(Builtin::$name));
+        }
+    };
+    ($($name:ident),+ $(,)? in $stream:ident) => {
+        $(parse_builtin!(@ $name in $stream);)+
+    };
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ElementKind {
+    /// A built-in element.
+    Builtin(Builtin),
 
     /// A reference to another formula.
     Symbol(Path),
@@ -609,7 +659,7 @@ impl Parser for ElementKind {
     {
         if stream.peek::<Token![!]>() {
             let _bang = stream.parse::<Token![!]>()?;
-            return Ok(ElementKind::Never);
+            return Ok(ElementKind::Builtin(Builtin::Never));
         }
 
         if stream.peek::<Token![?]>() {
@@ -619,7 +669,10 @@ impl Parser for ElementKind {
             return Ok(ElementKind::Option(Rc::new(element)));
         }
 
-        if stream.peek::<Ident>() {
+        parse_builtin!(Bool, U8, U16, U32, U64, U128, I8, I16, I32, I64, I128, F32, F64, String in stream);
+
+        // Must be parsed after all builtins.
+        if stream.peek::<Ident>() || stream.peek::<Token![.]>() {
             let symbol = stream.parse::<Path>()?;
             return Ok(ElementKind::Symbol(symbol));
         }
@@ -821,7 +874,7 @@ impl Parser for ImportTree {
     fn parse(stream: &mut TokenStream) -> Result<Self, ParseError> {
         let first_ident = stream.parse::<Ident>()?;
 
-        let mut full_path = String::new();
+        let mut full_path = alloc::string::String::new();
         full_path.push_str(first_ident.as_str());
 
         while stream.peek::<Token![.]>() {
@@ -905,7 +958,7 @@ pub enum ParseErrorKind {
     UnexpectedToken,
     ExpectedFormula,
     ExpectedFormulaRef,
-    Custom(String),
+    Custom(alloc::string::String),
 }
 
 impl fmt::Display for ParseErrorKind {
@@ -934,10 +987,6 @@ impl fmt::Display for ParseError {
 }
 
 impl ParseError {
-    pub(crate) fn new(span: Span, kind: ParseErrorKind) -> Self {
-        ParseError { span, kind }
-    }
-
     pub fn span(&self) -> Span {
         self.span
     }
@@ -956,7 +1005,7 @@ impl From<LexError> for ParseError {
     }
 }
 
-pub fn parse_module(source: String) -> Result<Module, ParseError> {
+pub fn parse_module(source: alloc::string::String) -> Result<Module, ParseError> {
     let mut token_stream = TokenStream::new(ParseStream::new(Buffer::from_string(source)));
     let module = token_stream.parse::<Module>()?;
 

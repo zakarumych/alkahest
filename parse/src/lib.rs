@@ -35,6 +35,6 @@ impl Span {
 }
 
 pub use adt::{
-    Definition, Element, ElementKind, Formula, ImportTree, List, Module, NamedElement,
+    Builtin, Definition, Element, ElementKind, Formula, ImportTree, List, Module, NamedElement,
     NamedVariant, ParseError, Path, Record, Tuple, Variant, Variants, parse_module,
 };

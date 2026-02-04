@@ -22,3 +22,7 @@ formula Side = |Left { a: u8 } |Right { b: u16 } ;
 formula X = {
     never: ?!,
 };
+
+formula UsesParent = {
+    parent: .Parent,
+};

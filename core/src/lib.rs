@@ -4,6 +4,7 @@
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
+#[allow(unused_macros)]
 macro_rules! for_tuple {
     ($macro:ident) => {
         for_tuple!($macro for A B C D E F G H I J K L M N O P);
@@ -18,6 +19,7 @@ macro_rules! for_tuple {
     };
 }
 
+#[allow(unused_macros)]
 macro_rules! for_tuple_2 {
     ($macro:ident) => {
         for_tuple_2!($macro for
@@ -35,6 +37,53 @@ macro_rules! for_tuple_2 {
     };
 }
 
+#[macro_export]
+macro_rules! formula_alias {
+    ($(for[$($generic:tt),*])? $alias:ty as $formula:ty) => {
+        impl $(< $($generic),* >)? $crate::Element for $alias {
+            type Formula = $formula;
+
+            type StackSize<const SIZE_BYTES: u8> = <$formula as $crate::Formula>::StackSize<SIZE_BYTES>;
+            type HeapSize<const SIZE_BYTES: u8> = <$formula as $crate::Formula>::HeapSize<SIZE_BYTES>;
+            const INHABITED: bool = true;
+
+            fn serialize<T, S>(value: &T, serializer: &mut S) -> Result<(), S::Error>
+            where
+                T: $crate::Serialize<$formula> + ?Sized,
+                S: $crate::Serializer,
+            {
+                serializer.write_direct(value)
+            }
+
+            fn size_hint<T, const SIZE_BYTES: u8>(value: &T) -> Option<$crate::Sizes>
+            where
+                T: $crate::serialize::Serialize<$formula> + ?Sized,
+            {
+                value.size_hint::<SIZE_BYTES>()
+            }
+
+            fn deserialize<'de, T, D>(deserializer: &mut D) -> Result<T, $crate::DeserializeError>
+            where
+                T: $crate::Deserialize<'de, $formula>,
+                D: $crate::Deserializer<'de>,
+            {
+                deserializer.read_direct()
+            }
+
+            fn deserialize_in_place<'de, T, D>(
+                place: &mut T,
+                deserializer: &mut D,
+            ) -> Result<(), $crate::DeserializeError>
+            where
+                T: $crate::Deserialize<'de, $formula> + ?Sized,
+                D: $crate::Deserializer<'de>,
+            {
+                deserializer.read_direct_in_place(place)
+            }
+        }
+    };
+}
+
 mod array;
 mod buffer;
 mod deserialize;
@@ -48,10 +97,44 @@ mod primitive;
 mod serialize;
 mod slice;
 mod str;
+mod string;
 mod tuple;
 
 #[cfg(feature = "alloc")]
 mod vec;
+
+pub use self::{
+    deserialize::{Deserialize, DeserializeError, Deserializer, deserialize, deserialize_in_place},
+    element::{Element, Indirect, heap_size, inhabited, stack_size},
+    formula::{BoundedSize, ExactSize, Formula, SizeBound, SizeType, UnboundedSize},
+    list::{Array, List},
+    never::Never,
+    serialize::{
+        Serialize, Serializer, Sizes, serialize, serialize_into, serialize_or_size,
+        serialize_unchecked, serialized_sizes, size_hint,
+    },
+    string::String,
+};
+
+#[cfg(feature = "alloc")]
+pub use self::serialize::serialize_to_vec;
+
+/// A trait that combines Formula, Serialize<Self> and Deserialize<Self>.
+/// Automatically implemented for all types that implement the required traits.
+pub trait Mixture: Formula + Serialize<Self> + for<'de> Deserialize<'de, Self> {}
+impl<T> Mixture for T where T: Formula + Serialize<Self> + for<'de> Deserialize<'de, Self> {}
+
+/// A trait that combines Element, Serialize<Self> and Deserialize<Self>.
+/// Automatically implemented for all types that implement the required traits.
+pub trait MixtureElement:
+    Element + Serialize<Self::Formula> + for<'de> Deserialize<'de, Self::Formula>
+{
+}
+
+impl<T> MixtureElement for T where
+    T: Element + Serialize<Self::Formula> + for<'de> Deserialize<'de, Self::Formula>
+{
+}
 
 /// Module containing facilities for macro-generated code.
 #[doc(hidden)]
@@ -59,41 +142,23 @@ mod vec;
 #[allow(non_camel_case_types)]
 pub mod private {
     use crate::{
-        element::Element,
-        formula::Formula,
+        Deserialize, Deserializer,
+        deserialize::DeserializeError,
+        element::{Element, heap_size, stack_size},
+        formula::{Formula, SizeBound},
         serialize::{Serialize, Serializer, Sizes},
     };
 
-    pub use {
-        crate::{
-            element::{
-                Element as __Alkahest_Element, Indirect as __Alkahest_Indirect,
-                heap_size as __Alkahest_heap_size, inhabited as __Alkahest_inhabited,
-                stack_size as __Alkahest_stack_size,
-            },
-            formula::{
-                BoundedSize as __Alkahest_BoundedSize, ExactSize as __Alkahest_ExactSize,
-                Formula as __Alkahest_Formula, SizeBound as __Alkahest_SizeBound,
-                SizeType as __Alkahest_SizeType, UnboundedSize as __Alkahest_UnboundedSize,
-            },
-            list::{Array as __Alkahest_Array, List as __Alkahest_List},
-            never::Never::{self as __Alkahest_Never, self}, // unprefixed name can be referenced in source code, prefixed name avoids shadowing and is used in macro-generated code
-            serialize::{
-                Serialize as __Alkahest_Serialize, Serializer as __Alkahest_Serializer,
-                Sizes as __Alkahest_Sizes,
-            },
-        },
-        core::{
-            marker::PhantomData as __Alkahest_PhantomData,
-            option::Option::{
-                self as __Alkahest_Option, None as __Alkahest_None, Some as __Alkahest_Some,
-            },
-            result::Result as __Alkahest_Result,
-        },
+    pub use core::{
+        marker::PhantomData,
+        option::Option::{self, None, Some},
+        result::Result::{self, Err, Ok},
     };
 
+    pub use {bool, f32, f64, i8, i16, i32, i64, i128, str, u8, u16, u32, u64, u128};
+
     #[inline(always)]
-    pub fn __Alkahest_with_element<F, E>(f: impl FnOnce(&F) -> &E) -> WithElement<E>
+    pub fn with_element<F, E>(f: impl FnOnce(&F) -> &E) -> WithElement<E>
     where
         F: Formula + ?Sized,
         E: Element + ?Sized,
@@ -117,7 +182,7 @@ pub mod private {
         #[inline(always)]
         pub fn serialize<T, S>(self, value: &T, serializer: &mut S) -> Result<(), S::Error>
         where
-            T: Serialize<E::Formula>,
+            T: Serialize<E::Formula> + ?Sized,
             S: Serializer,
         {
             E::serialize(value, serializer)
@@ -128,23 +193,41 @@ pub mod private {
         #[inline(always)]
         pub fn size_hint<T, const SIZE_BYTES: u8>(self, value: &T) -> Option<Sizes>
         where
-            T: Serialize<E::Formula>,
+            T: Serialize<E::Formula> + ?Sized,
         {
-            match const {
-                (
-                    __Alkahest_stack_size::<E, SIZE_BYTES>(),
-                    __Alkahest_heap_size::<E, SIZE_BYTES>(),
-                )
-            } {
-                (__Alkahest_SizeBound::Exact(stack), __Alkahest_SizeBound::Exact(heap)) => {
-                    return Some(__Alkahest_Sizes { stack, heap });
+            match const { (stack_size::<E, SIZE_BYTES>(), heap_size::<E, SIZE_BYTES>()) } {
+                (SizeBound::Exact(stack), SizeBound::Exact(heap)) => {
+                    return Some(Sizes { stack, heap });
                 }
                 _ => E::size_hint::<T, SIZE_BYTES>(value),
             }
         }
+
+        #[inline(always)]
+        pub fn deserialize<'de, T, D>(self, deserializer: &mut D) -> Result<T, DeserializeError>
+        where
+            T: Deserialize<'de, E::Formula>,
+            D: Deserializer<'de>,
+        {
+            E::deserialize(deserializer)
+        }
+
+        #[inline(always)]
+        pub fn deserialize_in_place<'de, T, D>(
+            self,
+            place: &mut T,
+            deserializer: &mut D,
+        ) -> Result<(), DeserializeError>
+        where
+            T: Deserialize<'de, E::Formula> + ?Sized,
+            D: Deserializer<'de>,
+        {
+            E::deserialize_in_place(place, deserializer)
+        }
     }
 
-    pub const fn __Alkahest_discriminant_size(count: usize) -> usize {
+    #[inline(always)]
+    pub const fn discriminant_size(count: usize) -> usize {
         match count {
             0..=0xFF => 1,
             0x100..=0xFFFF => 2,
@@ -155,7 +238,7 @@ pub mod private {
 
     /// Helper function to serialize enum discriminant.
     #[inline(always)]
-    pub fn __Alkahest_serialize_discriminant<S>(
+    pub fn serialize_discriminant<S>(
         idx: usize,
         count: usize,
         serializer: &mut S,
@@ -163,9 +246,42 @@ pub mod private {
     where
         S: Serializer,
     {
-        let size = __Alkahest_discriminant_size(count);
+        let size = discriminant_size(count);
         let bytes = idx.to_le_bytes();
+        assert!(size <= bytes.len());
         debug_assert!(bytes[size..].iter().all(|&b| b == 0));
         serializer.write_bytes(&bytes[..size])
+    }
+
+    /// Helper function to deserialize enum discriminant.
+    #[inline(always)]
+    pub fn deserialize_discriminant<'de, D>(
+        count: usize,
+        deserializer: &mut D,
+    ) -> Result<usize, DeserializeError>
+    where
+        D: Deserializer<'de>,
+    {
+        let size = discriminant_size(count);
+        let bytes: &[u8] = deserializer.read_bytes(size)?;
+        let mut array = [0u8; 4];
+
+        array[..size].copy_from_slice(bytes);
+        let idx = u32::from_le_bytes(array);
+
+        match usize::try_from(idx) {
+            Ok(idx) if idx < count => Ok(idx),
+            _ => Err(DeserializeError::InvalidUsize(u128::from(idx))),
+        }
+    }
+
+    pub trait DeserializeEnumVariant<'de, F: Formula + ?Sized> {
+        fn deserialize_enum_variant<D>(
+            discriminant: usize,
+            deserializer: D,
+        ) -> Result<Self, DeserializeError>
+        where
+            D: Deserializer<'de>,
+            Self: Sized;
     }
 }

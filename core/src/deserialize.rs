@@ -7,7 +7,7 @@ use crate::{
 
 #[inline]
 #[cold]
-pub(crate) const fn cold_err<T>(e: DeserializeError) -> Result<T, DeserializeError> {
+pub(crate) fn cold_err<T>(e: DeserializeError) -> Result<T, DeserializeError> {
     Err(e)
 }
 
@@ -28,7 +28,7 @@ pub enum DeserializeError {
     InvalidUsize(u128),
 
     /// Enum variant is invalid.
-    WrongVariant(u32),
+    WrongVariant(usize),
 
     /// Bytes slice is not UTF8 where `str` is expected.
     NonUtf8(Utf8Error),
@@ -107,7 +107,7 @@ pub trait Deserializer<'de> {
 
 /// Trait for types that can be deserialized
 /// from raw bytes with specified `F: `[`Formula`].
-pub trait Deserialize<'de, F: Formula + ?Sized> {
+pub trait Deserialize<'de, F: ?Sized> {
     /// Deserializes value provided deserializer.
     /// Returns deserialized value and the number of bytes consumed from
     /// the and of input.
@@ -123,23 +123,6 @@ pub trait Deserialize<'de, F: Formula + ?Sized> {
         D: Deserializer<'de>,
         Self: Sized;
 
-    /// Deserializes value in-place provided deserializer.
-    /// Overwrites `self` with data from the `input`.
-    ///
-    /// The value appears at the end of the slice.
-    /// And referenced values are addressed from the beginning of the slice.
-    ///
-    /// # Errors
-    ///
-    /// Returns `DeserializeError` if deserialization fails.
-    fn deserialize_in_place<D>(&mut self, deserializer: D) -> Result<(), DeserializeError>
-    where
-        D: Deserializer<'de>;
-}
-
-/// Trait for types that can be deserialized
-/// from raw bytes with specified `F: `[`Formula`].
-pub trait DeserializeInPlace<'de, F: Formula + ?Sized> {
     /// Deserializes value in-place provided deserializer.
     /// Overwrites `self` with data from the `input`.
     ///
@@ -179,21 +162,6 @@ impl<'de, const SIZE_BYTES: u8> DeserializerImpl<'de, SIZE_BYTES> {
             #[cfg(debug_assertions)]
             debug_exhausted: false,
         }
-    }
-
-    /// Reads and deserializes reference from the input buffer.
-    ///
-    /// # Errors
-    ///
-    /// Returns `DeserializeError` if reference is out of bounds
-    /// or has address larger that self.
-    #[inline]
-    fn indirection<F>(&mut self) -> Result<DeserializerImpl<'de, SIZE_BYTES>, DeserializeError>
-    where
-        F: Formula + ?Sized,
-    {
-        let address = self.read_usize()?;
-        Ok(DeserializerImpl::new(&self.input[..address]))
     }
 
     #[cfg(debug_assertions)]

@@ -1,11 +1,13 @@
 use crate::{
+    deserialize::{Deserialize, DeserializeError, Deserializer},
     element::{Element, heap_size, stack_size},
     formula::SizeBound,
-    list::Array,
+    list::List,
     serialize::{Serialize, Serializer, Sizes},
 };
 
-impl<E, T, const N: usize> Serialize<Array<E, N>> for [T; N]
+impl<E, T, const N: usize, const MIN: usize, const MAX: usize> Serialize<List<E, MIN, MAX>>
+    for [T; N]
 where
     E: Element,
     T: Serialize<E::Formula>,
@@ -16,26 +18,29 @@ where
         S: Serializer,
     {
         const {
+            assert!(N >= MIN && N <= MAX); // This should be trait bound, but it is not yet supported in Rust
             assert!(N == 0 || E::INHABITED);
         }
 
         for item in self {
             E::serialize(item, &mut serializer)?;
         }
+
         Ok(())
     }
 
-    #[inline(always)]
+    #[inline]
     fn size_hint<const SIZE_BYTES: u8>(&self) -> Option<Sizes> {
         const {
+            assert!(N >= MIN && N <= MAX);
             assert!(N == 0 || E::INHABITED);
         }
 
-        let mut sizes = Sizes::ZERO;
-
         if N == 0 {
-            return Some(sizes);
+            return Some(Sizes::ZERO);
         }
+
+        let mut sizes = Sizes::ZERO;
 
         match (stack_size::<E, SIZE_BYTES>(), heap_size::<E, SIZE_BYTES>()) {
             (SizeBound::Bounded(max_stack), SizeBound::Exact(heap_size)) => {
@@ -68,5 +73,58 @@ where
                 _ => None,
             },
         }
+    }
+}
+
+impl<'de, E, T, const N: usize> Deserialize<'de, List<E, N, N>> for [T; N]
+where
+    E: Element,
+    T: Deserialize<'de, E::Formula>,
+{
+    #[inline]
+    fn deserialize<D>(mut deserializer: D) -> Result<Self, DeserializeError>
+    where
+        D: Deserializer<'de>,
+    {
+        const {
+            assert!(N == 0 || E::INHABITED);
+        }
+
+        let mut options = [const { None::<T> }; N];
+
+        for i in 0..N {
+            match E::deserialize::<T, D>(&mut deserializer) {
+                Ok(value) => {
+                    options[i] = Some(value);
+                }
+                Err(err) => {
+                    return Err(err);
+                }
+            }
+        }
+
+        // Unwrap is safe here because if loop above completed, all elements are `Some`.
+        let array = options.map(|opt| opt.unwrap());
+        Ok(array)
+    }
+
+    #[inline]
+    fn deserialize_in_place<D>(&mut self, mut deserializer: D) -> Result<(), DeserializeError>
+    where
+        D: Deserializer<'de>,
+    {
+        const {
+            assert!(N == 0 || E::INHABITED);
+        }
+
+        if N == 0 {
+            return Ok(());
+        }
+
+        for i in 0..N {
+            E::deserialize_in_place::<T, D>(&mut self[i], &mut deserializer)?;
+        }
+
+        Ok(())
     }
 }
