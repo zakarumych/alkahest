@@ -210,7 +210,7 @@ fn builtin_to_tokens(builtin: Builtin) -> syn::Type {
             Builtin::I128 => symbol_in_alkahest_private("i128"),
             Builtin::F32 => symbol_in_alkahest_private("f32"),
             Builtin::F64 => symbol_in_alkahest_private("f64"),
-            Builtin::String => symbol_in_alkahest("String"),
+            Builtin::String => symbol_in_alkahest("Str"),
         },
     })
 }

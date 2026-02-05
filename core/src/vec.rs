@@ -78,4 +78,6 @@ where
     }
 }
 
+// Vec is commonly used in compound types,
+// so the alias makes it indirect.
 formula_alias!(for[E: Element] Vec<E> as Indirect<List<E>>);

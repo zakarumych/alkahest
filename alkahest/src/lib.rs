@@ -6,12 +6,12 @@ pub use alkahest_core::*;
 #[cfg(test)]
 extern crate self as alkahest;
 
-#[cfg(all(feature = "proc", feature = "alloc", test))]
+#[cfg(all(feature = "proc", feature = "std", test))]
 mod tests {
     use core::fmt;
 
     use super::{
-        manual_size::{deserialize, serialize_to_vec},
+        manual_size::{deserialize, pack_to_vec, serialize_to_vec, unpack},
         *,
     };
 
@@ -41,6 +41,42 @@ got:     {:02x?}",
         let size = serialize_to_vec::<E, T, 1>(value, &mut buf);
         match deserialize::<E, T, 1>(&buf[..size]) {
             Ok(deserialized) => {
+                if &deserialized != value {
+                    panic!(
+                        "Round trip failed:
+expected: {:?},
+got:      {:?}",
+                        value, deserialized
+                    );
+                }
+            }
+            Err(err) => {
+                panic!("Deserialization failed: {:?}", err);
+            }
+        }
+    }
+
+    fn round_trip_packet_test<E, T>(value: &T)
+    where
+        E: Element,
+        T: Serialize<E::Formula> + for<'de> Deserialize<'de, E::Formula> + PartialEq + fmt::Debug,
+    {
+        let mut buf = Vec::new();
+        let pack_size = pack_to_vec::<E, T, 1>(value, &mut buf);
+
+        buf.extend(0..255);
+
+        match unpack::<E, T, 1>(&buf) {
+            Ok((deserialized, size)) => {
+                if pack_size != size {
+                    panic!(
+                        "Packet size mismatch:
+expected: {},
+got:      {}",
+                        pack_size, size
+                    );
+                }
+
                 if &deserialized != value {
                     panic!(
                         "Round trip failed:
@@ -99,16 +135,28 @@ got:      {:?}",
         struct Empty;
 
         #[derive(Mixture, PartialEq, Debug)]
+        enum Either<A, B> {
+            A(A),
+            B(B),
+        }
+
+        #[derive(Mixture, PartialEq, Debug)]
         struct Complex {
             a: u8,
             b: Vec<u16>,
             c: Vec<Empty>,
+            d: Either<u8, String>,
+            f: Option<Never>,
+            e: u32,
         }
 
         let value = Complex {
             a: 0x12,
             b: vec![0x3456, 0x789a],
-            c: vec![Empty, Empty],
+            c: vec![Empty, Empty, Empty],
+            d: Either::B("Hello World".to_string()),
+            f: None,
+            e: 0x12345678,
         };
 
         serialize_test::<Complex, _>(
@@ -117,7 +165,13 @@ got:      {:?}",
                 0x9a, 0x78, // b[1]
                 0x56, 0x34, // b[0]
                 0x02, // length of b
-                0x02, // length of c
+                0x03, // length of c
+                b'H', b'e', b'l', b'l', b'o', b' ', b'W', b'o', b'r', b'l', b'd', // d string
+                0x0b, // d length
+                0x78, 0x56, 0x34, 0x12, // e
+                // f uses 0 bytes,
+                0x12, // d string heap pointer
+                0x01, // d discriminant for Either::B
                 0x06, // heap pointer for c
                 0x05, // heap pointer for b
                 0x12, // a
@@ -125,5 +179,6 @@ got:      {:?}",
         );
 
         round_trip_test::<Complex, _>(&value);
+        round_trip_packet_test::<Complex, _>(&value);
     }
 }

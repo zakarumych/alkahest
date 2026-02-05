@@ -281,9 +281,7 @@ where
         F: Formula + ?Sized,
         T: Serialize<F> + ?Sized,
     {
-        const {
-            assert!(F::INHABITED);
-        }
+        assert!(F::INHABITED);
 
         self.write_padding()?;
 

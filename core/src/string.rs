@@ -1,20 +1,13 @@
+use alloc::string::String;
+
 use crate::{
     deserialize::{Deserialize, DeserializeError, Deserializer},
-    formula::{ExactSize, Formula, UnboundedSize},
+    element::Indirect,
     serialize::{Serialize, Serializer, Sizes},
+    str::Str,
 };
 
-/// A formula element representing a string.
-pub struct String;
-
-impl Formula for String {
-    type StackSize<const SIZE_BYTES: usize> = UnboundedSize;
-    type HeapSize<const SIZE_BYTES: usize> = ExactSize<0>;
-    const INHABITED: bool = true;
-}
-
-#[cfg(feature = "alloc")]
-impl Serialize<String> for alloc::string::String {
+impl Serialize<Str> for String {
     #[inline]
     fn serialize<S>(&self, mut serializer: S) -> Result<(), S::Error>
     where
@@ -32,8 +25,7 @@ impl Serialize<String> for alloc::string::String {
     }
 }
 
-#[cfg(feature = "alloc")]
-impl<'de> Deserialize<'de, String> for alloc::string::String {
+impl<'de> Deserialize<'de, Str> for String {
     #[inline]
     fn deserialize<D>(mut deserializer: D) -> Result<Self, DeserializeError>
     where
@@ -42,7 +34,7 @@ impl<'de> Deserialize<'de, String> for alloc::string::String {
         let len = deserializer.read_usize()?;
         let bytes = deserializer.read_bytes(len)?;
         match core::str::from_utf8(bytes) {
-            Ok(s) => Ok(alloc::string::String::from(s)),
+            Ok(s) => Ok(String::from(s)),
             Err(error) => Err(DeserializeError::NonUtf8(error)),
         }
     }
@@ -65,5 +57,6 @@ impl<'de> Deserialize<'de, String> for alloc::string::String {
     }
 }
 
-#[cfg(feature = "alloc")]
-formula_alias!(alloc::string::String as String);
+// String is commonly used in compound types,
+// but `Str`
+formula_alias!(String as Indirect<Str>);

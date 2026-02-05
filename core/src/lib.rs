@@ -190,8 +190,10 @@ mod primitive;
 mod serialize;
 mod slice;
 mod str;
-mod string;
 mod tuple;
+
+#[cfg(feature = "alloc")]
+mod string;
 
 #[cfg(feature = "alloc")]
 mod vec;
@@ -204,7 +206,7 @@ pub use self::{
     list::{Array, List},
     never::Never,
     serialize::{Serialize, Serializer, Sizes},
-    string::String,
+    str::Str,
 };
 
 /// Module containing advanced facilities.
@@ -246,7 +248,8 @@ pub mod manual_size {
     pub use crate::{
         deserialize::{deserialize, deserialize_in_place},
         packet::{
-            pack, pack_or_size, pack_size, pack_to_vec, pack_unchecked, unpack, unpack_in_place,
+            pack, pack_or_size, pack_size, pack_to_vec, pack_unchecked, read_pack_size, unpack,
+            unpack_in_place,
         },
         serialize::{serialize, serialize_or_size, serialize_unchecked, serialized_size},
     };
@@ -263,7 +266,8 @@ pub mod small {
     pub use crate::{
         deserialize::small::{deserialize, deserialize_in_place},
         packet::small::{
-            pack, pack_or_size, pack_size, pack_to_vec, pack_unchecked, unpack, unpack_in_place,
+            pack, pack_or_size, pack_size, pack_to_vec, pack_unchecked, read_pack_size, unpack,
+            unpack_in_place,
         },
         serialize::small::{serialize, serialize_or_size, serialize_unchecked, serialized_size},
     };
@@ -280,7 +284,8 @@ pub mod medium {
     pub use crate::{
         deserialize::medium::{deserialize, deserialize_in_place},
         packet::medium::{
-            pack, pack_or_size, pack_size, pack_to_vec, pack_unchecked, unpack, unpack_in_place,
+            pack, pack_or_size, pack_size, pack_to_vec, pack_unchecked, read_pack_size, unpack,
+            unpack_in_place,
         },
         serialize::medium::{serialize, serialize_or_size, serialize_unchecked, serialized_size},
     };
@@ -297,7 +302,8 @@ pub mod large {
     pub use crate::{
         deserialize::large::{deserialize, deserialize_in_place},
         packet::large::{
-            pack, pack_or_size, pack_size, pack_to_vec, pack_unchecked, unpack, unpack_in_place,
+            pack, pack_or_size, pack_size, pack_to_vec, pack_unchecked, read_pack_size, unpack,
+            unpack_in_place,
         },
         serialize::large::{serialize, serialize_or_size, serialize_unchecked, serialized_size},
     };
@@ -314,7 +320,8 @@ pub mod huge {
     pub use crate::{
         deserialize::huge::{deserialize, deserialize_in_place},
         packet::huge::{
-            pack, pack_or_size, pack_size, pack_to_vec, pack_unchecked, unpack, unpack_in_place,
+            pack, pack_or_size, pack_size, pack_to_vec, pack_unchecked, read_pack_size, unpack,
+            unpack_in_place,
         },
         serialize::huge::{serialize, serialize_or_size, serialize_unchecked, serialized_size},
     };
@@ -332,7 +339,8 @@ pub mod humongous {
     pub use crate::{
         deserialize::humongous::{deserialize, deserialize_in_place},
         packet::humongous::{
-            pack, pack_or_size, pack_size, pack_to_vec, pack_unchecked, unpack, unpack_in_place,
+            pack, pack_or_size, pack_size, pack_to_vec, pack_unchecked, read_pack_size, unpack,
+            unpack_in_place,
         },
         serialize::humongous::{
             serialize, serialize_or_size, serialize_unchecked, serialized_size,

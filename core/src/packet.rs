@@ -241,7 +241,8 @@ where
     }
 }
 
-fn get_total<E, const SIZE_BYTES: usize>(input: &[u8]) -> Result<usize, DeserializeError>
+/// Returns the number of bytes of the packed value in the input.
+pub fn read_pack_size<E, const SIZE_BYTES: usize>(input: &[u8]) -> Result<usize, DeserializeError>
 where
     E: Element + ?Sized,
 {
@@ -257,10 +258,6 @@ where
         Some(total) => total,
     };
 
-    if input.len() < total {
-        return Err(DeserializeError::OutOfBounds(total));
-    }
-
     Ok(total)
 }
 
@@ -275,13 +272,19 @@ where
 /// # Errors
 ///
 /// Returns [`DeserializeError`] if deserialization fails.
-pub fn unpack<'de, E, T, const SIZE_BYTES: usize>(input: &'de [u8]) -> Result<T, DeserializeError>
+pub fn unpack<'de, E, T, const SIZE_BYTES: usize>(
+    input: &'de [u8],
+) -> Result<(T, usize), DeserializeError>
 where
     E: Element + ?Sized,
     T: Deserialize<'de, E::Formula>,
 {
-    let total = get_total::<E, SIZE_BYTES>(input)?;
-    deserialize::<E, T, SIZE_BYTES>(&input[..total])
+    let total = read_pack_size::<E, SIZE_BYTES>(input)?;
+    if input.len() < total {
+        return Err(DeserializeError::OutOfBounds(total));
+    }
+    let value = deserialize::<E, T, SIZE_BYTES>(&input[..total])?;
+    Ok((value, total))
 }
 
 /// Deserializes value from the input.
@@ -299,13 +302,17 @@ where
 pub fn unpack_in_place<'de, E, T, const SIZE_BYTES: usize>(
     place: &mut T,
     input: &'de [u8],
-) -> Result<(), DeserializeError>
+) -> Result<usize, DeserializeError>
 where
     E: Element + ?Sized,
     T: Deserialize<'de, E::Formula> + ?Sized,
 {
-    let total = get_total::<E, SIZE_BYTES>(input)?;
-    deserialize_in_place::<E, T, SIZE_BYTES>(place, &input[..total])
+    let total = read_pack_size::<E, SIZE_BYTES>(input)?;
+    if input.len() < total {
+        return Err(DeserializeError::OutOfBounds(total));
+    }
+    deserialize_in_place::<E, T, SIZE_BYTES>(place, &input[..total])?;
+    Ok(total)
 }
 
 macro_rules! fixed_size_module {
@@ -443,6 +450,16 @@ macro_rules! fixed_size_module {
                 super::pack_to_vec::<E, T, $size_bytes>(value, output)
             }
 
+            /// Returns the number of bytes of the packed value in the input.
+            pub fn read_pack_size<'de, E>(
+                input: &[u8],
+            ) -> Result<usize, DeserializeError>
+            where
+                E: Element + ?Sized,
+            {
+                super::read_pack_size::<E, $size_bytes>(input)
+            }
+
             /// Deserializes value from the input.
             /// Returns deserialized value.
             /// Unlike [`deserialize`] this function allows input to be longer than the length returned by packing function.
@@ -455,7 +472,7 @@ macro_rules! fixed_size_module {
             ///
             /// Returns [`DeserializeError`] if deserialization fails.
             #[inline]
-            pub fn unpack<'de, E, T>(input: &'de [u8]) -> Result<T, DeserializeError>
+            pub fn unpack<'de, E, T>(input: &'de [u8]) -> Result<(T, usize), DeserializeError>
             where
                 E: Element + ?Sized,
                 T: Deserialize<'de, E::Formula>,
@@ -478,7 +495,7 @@ macro_rules! fixed_size_module {
             pub fn unpack_in_place<'de, E, T>(
                 place: &mut T,
                 input: &'de [u8],
-            ) -> Result<(), DeserializeError>
+            ) -> Result<usize, DeserializeError>
             where
                 E: Element + ?Sized,
                 T: Deserialize<'de, E::Formula> + ?Sized,

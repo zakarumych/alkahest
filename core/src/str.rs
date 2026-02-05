@@ -1,10 +1,19 @@
 use crate::{
     deserialize::{Deserialize, DeserializeError, Deserializer},
+    formula::{ExactSize, Formula, UnboundedSize},
     serialize::{Serialize, Serializer, Sizes},
-    string::String,
 };
 
-impl Serialize<String> for str {
+/// Formula representing a string slice.
+pub struct Str;
+
+impl Formula for Str {
+    type StackSize<const SIZE_BYTES: usize> = UnboundedSize;
+    type HeapSize<const SIZE_BYTES: usize> = ExactSize<0>;
+    const INHABITED: bool = true;
+}
+
+impl Serialize<Str> for str {
     #[inline]
     fn serialize<S>(&self, mut serializer: S) -> Result<(), S::Error>
     where
@@ -22,7 +31,7 @@ impl Serialize<String> for str {
     }
 }
 
-impl<'de, 'fe: 'de> Deserialize<'fe, String> for &'de str {
+impl<'de, 'fe: 'de> Deserialize<'fe, Str> for &'de str {
     #[inline]
     fn deserialize<D>(mut deserializer: D) -> Result<Self, DeserializeError>
     where
