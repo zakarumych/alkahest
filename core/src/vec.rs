@@ -11,7 +11,7 @@ where
     E: Element,
     T: Serialize<E::Formula>,
 {
-    #[inline]
+    #[inline(always)]
     fn serialize<S>(&self, serializer: S) -> Result<(), S::Error>
     where
         S: Serializer,
@@ -24,3 +24,5 @@ where
         Serialize::<List<E>>::size_hint::<SIZE_BYTES>(&self[..])
     }
 }
+
+formula_alias!(for[E: Element] Vec<E> as List<E>);

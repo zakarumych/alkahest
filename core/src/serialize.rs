@@ -1,6 +1,7 @@
 use core::{fmt, ops};
 
 use crate::{
+    Element,
     buffer::{Buffer, BufferExhausted, CheckedFixedBuffer, DryBuffer, MaybeFixedBuffer},
     element::{heap_size, stack_size},
     formula::{Formula, SizeBound},
@@ -148,15 +149,15 @@ pub trait Serialize<F: ?Sized> {
 ///
 /// Should be used by composite [`Serialize`] implementations to implement their own [`Serialize::size_hint`].
 #[inline]
-pub fn size_hint<F: Formula + ?Sized, T: Serialize<F> + ?Sized, const SIZE_BYTES: u8>(
+pub fn size_hint<E: Element + ?Sized, T: Serialize<E::Formula> + ?Sized, const SIZE_BYTES: u8>(
     value: &T,
 ) -> Option<Sizes> {
-    match (stack_size::<F, SIZE_BYTES>(), heap_size::<F, SIZE_BYTES>()) {
+    match (stack_size::<E, SIZE_BYTES>(), heap_size::<E, SIZE_BYTES>()) {
         (SizeBound::Exact(stack_size), SizeBound::Exact(heap_size)) => Some(Sizes {
             heap: heap_size,
             stack: stack_size,
         }),
-        _ => value.size_hint::<SIZE_BYTES>(),
+        _ => E::size_hint::<T, SIZE_BYTES>(value),
     }
 }
 
@@ -164,20 +165,20 @@ pub fn size_hint<F: Formula + ?Sized, T: Serialize<F> + ?Sized, const SIZE_BYTES
 /// Returns total number of bytes written and size of the root value.
 /// The buffer type controls bytes writing and failing strategy.
 #[inline]
-pub fn serialize_into<F, T, B, const SIZE_BYTES: u8>(
+pub fn serialize_into<E, T, B, const SIZE_BYTES: u8>(
     value: &T,
     buffer: B,
 ) -> Result<Sizes, B::Error>
 where
-    F: Formula + ?Sized,
-    T: Serialize<F>,
+    E: Element + ?Sized,
+    T: Serialize<E::Formula>,
     B: Buffer,
 {
     let mut sizes = Sizes { heap: 0, stack: 0 };
 
     let mut serializer = SerialzierImpl::<B, SIZE_BYTES>::new(&mut sizes, buffer);
 
-    serializer.write_indirect(value)?;
+    serializer.write_indirect::<E, T>(value)?;
     Ok(sizes)
 }
 
@@ -192,15 +193,15 @@ where
 ///
 /// Returns [`BufferExhausted`] if the buffer is too small.
 #[inline]
-pub fn serialize<F, T, const SIZE_BYTES: u8>(
+pub fn serialize<E, T, const SIZE_BYTES: u8>(
     value: &T,
     output: &mut [u8],
 ) -> Result<Sizes, BufferExhausted>
 where
-    F: Formula + ?Sized,
-    T: Serialize<F>,
+    E: Element + ?Sized,
+    T: Serialize<E::Formula>,
 {
-    serialize_into::<F, T, _, SIZE_BYTES>(value, CheckedFixedBuffer::new(output))
+    serialize_into::<E, T, _, SIZE_BYTES>(value, CheckedFixedBuffer::new(output))
 }
 
 /// Slightly faster version of [`serialize`].
@@ -208,12 +209,12 @@ where
 ///
 /// Use instead of using [`serialize`] with immediate [`unwrap`](Result::unwrap).
 #[inline]
-pub fn serialize_unchecked<F, T, const SIZE_BYTES: u8>(value: &T, output: &mut [u8]) -> Sizes
+pub fn serialize_unchecked<E, T, const SIZE_BYTES: u8>(value: &T, output: &mut [u8]) -> Sizes
 where
-    F: Formula + ?Sized,
-    T: Serialize<F>,
+    E: Element + ?Sized,
+    T: Serialize<E::Formula>,
 {
-    match serialize_into::<F, T, _, SIZE_BYTES>(value, output) {
+    match serialize_into::<E, T, _, SIZE_BYTES>(value, output) {
         Ok(sizes) => sizes,
         Err(never) => match never {},
     }
@@ -306,12 +307,12 @@ where
 /// the buffer for serialization in advance.
 /// Or to find out required size after [`serialize`] fails.
 #[inline]
-pub fn serialized_sizes<F, T, const SIZE_BYTES: u8>(value: &T) -> Sizes
+pub fn serialized_sizes<E, T, const SIZE_BYTES: u8>(value: &T) -> Sizes
 where
-    F: Formula + ?Sized,
-    T: Serialize<F>,
+    E: Element + ?Sized,
+    T: Serialize<E::Formula>,
 {
-    match serialize_into::<F, T, _, SIZE_BYTES>(value, DryBuffer) {
+    match serialize_into::<E, T, _, SIZE_BYTES>(value, DryBuffer) {
         Ok(sizes) => sizes,
         Err(never) => match never {},
     }
@@ -350,13 +351,13 @@ pub trait Serializer {
     /// It is used when serializing fields of records, tuples, or elements of slices.
     ///
     /// Unlike `write_direct`, this method serializes the value into "heap" and writes only an address to the "stack" space.
-    fn write_indirect<F, T>(&mut self, value: &T) -> Result<(), Self::Error>
+    fn write_indirect<E, T>(&mut self, value: &T) -> Result<(), Self::Error>
     where
-        F: Formula + ?Sized,
-        T: Serialize<F> + ?Sized;
+        E: Element + ?Sized,
+        T: Serialize<E::Formula> + ?Sized;
 }
 
-struct SerialzierImpl<'a, B: Buffer, const SIZE_BYTES: u8> {
+pub(crate) struct SerialzierImpl<'a, B: Buffer, const SIZE_BYTES: u8> {
     sizes: &'a mut Sizes,
     buffer: B,
 
@@ -390,13 +391,15 @@ where
     }
 
     #[inline]
-    fn write_to_heap<F, T>(&mut self, value: &T) -> Result<(), B::Error>
+    fn write_to_heap<E, T>(&mut self, value: &T) -> Result<(), B::Error>
     where
-        F: Formula + ?Sized,
-        T: Serialize<F> + ?Sized,
+        E: Element + ?Sized,
+        T: Serialize<E::Formula> + ?Sized,
     {
         let old_stack = self.sizes.stack;
-        self.write_direct::<F, T>(value)?;
+
+        E::serialize(value, self)?;
+
         let len = self.sizes.to_heap(old_stack);
         self.buffer
             .move_to_heap(self.sizes.heap - len, self.sizes.stack + len, len);
@@ -499,20 +502,20 @@ where
     ///
     /// Returns error if buffer write fails.
     #[inline]
-    fn write_indirect<F, T>(&mut self, value: &T) -> Result<(), B::Error>
+    fn write_indirect<E, T>(&mut self, value: &T) -> Result<(), B::Error>
     where
-        F: Formula + ?Sized,
-        T: Serialize<F> + ?Sized,
+        E: Element + ?Sized,
+        T: Serialize<E::Formula> + ?Sized,
     {
         const {
-            assert!(F::INHABITED);
+            assert!(E::INHABITED);
         }
 
         // Can we get size hint for the value?
-        match size_hint::<F, T, SIZE_BYTES>(&value) {
+        match size_hint::<E, T, SIZE_BYTES>(&value) {
             None => {
                 // Size hint is unobtainable, serialize to heap through stack and move to heap.
-                self.write_to_heap::<F, T>(value)?;
+                self.write_to_heap::<E, T>(value)?;
             }
             Some(promised) => {
                 // Reserive heap space to avoid serializing to stack and moving to heap.
@@ -527,9 +530,10 @@ where
                     stack: 0,
                 };
 
-                let serializer = Self::reserved(&mut sizes, reserved);
-
-                <T as Serialize<F>>::serialize(value, serializer).expect("Reserved enough space");
+                {
+                    let mut serializer = Self::reserved(&mut sizes, reserved);
+                    E::serialize(value, &mut serializer).expect("Reserved enough space");
+                }
 
                 debug_assert_eq!(
                     sizes.heap,

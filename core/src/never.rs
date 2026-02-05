@@ -47,10 +47,8 @@ impl<F: ?Sized> Serialize<F> for Never {
     }
 }
 
-/// Never can never be deserialized.
-/// So it is only implement deserialization from `Never` formula,
-/// which, by definition, may never be present in the data,
-/// making deserialization of `Never` itself unreachable.
+/// Anything can be deserialized from `Never` formula,
+/// because it is never exists in data, so deserialization of it never happens.
 impl<'de> Deserialize<'de, Never> for Never {
     #[inline(always)]
     fn deserialize<D>(_deserializer: D) -> Result<Self, DeserializeError>

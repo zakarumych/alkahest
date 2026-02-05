@@ -1,6 +1,7 @@
 use core::str::Utf8Error;
 
 use crate::{
+    Element,
     element::stack_size,
     formula::{Formula, SizeBound},
 };
@@ -45,6 +46,8 @@ pub enum DeserializeError {
 }
 
 pub trait Deserializer<'de> {
+    const SIZE_BYTES: u8;
+
     fn read_bytes(&mut self, len: usize) -> Result<&'de [u8], DeserializeError>;
 
     fn read_byte(&mut self) -> Result<u8, DeserializeError>;
@@ -68,20 +71,20 @@ pub trait Deserializer<'de> {
         F: Formula + ?Sized,
         T: Deserialize<'de, F> + ?Sized;
 
-    fn read_indirect<F, T>(&mut self) -> Result<T, DeserializeError>
+    fn read_indirect<E, T>(&mut self) -> Result<T, DeserializeError>
     where
-        F: Formula + ?Sized,
-        T: Deserialize<'de, F>;
+        E: Element + ?Sized,
+        T: Deserialize<'de, E::Formula>;
 
     /// Reads and deserializes field from the input buffer in-place.
     ///
     /// # Errors
     ///
     /// Returns `DeserializeError` if deserialization fails.
-    fn read_indirect_in_place<F, T>(&mut self, place: &mut T) -> Result<(), DeserializeError>
+    fn read_indirect_in_place<E, T>(&mut self, place: &mut T) -> Result<(), DeserializeError>
     where
-        F: Formula + ?Sized,
-        T: Deserialize<'de, F> + ?Sized;
+        E: Element + ?Sized,
+        T: Deserialize<'de, E::Formula> + ?Sized;
 
     // /// Converts deserializer into iterator over deserialized values with
     // /// specified formula.
@@ -103,6 +106,12 @@ pub trait Deserializer<'de> {
     //         len,
     //     }
     // }
+
+    #[doc(hidden)]
+    fn input(&self) -> &'de [u8];
+
+    #[doc(hidden)]
+    fn size_bytes(&self) -> u8;
 }
 
 /// Trait for types that can be deserialized
@@ -140,7 +149,7 @@ pub trait Deserialize<'de, F: ?Sized> {
 /// Deserializer from raw bytes.
 /// Provides methods for deserialization of values.
 #[must_use = "Deserializer should be used to deserialize values"]
-pub struct DeserializerImpl<'de, const SIZE_BYTES: u8> {
+pub(crate) struct DeserializerImpl<'de, const SIZE_BYTES: u8> {
     /// Input buffer sub-slice usable for deserialization.
     input: &'de [u8],
 
@@ -194,6 +203,8 @@ impl<'de, const SIZE_BYTES: u8> DeserializerImpl<'de, SIZE_BYTES> {
 }
 
 impl<'de, const SIZE_BYTES: u8> Deserializer<'de> for DeserializerImpl<'de, SIZE_BYTES> {
+    const SIZE_BYTES: u8 = SIZE_BYTES;
+
     /// Reads specified number of bytes from the input buffer.
     /// Returns slice of bytes.
     /// Advances the input buffer.
@@ -353,10 +364,10 @@ impl<'de, const SIZE_BYTES: u8> Deserializer<'de> for DeserializerImpl<'de, SIZE
     }
 
     #[inline]
-    fn read_indirect<F, T>(&mut self) -> Result<T, DeserializeError>
+    fn read_indirect<E, T>(&mut self) -> Result<T, DeserializeError>
     where
-        F: Formula + ?Sized,
-        T: Deserialize<'de, F>,
+        E: Element + ?Sized,
+        T: Deserialize<'de, E::Formula>,
     {
         #[cfg(debug_assertions)]
         self.debug_validate();
@@ -367,15 +378,15 @@ impl<'de, const SIZE_BYTES: u8> Deserializer<'de> for DeserializerImpl<'de, SIZE
             return cold_err(DeserializeError::WrongAddress);
         }
 
-        let de = DeserializerImpl::<SIZE_BYTES>::new(&self.input[..address]);
-        <T as Deserialize<'de, F>>::deserialize(de)
+        let mut de = DeserializerImpl::<SIZE_BYTES>::new(&self.input[..address]);
+        E::deserialize::<T, _>(&mut de)
     }
 
     #[inline]
-    fn read_indirect_in_place<F, T>(&mut self, place: &mut T) -> Result<(), DeserializeError>
+    fn read_indirect_in_place<E, T>(&mut self, place: &mut T) -> Result<(), DeserializeError>
     where
-        F: Formula + ?Sized,
-        T: Deserialize<'de, F> + ?Sized,
+        E: Element + ?Sized,
+        T: Deserialize<'de, E::Formula> + ?Sized,
     {
         #[cfg(debug_assertions)]
         self.debug_validate();
@@ -386,8 +397,18 @@ impl<'de, const SIZE_BYTES: u8> Deserializer<'de> for DeserializerImpl<'de, SIZE
             return cold_err(DeserializeError::WrongAddress);
         }
 
-        let de = DeserializerImpl::<SIZE_BYTES>::new(&self.input[..address]);
-        <T as Deserialize<'de, F>>::deserialize_in_place(place, de)
+        let mut de = DeserializerImpl::<SIZE_BYTES>::new(&self.input[..address]);
+        E::deserialize_in_place(place, &mut de)
+    }
+
+    #[allow(refining_impl_trait)]
+    fn input(&self) -> &'de [u8] {
+        self.input
+    }
+
+    #[doc(hidden)]
+    fn size_bytes(&self) -> u8 {
+        SIZE_BYTES
     }
 }
 
@@ -422,6 +443,8 @@ impl<'de, 'consumed, const SIZE_BYTES: u8> TrackingDeserializerImpl<'de, 'consum
 impl<'de, const SIZE_BYTES: u8> Deserializer<'de>
     for TrackingDeserializerImpl<'de, '_, SIZE_BYTES>
 {
+    const SIZE_BYTES: u8 = SIZE_BYTES;
+
     /// Reads specified number of bytes from the input buffer.
     /// Returns slice of bytes.
     /// Advances the input buffer.
@@ -505,12 +528,12 @@ impl<'de, const SIZE_BYTES: u8> Deserializer<'de>
     ///
     /// Returns `DeserializeError` if deserialization fails.
     #[inline]
-    fn read_indirect<F, T>(&mut self) -> Result<T, DeserializeError>
+    fn read_indirect<E, T>(&mut self) -> Result<T, DeserializeError>
     where
-        F: Formula + ?Sized,
-        T: Deserialize<'de, F>,
+        E: Element + ?Sized,
+        T: Deserialize<'de, E::Formula>,
     {
-        self.inner.read_indirect()
+        self.inner.read_indirect::<E, T>()
     }
 
     /// Reads and deserializes field from the input buffer in-place.
@@ -519,12 +542,22 @@ impl<'de, const SIZE_BYTES: u8> Deserializer<'de>
     ///
     /// Returns `DeserializeError` if deserialization fails.
     #[inline]
-    fn read_indirect_in_place<F, T>(&mut self, place: &mut T) -> Result<(), DeserializeError>
+    fn read_indirect_in_place<E, T>(&mut self, place: &mut T) -> Result<(), DeserializeError>
     where
-        F: Formula + ?Sized,
-        T: Deserialize<'de, F> + ?Sized,
+        E: Element + ?Sized,
+        T: Deserialize<'de, E::Formula> + ?Sized,
     {
-        self.inner.read_indirect_in_place(place)
+        self.inner.read_indirect_in_place::<E, T>(place)
+    }
+
+    #[allow(refining_impl_trait)]
+    fn input(&self) -> &'de [u8] {
+        self.inner.input
+    }
+
+    #[doc(hidden)]
+    fn size_bytes(&self) -> u8 {
+        SIZE_BYTES
     }
 }
 
@@ -758,14 +791,13 @@ impl<'de, const SIZE_BYTES: u8> Deserializer<'de>
 ///
 /// Returns `DeserializeError` if deserialization fails.
 #[inline]
-pub fn deserialize<'de, F, T, const SIZE_BYTES: u8>(input: &'de [u8]) -> Result<T, DeserializeError>
+pub fn deserialize<'de, E, T, const SIZE_BYTES: u8>(input: &'de [u8]) -> Result<T, DeserializeError>
 where
-    F: Formula + ?Sized,
-    T: Deserialize<'de, F>,
+    E: Element + ?Sized,
+    T: Deserialize<'de, E::Formula>,
 {
-    let de = DeserializerImpl::<SIZE_BYTES>::new(input);
-    let value = <T as Deserialize<'de, F>>::deserialize(de)?;
-
+    let mut de = DeserializerImpl::<SIZE_BYTES>::new(input);
+    let value = E::deserialize(&mut de)?;
     Ok(value)
 }
 
@@ -776,16 +808,16 @@ where
 ///
 /// Returns `DeserializeError` if deserialization fails.
 #[inline]
-pub fn deserialize_in_place<'de, F, T, const SIZE_BYTES: u8>(
+pub fn deserialize_in_place<'de, E, T, const SIZE_BYTES: u8>(
     place: &mut T,
     input: &'de [u8],
 ) -> Result<(), DeserializeError>
 where
-    F: Formula + ?Sized,
-    T: Deserialize<'de, F> + ?Sized,
+    E: Element + ?Sized,
+    T: Deserialize<'de, E::Formula> + ?Sized,
 {
-    let de = DeserializerImpl::<SIZE_BYTES>::new(input);
-    <T as Deserialize<'de, F>>::deserialize_in_place(place, de)?;
+    let mut de = DeserializerImpl::<SIZE_BYTES>::new(input);
+    E::deserialize_in_place(place, &mut de)?;
 
     Ok(())
 }

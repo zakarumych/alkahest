@@ -1,37 +1,37 @@
-use alkahest::{Deserialize, Element, Formula, Mixture, Never, Serialize, alkahest};
+use alkahest::{Deserialize, Element, Formula, Indirect, Mixture, Never, Serialize, alkahest};
 
-// #[alkahest(Formula)]
-// struct Parent;
+#[alkahest(Formula)]
+struct Parent;
 
-// // #[alkahest]
-// mod new {
-//     alkahest::include_formulas!("new.alk");
-// }
+// #[alkahest]
+mod new {
+    alkahest::include_formulas!("new.alk");
+}
 
-// #[derive(Mixture)]
-// struct TryString<S> {
-//     a: S,
-// }
+#[derive(Mixture)]
+struct TryString<S> {
+    a: S,
+}
 
-// const fn is_mixture<T: Mixture>() {}
+const fn is_mixture<T: Mixture>() {}
 
-// const _: () = {
-//     is_mixture::<TryString<u8>>();
-//     is_mixture::<TryString<String>>();
-// };
+const _: () = {
+    is_mixture::<TryString<u8>>();
+    is_mixture::<TryString<String>>();
+};
 
-// #[derive(Serialize)]
-// #[alkahest(new::Foo)]
-// struct Foo {
-//     a: u32,
-//     b: u32,
-// }
+#[derive(Serialize)]
+#[alkahest(new::Foo)]
+struct Foo {
+    a: u32,
+    b: u32,
+}
 
-// #[derive(Serialize)]
-// #[alkahest(new::Side@Left)]
-// struct Left {
-//     a: u8,
-// }
+#[derive(Serialize)]
+#[alkahest(new::Side@Left)]
+struct Left {
+    a: u8,
+}
 
 #[alkahest(Mixture)]
 enum Y<A> {
@@ -49,6 +49,11 @@ enum YS {
 enum YD<B> {
     A(u8),
     B(B),
+}
+
+#[derive(Mixture)]
+struct TryIndirect<T> {
+    a: Indirect<T>,
 }
 
 fn main() {

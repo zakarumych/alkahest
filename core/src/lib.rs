@@ -39,47 +39,59 @@ macro_rules! for_tuple_2 {
 
 #[macro_export]
 macro_rules! formula_alias {
-    ($(for[$($generic:tt),*])? $alias:ty as $formula:ty) => {
-        impl $(< $($generic),* >)? $crate::Element for $alias {
-            type Formula = $formula;
+    (for[$($generic:tt)*] $alias:ty as $formula:ty) => {
+        impl < $($generic)* > $crate::Element for $alias {
+            $crate::formula_alias!(@impl $alias as $formula);
+        }
+    };
+    ($alias:ty as $formula:ty) => {
+        impl $crate::Element for $alias {
+            $crate::formula_alias!(@impl $alias as $formula);
+        }
+    };
+    (@impl $alias:ty as $formula:ty) => {
+        type Formula = $formula;
 
-            type StackSize<const SIZE_BYTES: u8> = <$formula as $crate::Formula>::StackSize<SIZE_BYTES>;
-            type HeapSize<const SIZE_BYTES: u8> = <$formula as $crate::Formula>::HeapSize<SIZE_BYTES>;
-            const INHABITED: bool = true;
+        type StackSize<const SIZE_BYTES: u8> = <$formula as $crate::Formula>::StackSize<SIZE_BYTES>;
+        type HeapSize<const SIZE_BYTES: u8> = <$formula as $crate::Formula>::HeapSize<SIZE_BYTES>;
+        const INHABITED: bool = <$formula as $crate::Formula>::INHABITED;
 
-            fn serialize<T, S>(value: &T, serializer: &mut S) -> Result<(), S::Error>
-            where
-                T: $crate::Serialize<$formula> + ?Sized,
-                S: $crate::Serializer,
-            {
-                serializer.write_direct(value)
-            }
+        #[inline(always)]
+        fn serialize<T, S>(value: &T, serializer: &mut S) -> Result<(), S::Error>
+        where
+            T: $crate::Serialize<$formula> + ?Sized,
+            S: $crate::Serializer,
+        {
+            serializer.write_direct(value)
+        }
 
-            fn size_hint<T, const SIZE_BYTES: u8>(value: &T) -> Option<$crate::Sizes>
-            where
-                T: $crate::serialize::Serialize<$formula> + ?Sized,
-            {
-                value.size_hint::<SIZE_BYTES>()
-            }
+        #[inline(always)]
+        fn size_hint<T, const SIZE_BYTES: u8>(value: &T) -> Option<$crate::Sizes>
+        where
+            T: $crate::serialize::Serialize<$formula> + ?Sized,
+        {
+            value.size_hint::<SIZE_BYTES>()
+        }
 
-            fn deserialize<'de, T, D>(deserializer: &mut D) -> Result<T, $crate::DeserializeError>
-            where
-                T: $crate::Deserialize<'de, $formula>,
-                D: $crate::Deserializer<'de>,
-            {
-                deserializer.read_direct()
-            }
+        #[inline(always)]
+        fn deserialize<'de, T, D>(deserializer: &mut D) -> Result<T, $crate::DeserializeError>
+        where
+            T: $crate::Deserialize<'de, $formula>,
+            D: $crate::Deserializer<'de>,
+        {
+            deserializer.read_direct()
+        }
 
-            fn deserialize_in_place<'de, T, D>(
-                place: &mut T,
-                deserializer: &mut D,
-            ) -> Result<(), $crate::DeserializeError>
-            where
-                T: $crate::Deserialize<'de, $formula> + ?Sized,
-                D: $crate::Deserializer<'de>,
-            {
-                deserializer.read_direct_in_place(place)
-            }
+        #[inline(always)]
+        fn deserialize_in_place<'de, T, D>(
+            place: &mut T,
+            deserializer: &mut D,
+        ) -> Result<(), $crate::DeserializeError>
+        where
+            T: $crate::Deserialize<'de, $formula> + ?Sized,
+            D: $crate::Deserializer<'de>,
+        {
+            deserializer.read_direct_in_place(place)
         }
     };
 }
@@ -90,9 +102,11 @@ mod deserialize;
 mod element;
 mod formula;
 // mod iter;
+mod lazy;
 mod list;
 mod never;
 mod option;
+mod packet;
 mod primitive;
 mod serialize;
 mod slice;
@@ -107,6 +121,7 @@ pub use self::{
     deserialize::{Deserialize, DeserializeError, Deserializer, deserialize, deserialize_in_place},
     element::{Element, Indirect, heap_size, inhabited, stack_size},
     formula::{BoundedSize, ExactSize, Formula, SizeBound, SizeType, UnboundedSize},
+    lazy::Lazy,
     list::{Array, List},
     never::Never,
     serialize::{
@@ -126,12 +141,12 @@ impl<T> Mixture for T where T: Formula + Serialize<Self> + for<'de> Deserialize<
 
 /// A trait that combines Element, Serialize<Self> and Deserialize<Self>.
 /// Automatically implemented for all types that implement the required traits.
-pub trait MixtureElement:
+pub trait Component:
     Element + Serialize<Self::Formula> + for<'de> Deserialize<'de, Self::Formula>
 {
 }
 
-impl<T> MixtureElement for T where
+impl<T> Component for T where
     T: Element + Serialize<Self::Formula> + for<'de> Deserialize<'de, Self::Formula>
 {
 }
@@ -155,7 +170,7 @@ pub mod private {
         result::Result::{self, Err, Ok},
     };
 
-    pub use {bool, f32, f64, i8, i16, i32, i64, i128, str, u8, u16, u32, u64, u128};
+    pub use {bool, f32, f64, i8, i16, i32, i64, i128, u8, u16, u32, u64, u128};
 
     #[inline(always)]
     pub fn with_element<F, E>(f: impl FnOnce(&F) -> &E) -> WithElement<E>

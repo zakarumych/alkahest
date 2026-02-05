@@ -439,7 +439,7 @@ impl MixtureArgs {
         let where_clause = if self.where_clause.is_some() {
             self.where_clause.clone()
         } else {
-            impl_for_each_type_param(generics, "MixtureElement")
+            impl_for_each_type_param(generics, "Component")
         };
 
         (

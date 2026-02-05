@@ -1,5 +1,7 @@
 use std::ops::{Add, AddAssign, Mul};
 
+use crate::{DeserializeError, Deserializer};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SizeBound {
     Unbounded,
