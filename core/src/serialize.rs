@@ -138,183 +138,8 @@ pub trait Serialize<F: ?Sized> {
     ///
     /// This function won't be called if `F` has both [`Formula::EXACT_SIZE`] and [`Formula::HEAPLESS`] set to `true`,
     /// as size must be obtainable from [`Formula::max_stack_size`] in that case.
-    fn size_hint<const SIZE_BYTES: u8>(&self) -> Option<Sizes> {
+    fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
         None
-    }
-}
-
-/// Returns size hint for serializing value according to formula `F`.
-///
-/// Avoids calling [`Serialize::size_hint`] for exact-sized, heapless formulas.
-///
-/// Should be used by composite [`Serialize`] implementations to implement their own [`Serialize::size_hint`].
-#[inline]
-pub fn size_hint<E: Element + ?Sized, T: Serialize<E::Formula> + ?Sized, const SIZE_BYTES: u8>(
-    value: &T,
-) -> Option<Sizes> {
-    match (stack_size::<E, SIZE_BYTES>(), heap_size::<E, SIZE_BYTES>()) {
-        (SizeBound::Exact(stack_size), SizeBound::Exact(heap_size)) => Some(Sizes {
-            heap: heap_size,
-            stack: stack_size,
-        }),
-        _ => E::size_hint::<T, SIZE_BYTES>(value),
-    }
-}
-
-/// Serialize value into buffer.
-/// Returns total number of bytes written and size of the root value.
-/// The buffer type controls bytes writing and failing strategy.
-#[inline]
-pub fn serialize_into<E, T, B, const SIZE_BYTES: u8>(
-    value: &T,
-    buffer: B,
-) -> Result<Sizes, B::Error>
-where
-    E: Element + ?Sized,
-    T: Serialize<E::Formula>,
-    B: Buffer,
-{
-    let mut sizes = Sizes { heap: 0, stack: 0 };
-
-    let mut serializer = SerialzierImpl::<B, SIZE_BYTES>::new(&mut sizes, buffer);
-
-    serializer.write_indirect::<E, T>(value)?;
-    Ok(sizes)
-}
-
-/// Serialize value into bytes slice.
-/// Returns the number of bytes written.
-/// Fails if the buffer is too small.
-///
-/// To retrieve the number of bytes required to serialize the value,
-/// use [`serialized_size`] or [`serialize_or_size`].
-///
-/// # Errors
-///
-/// Returns [`BufferExhausted`] if the buffer is too small.
-#[inline]
-pub fn serialize<E, T, const SIZE_BYTES: u8>(
-    value: &T,
-    output: &mut [u8],
-) -> Result<Sizes, BufferExhausted>
-where
-    E: Element + ?Sized,
-    T: Serialize<E::Formula>,
-{
-    serialize_into::<E, T, _, SIZE_BYTES>(value, CheckedFixedBuffer::new(output))
-}
-
-/// Slightly faster version of [`serialize`].
-/// Panics if the buffer is too small instead of returning an error.
-///
-/// Use instead of using [`serialize`] with immediate [`unwrap`](Result::unwrap).
-#[inline]
-pub fn serialize_unchecked<E, T, const SIZE_BYTES: u8>(value: &T, output: &mut [u8]) -> Sizes
-where
-    E: Element + ?Sized,
-    T: Serialize<E::Formula>,
-{
-    match serialize_into::<E, T, _, SIZE_BYTES>(value, output) {
-        Ok(sizes) => sizes,
-        Err(never) => match never {},
-    }
-}
-
-/// Error that may occur during serialization
-/// if buffer is too small to fit serialized data.
-///
-/// Contains the size of the buffer required to fit serialized data.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(transparent)]
-pub struct BufferSizeRequired {
-    /// Size of the buffer required to fit serialized data.
-    pub required: usize,
-}
-
-impl fmt::Display for BufferSizeRequired {
-    #[inline]
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "buffer size required: {}", self.required)
-    }
-}
-
-/// Serialize value into bytes slice.
-/// Returns the number of bytes written.
-///
-/// If the buffer is too small, returns error that contains
-/// the exact number of bytes required.
-///
-/// Use [`serialize`] if this information is not needed.
-///
-/// # Errors
-///
-/// Returns [`BufferSizeRequired`] error if the buffer is too small.
-/// Error contains the exact number of bytes required.
-#[inline]
-pub fn serialize_or_size<F, T, const SIZE_BYTES: u8>(
-    value: &T,
-    output: &mut [u8],
-) -> Result<Sizes, BufferSizeRequired>
-where
-    F: Formula + ?Sized,
-    T: Serialize<F>,
-{
-    let mut exhausted = false;
-    let result =
-        serialize_into::<F, T, _, SIZE_BYTES>(value, MaybeFixedBuffer::new(output, &mut exhausted));
-    let sizes = match result {
-        Ok(sizes) => sizes,
-        Err(never) => match never {},
-    };
-    if exhausted {
-        Err(BufferSizeRequired {
-            required: sizes.total(),
-        })
-    } else {
-        Ok(sizes)
-    }
-}
-
-/// Serialize value into byte vector.
-/// Returns the number of bytes written.
-///
-/// Grows the vector if needed.
-/// Infallible except for allocation errors.
-///
-/// Use pre-allocated vector when possible to avoid reallocations.
-#[cfg(feature = "alloc")]
-#[inline]
-pub fn serialize_to_vec<F, T, const SIZE_BYTES: u8>(
-    value: &T,
-    output: &mut alloc::vec::Vec<u8>,
-) -> Sizes
-where
-    F: Formula + ?Sized,
-    T: Serialize<F>,
-{
-    use crate::buffer::VecBuffer;
-
-    match serialize_into::<F, T, _, SIZE_BYTES>(value, VecBuffer::new(output)) {
-        Ok(sizes) => sizes,
-        Err(never) => match never {},
-    }
-}
-
-/// Returns the number of bytes required to serialize the value.
-/// Note that value is consumed.
-///
-/// Use when value is `Copy` or can be cheaply replicated to allocate
-/// the buffer for serialization in advance.
-/// Or to find out required size after [`serialize`] fails.
-#[inline]
-pub fn serialized_sizes<E, T, const SIZE_BYTES: u8>(value: &T) -> Sizes
-where
-    E: Element + ?Sized,
-    T: Serialize<E::Formula>,
-{
-    match serialize_into::<E, T, _, SIZE_BYTES>(value, DryBuffer) {
-        Ok(sizes) => sizes,
-        Err(never) => match never {},
     }
 }
 
@@ -357,7 +182,7 @@ pub trait Serializer {
         T: Serialize<E::Formula> + ?Sized;
 }
 
-pub(crate) struct SerialzierImpl<'a, B: Buffer, const SIZE_BYTES: u8> {
+pub(crate) struct SerialzierImpl<'a, B: Buffer, const SIZE_BYTES: usize> {
     sizes: &'a mut Sizes,
     buffer: B,
 
@@ -366,7 +191,7 @@ pub(crate) struct SerialzierImpl<'a, B: Buffer, const SIZE_BYTES: u8> {
     pad_next: usize,
 }
 
-impl<'a, B, const SIZE_BYTES: u8> SerialzierImpl<'a, B, SIZE_BYTES>
+impl<'a, B, const SIZE_BYTES: usize> SerialzierImpl<'a, B, SIZE_BYTES>
 where
     B: Buffer,
 {
@@ -397,12 +222,15 @@ where
         T: Serialize<E::Formula> + ?Sized,
     {
         let old_stack = self.sizes.stack;
-
         E::serialize(value, self)?;
 
-        let len = self.sizes.to_heap(old_stack);
+        let len = self.sizes.stack - old_stack;
+
         self.buffer
-            .move_to_heap(self.sizes.heap - len, self.sizes.stack + len, len);
+            .move_to_heap(self.sizes.heap, self.sizes.stack, len);
+
+        self.sizes.heap += len;
+        self.sizes.stack = old_stack;
         Ok(())
     }
 
@@ -418,7 +246,7 @@ where
     }
 }
 
-impl<'a, B, const SIZE_BYTES: u8> Serializer for SerialzierImpl<'a, B, SIZE_BYTES>
+impl<'a, B, const SIZE_BYTES: usize> Serializer for SerialzierImpl<'a, B, SIZE_BYTES>
 where
     B: Buffer,
 {
@@ -475,18 +303,22 @@ where
 
         <T as Serialize<F>>::serialize(value, self.reborrow())?;
 
-        let actual_size = self.sizes.stack - old_stack;
+        let actual_stack = self.sizes.stack - old_stack;
 
         match stack_size::<F, SIZE_BYTES>() {
-            SizeBound::Unbounded => {}
+            SizeBound::Unbounded => {
+                // It is impossible to write padding for unbounded element.
+                // Thus we fence it with too large padding that will cause next write to fail.
+                self.pad_next = usize::MAX;
+            }
             SizeBound::Bounded(max_stack) => {
-                debug_assert!(actual_size <= max_stack);
+                debug_assert!(actual_stack <= max_stack);
                 self.pad_next = old_stack + max_stack - self.sizes.stack;
             }
             SizeBound::Exact(exact_stack) => {
                 // This branch can be chosen at compile time,
                 // so we simply avoid simple calculation of the branch above.
-                debug_assert_eq!(actual_size, exact_stack);
+                debug_assert_eq!(actual_stack, exact_stack);
             }
         }
 
@@ -532,7 +364,9 @@ where
 
                 {
                     let mut serializer = Self::reserved(&mut sizes, reserved);
-                    E::serialize(value, &mut serializer).expect("Reserved enough space");
+                    if let Err(err) = E::serialize(value, &mut serializer) {
+                        match err {}
+                    }
                 }
 
                 debug_assert_eq!(
@@ -560,14 +394,385 @@ where
 
     /// Specialized method to write usize value in `SIZE_BYTES` bytes.
     fn write_usize(&mut self, value: usize) -> Result<(), Self::Error> {
-        let max_size: usize = 1 << (SIZE_BYTES * 8);
-        assert!(
-            value < max_size,
-            "Value too large to fit in SIZE_BYTES bytes ({SIZE_BYTES})"
-        );
-
-        let bytes = value.to_le_bytes();
-
-        self.write_bytes(&bytes[..usize::from(SIZE_BYTES)])
+        self.write_padding()?;
+        write_usize::<_, SIZE_BYTES>(
+            value,
+            self.sizes.heap,
+            self.sizes.stack,
+            self.buffer.reborrow(),
+        )?;
+        self.sizes.stack += SIZE_BYTES;
+        Ok(())
     }
+}
+
+/// Specialized method to write usize value in `SIZE_BYTES` bytes.
+pub fn write_usize<B, const SIZE_BYTES: usize>(
+    value: usize,
+    heap: usize,
+    stack: usize,
+    mut buffer: B,
+) -> Result<(), B::Error>
+where
+    B: Buffer,
+{
+    const {
+        assert!(SIZE_BYTES > 0 && SIZE_BYTES <= 16);
+    }
+
+    const LEN: usize = size_of::<usize>();
+
+    match () {
+        () if SIZE_BYTES < LEN => {
+            let max_size = 1usize << (SIZE_BYTES * 8);
+            assert!(
+                value < max_size,
+                "Value too large to fit in SIZE_BYTES bytes ({SIZE_BYTES})"
+            );
+            let bytes = value.to_le_bytes();
+            buffer.write_stack(heap, stack, &bytes[..SIZE_BYTES])
+        }
+        () if SIZE_BYTES > LEN => {
+            let mut bytes = [0u8; SIZE_BYTES];
+            bytes[..LEN].copy_from_slice(&value.to_le_bytes());
+            buffer.write_stack(heap, stack, &bytes)
+        }
+        () => {
+            // SIZE_BYTES == LEN
+            buffer.write_stack(heap, stack, &value.to_le_bytes())
+        }
+    }
+}
+
+/// Returns size hint for serializing value according to formula `F`.
+///
+/// Avoids calling [`Serialize::size_hint`] for exact-sized, heapless formulas.
+///
+/// Should be used by composite [`Serialize`] implementations to implement their own [`Serialize::size_hint`].
+#[inline]
+pub fn size_hint<
+    E: Element + ?Sized,
+    T: Serialize<E::Formula> + ?Sized,
+    const SIZE_BYTES: usize,
+>(
+    value: &T,
+) -> Option<Sizes> {
+    match (stack_size::<E, SIZE_BYTES>(), heap_size::<E, SIZE_BYTES>()) {
+        (SizeBound::Exact(stack_size), SizeBound::Exact(heap_size)) => Some(Sizes {
+            heap: heap_size,
+            stack: stack_size,
+        }),
+        _ => E::size_hint::<T, SIZE_BYTES>(value),
+    }
+}
+
+pub fn make_serializer<'a, B, const SIZE_BYTES: usize>(
+    buffer: B,
+    sizes: &'a mut Sizes,
+) -> impl Serializer<Error = B::Error> + use<'a, B, SIZE_BYTES>
+where
+    B: Buffer,
+{
+    SerialzierImpl::<B, SIZE_BYTES>::new(sizes, buffer)
+}
+
+/// Serializes value into buffer.
+/// Returns total number of bytes written and size of the root value.
+/// The buffer type controls bytes writing and failing strategy.
+#[inline]
+pub fn serialize_into<E, T, B, const SIZE_BYTES: usize>(
+    value: &T,
+    mut buffer: B,
+) -> Result<usize, B::Error>
+where
+    E: Element + ?Sized,
+    T: Serialize<E::Formula>,
+    B: Buffer,
+{
+    let mut sizes = Sizes { heap: 0, stack: 0 };
+    {
+        let mut serializer = make_serializer::<_, SIZE_BYTES>(buffer.reborrow(), &mut sizes);
+
+        E::serialize(value, &mut serializer)?;
+    }
+
+    buffer.move_to_heap(sizes.heap, sizes.stack, sizes.stack);
+
+    Ok(sizes.total())
+}
+
+/// Serializes value into bytes slice.
+/// Returns the number of bytes written.
+/// Fails if the buffer is too small.
+///
+/// To retrieve the number of bytes required to serialize the value,
+/// use [`serialized_size`] or [`serialize_or_size`].
+///
+/// # Errors
+///
+/// Returns [`BufferExhausted`] if the buffer is too small.
+#[inline]
+pub fn serialize<E, T, const SIZE_BYTES: usize>(
+    value: &T,
+    output: &mut [u8],
+) -> Result<usize, BufferExhausted>
+where
+    E: Element + ?Sized,
+    T: Serialize<E::Formula>,
+{
+    serialize_into::<E, T, _, SIZE_BYTES>(value, CheckedFixedBuffer::new(output))
+}
+
+/// Slightly faster version of [`serialize`].
+/// Panics if the buffer is too small instead of returning an error.
+///
+/// Use instead of using [`serialize`] with immediate [`unwrap`](Result::unwrap).
+#[inline]
+pub fn serialize_unchecked<E, T, const SIZE_BYTES: usize>(value: &T, output: &mut [u8]) -> usize
+where
+    E: Element + ?Sized,
+    T: Serialize<E::Formula>,
+{
+    match serialize_into::<E, T, _, SIZE_BYTES>(value, output) {
+        Ok(sizes) => sizes,
+        Err(never) => match never {},
+    }
+}
+
+/// Returns the number of bytes required to serialize the value.
+/// Note that value is consumed.
+///
+/// Use when value is `Copy` or can be cheaply replicated to allocate
+/// the buffer for serialization in advance.
+/// Or to find out required size after [`serialize`] fails.
+#[inline]
+pub fn serialized_size<E, T, const SIZE_BYTES: usize>(value: &T) -> usize
+where
+    E: Element + ?Sized,
+    T: Serialize<E::Formula>,
+{
+    match serialize_into::<E, T, _, SIZE_BYTES>(value, DryBuffer) {
+        Ok(size) => size,
+        Err(never) => match never {},
+    }
+}
+
+/// Error that may occur during serialization
+/// if buffer is too small to fit serialized data.
+///
+/// Contains the size of the buffer required to fit serialized data.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct BufferSizeRequired {
+    /// Size of the buffer required to fit serialized data.
+    pub required: usize,
+}
+
+impl fmt::Display for BufferSizeRequired {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "buffer size required: {}", self.required)
+    }
+}
+
+/// Serializes value into bytes slice.
+/// Returns the number of bytes written.
+///
+/// If the buffer is too small, returns error that contains
+/// the exact number of bytes required.
+///
+/// Use [`serialize`] if this information is not needed.
+///
+/// # Errors
+///
+/// Returns [`BufferSizeRequired`] error if the buffer is too small.
+/// Error contains the exact number of bytes required.
+#[inline]
+pub fn serialize_or_size<E, T, const SIZE_BYTES: usize>(
+    value: &T,
+    output: &mut [u8],
+) -> Result<usize, BufferSizeRequired>
+where
+    E: Element + ?Sized,
+    T: Serialize<E::Formula>,
+{
+    let mut exhausted = false;
+    let result =
+        serialize_into::<E, T, _, SIZE_BYTES>(value, MaybeFixedBuffer::new(output, &mut exhausted));
+    let size = match result {
+        Ok(size) => size,
+        Err(never) => match never {},
+    };
+    if exhausted {
+        Err(BufferSizeRequired { required: size })
+    } else {
+        Ok(size)
+    }
+}
+
+/// Serializes value into byte vector.
+/// Returns the number of bytes written.
+///
+/// Grows the vector if needed.
+/// Infallible except for allocation errors.
+///
+/// Use pre-allocated vector when possible to avoid reallocations.
+#[cfg(feature = "alloc")]
+#[inline]
+pub fn serialize_to_vec<E, T, const SIZE_BYTES: usize>(
+    value: &T,
+    output: &mut alloc::vec::Vec<u8>,
+) -> usize
+where
+    E: Element + ?Sized,
+    T: Serialize<E::Formula>,
+{
+    use crate::buffer::VecBuffer;
+
+    match serialize_into::<E, T, _, SIZE_BYTES>(value, VecBuffer::new(output)) {
+        Ok(size) => size,
+        Err(never) => match never {},
+    }
+}
+
+macro_rules! fixed_size_module {
+    ($(#[$meta:meta])* $vis:vis mod $module:ident { $size_bytes:literal }) => {
+        $(#[$meta])*
+         $vis mod $module {
+            use super::*;
+
+            /// Serializes value into bytes slice.
+            /// Returns the number of bytes written.
+            /// Fails if the buffer is too small.
+            ///
+            /// To retrieve the number of bytes required to serialize the value,
+            /// use [`serialized_size`] or [`serialize_or_size`].
+            ///
+            /// # Errors
+            ///
+            /// Returns [`BufferExhausted`] if the buffer is too small.
+            #[inline]
+            pub fn serialize<E, T>(value: &T, output: &mut [u8]) -> Result<usize, BufferExhausted>
+            where
+                E: Element + ?Sized,
+                T: Serialize<E::Formula>,
+            {
+                super::serialize::<E, T, $size_bytes>(value, output)
+            }
+
+            /// Slightly faster version of [`serialize`].
+            /// Panics if the buffer is too small instead of returning an error.
+            ///
+            /// Use instead of using [`serialize`] with immediate [`unwrap`](Result::unwrap).
+            #[inline]
+            pub fn serialize_unchecked<E, T>(value: &T, output: &mut [u8]) -> usize
+            where
+                E: Element + ?Sized,
+                T: Serialize<E::Formula>,
+            {
+                super::serialize_unchecked::<E, T, $size_bytes>(value, output)
+            }
+
+            /// Returns the number of bytes required to serialize the value.
+            /// Note that value is consumed.
+            ///
+            /// Use when value is `Copy` or can be cheaply replicated to allocate
+            /// the buffer for serialization in advance.
+            /// Or to find out required size after [`serialize`] fails.
+            #[inline]
+            pub fn serialized_size<E, T>(value: &T) -> usize
+            where
+                E: Element + ?Sized,
+                T: Serialize<E::Formula>,
+            {
+                super::serialized_size::<E, T, $size_bytes>(value)
+            }
+
+            /// Serializes value into bytes slice.
+            /// Returns the number of bytes written.
+            ///
+            /// If the buffer is too small, returns error that contains
+            /// the exact number of bytes required.
+            ///
+            /// Use [`serialize`] if this information is not needed.
+            ///
+            /// # Errors
+            ///
+            /// Returns [`BufferSizeRequired`] error if the buffer is too small.
+            /// Error contains the exact number of bytes required.
+            #[inline]
+            pub fn serialize_or_size<E, T>(
+                value: &T,
+                output: &mut [u8],
+            ) -> Result<usize, BufferSizeRequired>
+            where
+                E: Element + ?Sized,
+                T: Serialize<E::Formula>,
+            {
+                super::serialize_or_size::<E, T, $size_bytes>(value, output)
+            }
+
+            /// Serializes value into byte vector.
+            /// Returns the number of bytes written.
+            ///
+            /// Grows the vector if needed.
+            /// Infallible except for allocation errors.
+            ///
+            /// Use pre-allocated vector when possible to avoid reallocations.
+            #[cfg(feature = "alloc")]
+            #[inline]
+            pub fn serialize_to_vec<E, T>(value: &T, output: &mut alloc::vec::Vec<u8>) -> usize
+            where
+                E: Element + ?Sized,
+                T: Serialize<E::Formula>,
+            {
+                super::serialize_to_vec::<E, T, $size_bytes>(value, output)
+            }
+        }
+    };
+}
+
+fixed_size_module! {
+    /// Serialization functions for small data.
+    ///
+    /// They use only 1 byte to encode sizes and indirection,
+    /// so max size is 255 bytes and max length of sequences is 255 elements,
+    /// even if elements are zero-sized.
+    pub mod small { 1 }
+}
+
+fixed_size_module! {
+    /// Serialization functions for medium data.
+    ///
+    /// They use only 2 bytes to encode sizes and indirection,
+    /// so max size is 65535 bytes and max length of sequences is 65535 elements,
+    /// even if elements are zero-sized.
+    pub mod medium { 2 }
+}
+
+fixed_size_module! {
+    /// Serialization functions for large data.
+    ///
+    /// They use only 4 bytes to encode sizes and indirection,
+    /// so max size is 4294967295 bytes and max length of sequences is 4294967295 elements,
+    /// even if elements are zero-sized.
+    pub mod large { 4 }
+}
+
+fixed_size_module! {
+    /// Serialization functions for huge data.
+    ///
+    /// They use 8 bytes to encode sizes and indirection,
+    /// so max size is 18446744073709551615 bytes and max length of
+    /// sequences is 18446744073709551615 elements, even if elements are zero-sized.
+    pub mod huge { 8 }
+}
+
+fixed_size_module! {
+    /// Serialization functions for humongous data.
+    ///
+    /// They use 16 bytes to encode sizes and indirection,
+    /// so max size is 340282366920938463463374607431768211455 bytes and max length of
+    /// sequences is 340282366920938463463374607431768211455 elements, even if elements are zero-sized.
+    pub mod humongous { 16 }
 }

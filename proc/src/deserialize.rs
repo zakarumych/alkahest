@@ -91,7 +91,9 @@ fn bind_self_fields(
                 #ty #(:: #variant)* ( #(#iter),* )
             }
         }
-        syn::Fields::Unit => TokenStream::new(),
+        syn::Fields::Unit => quote::quote! {
+            #ty #(:: #variant)*
+        },
     }
 }
 

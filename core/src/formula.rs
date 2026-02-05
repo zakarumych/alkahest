@@ -1,7 +1,3 @@
-use std::ops::{Add, AddAssign, Mul};
-
-use crate::{DeserializeError, Deserializer};
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SizeBound {
     Unbounded,
@@ -10,12 +6,26 @@ pub enum SizeBound {
 }
 
 impl SizeBound {
+    pub const fn is_unbounded(&self) -> bool {
+        matches!(self, SizeBound::Unbounded)
+    }
+
+    pub const fn is_zero(&self) -> bool {
+        matches!(self, SizeBound::Bounded(0) | SizeBound::Exact(0))
+    }
+
     pub const fn add(self, rhs: SizeBound) -> SizeBound {
         match (self, rhs) {
-            (SizeBound::Bounded(s), SizeBound::Bounded(r)) => SizeBound::Bounded(s + r),
-            (SizeBound::Bounded(s), SizeBound::Exact(r)) => SizeBound::Bounded(s + r),
-            (SizeBound::Exact(s), SizeBound::Bounded(r)) => SizeBound::Bounded(s + r),
-            (SizeBound::Exact(s), SizeBound::Exact(r)) => SizeBound::Exact(s + r),
+            (SizeBound::Bounded(s), SizeBound::Bounded(r))
+            | (SizeBound::Bounded(s), SizeBound::Exact(r))
+            | (SizeBound::Exact(s), SizeBound::Bounded(r)) => match s.checked_add(r) {
+                None => SizeBound::Unbounded,
+                Some(sum) => SizeBound::Bounded(sum),
+            },
+            (SizeBound::Exact(s), SizeBound::Exact(r)) => match s.checked_add(r) {
+                None => SizeBound::Unbounded,
+                Some(sum) => SizeBound::Exact(sum),
+            },
             _ => SizeBound::Unbounded,
         }
     }
@@ -46,37 +56,21 @@ impl SizeBound {
     pub const fn mul(self, rhs: usize) -> SizeBound {
         match self {
             SizeBound::Unbounded => SizeBound::Unbounded,
-            SizeBound::Bounded(size) => SizeBound::Bounded(size * rhs),
-            SizeBound::Exact(size) => SizeBound::Exact(size * rhs),
+            SizeBound::Bounded(size) => match size.checked_mul(rhs) {
+                None => SizeBound::Unbounded,
+                Some(product) => SizeBound::Bounded(product),
+            },
+            SizeBound::Exact(size) => match size.checked_mul(rhs) {
+                None => SizeBound::Unbounded,
+                Some(product) => SizeBound::Exact(product),
+            },
         }
     }
-}
 
-impl Add<SizeBound> for SizeBound {
-    type Output = SizeBound;
-
-    #[inline]
-    fn add(self, rhs: SizeBound) -> SizeBound {
-        self.add(rhs)
-    }
-}
-
-impl AddAssign<SizeBound> for SizeBound {
-    #[inline]
-    fn add_assign(&mut self, rhs: SizeBound) {
-        *self = self.add(rhs);
-    }
-}
-
-impl Mul<usize> for SizeBound {
-    type Output = SizeBound;
-
-    #[inline]
-    fn mul(self, rhs: usize) -> SizeBound {
+    pub const fn not_exact(self) -> SizeBound {
         match self {
-            SizeBound::Bounded(size) => SizeBound::Bounded(size * rhs),
-            SizeBound::Exact(size) => SizeBound::Exact(size * rhs),
-            SizeBound::Unbounded => SizeBound::Unbounded,
+            SizeBound::Exact(size) => SizeBound::Bounded(size),
+            other => other,
         }
     }
 }
@@ -104,18 +98,18 @@ impl<const SIZE: usize> SizeType for BoundedSize<SIZE> {
     const VALUE: SizeBound = SizeBound::Bounded(SIZE);
 }
 
-pub struct SizeBytes<const SIZE_BYTES: u8>;
+pub struct SizeBytes<const SIZE_BYTES: usize>;
 
-impl<const SIZE_BYTES: u8> SizeType for SizeBytes<SIZE_BYTES> {
+impl<const SIZE_BYTES: usize> SizeType for SizeBytes<SIZE_BYTES> {
     const VALUE: SizeBound = SizeBound::Exact(SIZE_BYTES as usize);
 }
 
 pub trait Formula: 'static {
     /// Stack size required for serializing this type.
-    type StackSize<const SIZE_BYTES: u8>: SizeType + ?Sized;
+    type StackSize<const SIZE_BYTES: usize>: SizeType + ?Sized;
 
     /// Heap size required for serializing this type.
-    type HeapSize<const SIZE_BYTES: u8>: SizeType + ?Sized;
+    type HeapSize<const SIZE_BYTES: usize>: SizeType + ?Sized;
 
     /// Whether this formula is inhabited (i.e., has at least one valid value).
     /// Defaulted to true for convenience.

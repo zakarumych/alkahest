@@ -26,8 +26,8 @@ where
         Ok(())
     }
 
-    #[inline(always)]
-    fn size_hint<const SIZE_BYTES: u8>(&self) -> Option<Sizes> {
+    #[inline]
+    fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
         debug_assert!(self.is_empty() || E::INHABITED);
 
         if !E::INHABITED {
@@ -35,7 +35,7 @@ where
             return Some(Sizes::ZERO);
         }
 
-        let mut sizes = Sizes::with_stack(usize::from(SIZE_BYTES));
+        let mut sizes = Sizes::with_stack(SIZE_BYTES);
 
         if self.is_empty() {
             return Some(sizes);

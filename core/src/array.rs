@@ -30,7 +30,7 @@ where
     }
 
     #[inline]
-    fn size_hint<const SIZE_BYTES: u8>(&self) -> Option<Sizes> {
+    fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
         const {
             assert!(N >= MIN && N <= MAX);
             assert!(N == 0 || E::INHABITED);

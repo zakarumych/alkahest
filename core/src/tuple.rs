@@ -6,8 +6,8 @@ use crate::{
 };
 
 impl Formula for () {
-    type StackSize<const SIZE_BYTES: u8> = ExactSize<0>;
-    type HeapSize<const SIZE_BYTES: u8> = ExactSize<0>;
+    type StackSize<const SIZE_BYTES: usize> = ExactSize<0>;
+    type HeapSize<const SIZE_BYTES: usize> = ExactSize<0>;
     const INHABITED: bool = true;
 }
 
@@ -21,7 +21,7 @@ impl Serialize<()> for () {
     }
 
     #[inline]
-    fn size_hint<const SIZE_BYTES: u8>(&self) -> Option<Sizes> {
+    fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
         Some(Sizes::ZERO)
     }
 }
@@ -44,13 +44,13 @@ impl<'de> Deserialize<'de, ()> for () {
     }
 }
 
-pub struct TupleStackSize<T: ?Sized, const SIZE_BYTES: u8>(T);
-pub struct TupleHeapSize<T: ?Sized, const SIZE_BYTES: u8>(T);
+pub struct TupleStackSize<T: ?Sized, const SIZE_BYTES: usize>(T);
+pub struct TupleHeapSize<T: ?Sized, const SIZE_BYTES: usize>(T);
 
 macro_rules! formula_serialize {
     (,) => {};
     ($at:ident $($a:ident)* , $bt:ident $($b:ident)*) => {
-        impl<$($a,)* $at, const SIZE_BYTES: u8> SizeType for TupleStackSize<($($a,)* $at,), SIZE_BYTES>
+        impl<$($a,)* $at, const SIZE_BYTES: usize> SizeType for TupleStackSize<($($a,)* $at,), SIZE_BYTES>
         where
             $($a: Element,)*
             $at: Element + ?Sized,
@@ -59,13 +59,17 @@ macro_rules! formula_serialize {
                 #[allow(unused_mut)]
                 let mut total = stack_size::<$at::Formula, SIZE_BYTES>();
                 $(
-                    total = total.add(stack_size::<$a::Formula, SIZE_BYTES>());
+                    let next = stack_size::<$a::Formula, SIZE_BYTES>();
+                    if total.is_unbounded() && !next.is_zero() {
+                        panic!("Tuple contains stack-unbounded element that is not the last one");
+                    }
+                    total = total.add(next);
                 )*
                 total
             };
         }
 
-        impl<$($a,)* $at, const SIZE_BYTES: u8> SizeType for TupleHeapSize<($($a,)* $at,), SIZE_BYTES>
+        impl<$($a,)* $at, const SIZE_BYTES: usize> SizeType for TupleHeapSize<($($a,)* $at,), SIZE_BYTES>
         where
             $($a: Element,)*
             $at: Element + ?Sized,
@@ -85,8 +89,8 @@ macro_rules! formula_serialize {
             $($a: Element,)*
             $at: Element + ?Sized,
         {
-            type StackSize<const SIZE_BYTES: u8> = TupleStackSize<($($a,)* $at,), SIZE_BYTES>;
-            type HeapSize<const SIZE_BYTES: u8> = TupleHeapSize<($($a,)* $at,), SIZE_BYTES>;
+            type StackSize<const SIZE_BYTES: usize> = TupleStackSize<($($a,)* $at,), SIZE_BYTES>;
+            type HeapSize<const SIZE_BYTES: usize> = TupleHeapSize<($($a,)* $at,), SIZE_BYTES>;
             const INHABITED: bool = ( $($a::INHABITED &&)* $at::INHABITED );
         }
 
@@ -113,8 +117,8 @@ macro_rules! formula_serialize {
                 serializer.write_direct($bt)
             }
 
-            #[inline(always)]
-            fn size_hint<const SIZE_BYTES: u8>(&self) -> Option<Sizes> {
+            #[inline]
+            fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
                 #![allow(non_snake_case, unused_mut)]
 
                 let ($($b,)* $bt,) = self;

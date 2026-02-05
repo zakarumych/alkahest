@@ -22,10 +22,10 @@ pub trait Element: 'static {
     type Formula: Formula + ?Sized;
 
     /// Stack size required for serializing this type.
-    type StackSize<const SIZE_BYTES: u8>: SizeType + ?Sized;
+    type StackSize<const SIZE_BYTES: usize>: SizeType + ?Sized;
 
     /// Heap size required for serializing this type.
-    type HeapSize<const SIZE_BYTES: u8>: SizeType + ?Sized;
+    type HeapSize<const SIZE_BYTES: usize>: SizeType + ?Sized;
 
     const INHABITED: bool;
 
@@ -38,7 +38,7 @@ pub trait Element: 'static {
         S: Serializer;
 
     /// Gets size hint for serializing value using this element.
-    fn size_hint<T, const SIZE_BYTES: u8>(value: &T) -> Option<Sizes>
+    fn size_hint<T, const SIZE_BYTES: usize>(value: &T) -> Option<Sizes>
     where
         T: Serialize<Self::Formula> + ?Sized;
 
@@ -62,8 +62,8 @@ where
 {
     type Formula = F;
 
-    type StackSize<const SIZE_BYTES: u8> = <F as Formula>::StackSize<SIZE_BYTES>;
-    type HeapSize<const SIZE_BYTES: u8> = <F as Formula>::HeapSize<SIZE_BYTES>;
+    type StackSize<const SIZE_BYTES: usize> = <F as Formula>::StackSize<SIZE_BYTES>;
+    type HeapSize<const SIZE_BYTES: usize> = <F as Formula>::HeapSize<SIZE_BYTES>;
 
     const INHABITED: bool = F::INHABITED;
 
@@ -77,7 +77,7 @@ where
     }
 
     #[inline(always)]
-    fn size_hint<T, const SIZE_BYTES: u8>(value: &T) -> Option<Sizes>
+    fn size_hint<T, const SIZE_BYTES: usize>(value: &T) -> Option<Sizes>
     where
         T: Serialize<F> + ?Sized,
     {
@@ -106,9 +106,9 @@ where
     }
 }
 
-pub struct IndirectHeapSize<E: Element + ?Sized, const SIZE_BYTES: u8>(E);
+pub struct IndirectHeapSize<E: Element + ?Sized, const SIZE_BYTES: usize>(E);
 
-impl<E: Element + ?Sized, const SIZE_BYTES: u8> SizeType for IndirectHeapSize<E, SIZE_BYTES> {
+impl<E: Element + ?Sized, const SIZE_BYTES: usize> SizeType for IndirectHeapSize<E, SIZE_BYTES> {
     const VALUE: SizeBound = stack_size::<E, SIZE_BYTES>().add(heap_size::<E, SIZE_BYTES>());
 }
 
@@ -118,8 +118,8 @@ where
 {
     type Formula = E::Formula;
 
-    type StackSize<const SIZE_BYTES: u8> = SizeBytes<SIZE_BYTES>;
-    type HeapSize<const SIZE_BYTES: u8> = IndirectHeapSize<E, SIZE_BYTES>;
+    type StackSize<const SIZE_BYTES: usize> = SizeBytes<SIZE_BYTES>;
+    type HeapSize<const SIZE_BYTES: usize> = IndirectHeapSize<E, SIZE_BYTES>;
 
     const INHABITED: bool = E::INHABITED;
 
@@ -133,13 +133,13 @@ where
     }
 
     #[inline(always)]
-    fn size_hint<T, const SIZE_BYTES: u8>(value: &T) -> Option<Sizes>
+    fn size_hint<T, const SIZE_BYTES: usize>(value: &T) -> Option<Sizes>
     where
         T: Serialize<E::Formula> + ?Sized,
     {
         let heap = value.size_hint::<SIZE_BYTES>()?.total();
         Some(Sizes {
-            stack: usize::from(SIZE_BYTES),
+            stack: SIZE_BYTES,
             heap,
         })
     }
@@ -180,7 +180,7 @@ where
     }
 
     #[inline(always)]
-    fn size_hint<const SIZE_BYTES: u8>(&self) -> Option<Sizes> {
+    fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
         E::size_hint::<T, SIZE_BYTES>(&self.0)
     }
 }
@@ -208,11 +208,11 @@ where
     }
 }
 
-pub const fn stack_size<E: Element + ?Sized, const SIZE_BYTES: u8>() -> SizeBound {
+pub const fn stack_size<E: Element + ?Sized, const SIZE_BYTES: usize>() -> SizeBound {
     E::StackSize::<SIZE_BYTES>::VALUE
 }
 
-pub const fn heap_size<E: Element + ?Sized, const SIZE_BYTES: u8>() -> SizeBound {
+pub const fn heap_size<E: Element + ?Sized, const SIZE_BYTES: usize>() -> SizeBound {
     E::HeapSize::<SIZE_BYTES>::VALUE
 }
 

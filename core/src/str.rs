@@ -15,8 +15,8 @@ impl Serialize<String> for str {
     }
 
     #[inline]
-    fn size_hint<const SIZE_BYTES: u8>(&self) -> Option<Sizes> {
-        let mut sizes = Sizes::with_stack(usize::from(SIZE_BYTES));
+    fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
+        let mut sizes = Sizes::with_stack(SIZE_BYTES);
         sizes.add_stack(self.len());
         Some(sizes)
     }

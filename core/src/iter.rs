@@ -7,7 +7,7 @@ use crate::{
 };
 
 /// Returns the size of the serialized data if it can be determined fast.
-#[inline(always)]
+#[inline]
 pub fn iter_fast_sizes<'a, F, T, I>(iter: I, size_bytes: u8) -> Option<Sizes>
 where
     F: Formula + ?Sized,

@@ -22,8 +22,8 @@ macro_rules! impl_primitive {
 
     (! $($from:ident)* < $ty:ident < $($to:ident)*) => {
         impl Formula for $ty {
-            type StackSize<const SIZE_BYTES: u8> = ExactSize<{size_of::<$ty>()}>;
-            type HeapSize<const SIZE_BYTES: u8> = ExactSize<0>;
+            type StackSize<const SIZE_BYTES: usize> = ExactSize<{size_of::<$ty>()}>;
+            type HeapSize<const SIZE_BYTES: usize> = ExactSize<0>;
             const INHABITED: bool = true;
         }
 
@@ -37,7 +37,7 @@ macro_rules! impl_primitive {
             }
 
             #[inline]
-            fn size_hint<const SIZE_BYTES: u8>(&self) -> Option<Sizes> {
+            fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
                 Some(Sizes{ heap: 0, stack: size_of::<$ty>()})
             }
         }
@@ -53,7 +53,7 @@ macro_rules! impl_primitive {
                 }
 
                 #[inline]
-                fn size_hint<const SIZE_BYTES: u8>(&self) -> Option<Sizes> {
+                fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
                     Some(Sizes{ heap: 0, stack: size_of::<$ty>()})
                 }
             }
@@ -121,8 +121,8 @@ impl_primitive! {
 }
 
 impl Formula for bool {
-    type StackSize<const SIZE_BYTES: u8> = ExactSize<1>;
-    type HeapSize<const SIZE_BYTES: u8> = ExactSize<0>;
+    type StackSize<const SIZE_BYTES: usize> = ExactSize<1>;
+    type HeapSize<const SIZE_BYTES: usize> = ExactSize<0>;
     const INHABITED: bool = true;
 }
 
@@ -137,7 +137,7 @@ impl Serialize<bool> for bool {
     }
 
     #[inline]
-    fn size_hint<const SIZE_BYTES: u8>(&self) -> Option<Sizes> {
+    fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
         Some(Sizes {
             heap: 0,
             stack: size_of::<u8>(),

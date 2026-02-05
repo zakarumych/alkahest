@@ -1,4 +1,7 @@
 {
-    "rust-analyzer.cargo.features": [],
+    "rust-analyzer.cargo.features": [
+        "proc",
+        "std"
+    ],
     "editor.formatOnSave": true
 }

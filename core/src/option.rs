@@ -5,9 +5,9 @@ use crate::{
     serialize::{Serialize, Serializer, Sizes},
 };
 
-pub struct OptionStackSize<E: Element, const SIZE_BYTES: u8>(E);
+pub struct OptionStackSize<E: Element, const SIZE_BYTES: usize>(E);
 
-impl<E: Element, const SIZE_BYTES: u8> SizeType for OptionStackSize<E, SIZE_BYTES> {
+impl<E: Element, const SIZE_BYTES: usize> SizeType for OptionStackSize<E, SIZE_BYTES> {
     const VALUE: SizeBound = if E::INHABITED {
         stack_size::<E, SIZE_BYTES>().add(SizeBound::Exact(1))
     } else {
@@ -15,9 +15,9 @@ impl<E: Element, const SIZE_BYTES: u8> SizeType for OptionStackSize<E, SIZE_BYTE
     };
 }
 
-pub struct OptionHeapSize<E: Element, const SIZE_BYTES: u8>(E);
+pub struct OptionHeapSize<E: Element, const SIZE_BYTES: usize>(E);
 
-impl<E: Element, const SIZE_BYTES: u8> SizeType for OptionHeapSize<E, SIZE_BYTES> {
+impl<E: Element, const SIZE_BYTES: usize> SizeType for OptionHeapSize<E, SIZE_BYTES> {
     const VALUE: SizeBound = if E::INHABITED {
         heap_size::<E, SIZE_BYTES>()
     } else {
@@ -30,8 +30,8 @@ impl<E> Formula for Option<E>
 where
     E: Element,
 {
-    type StackSize<const SIZE_BYTES: u8> = OptionStackSize<E, SIZE_BYTES>;
-    type HeapSize<const SIZE_BYTES: u8> = OptionHeapSize<E, SIZE_BYTES>;
+    type StackSize<const SIZE_BYTES: usize> = OptionStackSize<E, SIZE_BYTES>;
+    type HeapSize<const SIZE_BYTES: usize> = OptionHeapSize<E, SIZE_BYTES>;
     const INHABITED: bool = true;
 }
 
@@ -66,7 +66,7 @@ where
     }
 
     #[inline]
-    fn size_hint<const SIZE_BYTES: u8>(&self) -> Option<Sizes> {
+    fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
         match self {
             None => Some(if E::INHABITED {
                 Sizes::with_stack(1)

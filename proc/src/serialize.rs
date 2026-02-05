@@ -92,7 +92,9 @@ fn bind_self_fields(
                 #ty #(:: #variant)* ( #(#iter),* )
             }
         }
-        syn::Fields::Unit => TokenStream::new(),
+        syn::Fields::Unit => quote::quote! {
+            #ty #(:: #variant)*
+        },
     }
 }
 
@@ -187,7 +189,7 @@ pub fn derive_impl(
                     }
 
                     #[inline]
-                    fn size_hint<const __SIZE_BYTES: u8>(&self) -> Option<::alkahest::Sizes> {
+                    fn size_hint<const __SIZE_BYTES: usize>(&self) -> Option<::alkahest::Sizes> {
                         let mut __total_size = ::alkahest::Sizes::ZERO;
                         let #bind_self_fields = self;
                         #add_discriminant_size
@@ -279,7 +281,7 @@ pub fn derive_impl(
                     }
 
                     #[inline]
-                    fn size_hint<const __SIZE_BYTES: u8>(&self) -> Option<::alkahest::Sizes> {
+                    fn size_hint<const __SIZE_BYTES: usize>(&self) -> Option<::alkahest::Sizes> {
                         let mut __total_size = ::alkahest::Sizes::ZERO;
                         #add_discriminant_size
 

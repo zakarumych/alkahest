@@ -440,12 +440,6 @@ impl<'a> Buffer for VecBuffer<'a> {
     fn pad_stack(&mut self, heap: usize, stack: usize, len: usize) -> Result<(), Infallible> {
         debug_assert!(heap + stack <= self.buf.len());
         self.reserve(heap, stack, len);
-
-        #[cfg(test)]
-        {
-            let at = self.buf.len() - stack - len;
-            self.buf[at..][..len].fill(0);
-        }
         Ok(())
     }
 

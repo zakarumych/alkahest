@@ -112,7 +112,7 @@ fn make_size_generics(formula_generics: &syn::Generics) -> syn::Generics {
                 path: syn::Path {
                     leading_colon: None,
                     segments: std::iter::once(syn::PathSegment {
-                        ident: syn::Ident::new("u8", Span::call_site()),
+                        ident: syn::Ident::new("usize", Span::call_site()),
                         arguments: syn::PathArguments::None,
                     })
                     .collect(),
@@ -158,8 +158,8 @@ pub fn derive_unit(
         }
 
         impl #formula_impl_generics ::alkahest::Formula for #ident #formula_ty_generics #formula_where_clause {
-            type StackSize<const __SIZE_BYTES: u8> = ::alkahest::ExactSize<0>;
-            type HeapSize<const __SIZE_BYTES: u8> = ::alkahest::ExactSize<0>;
+            type StackSize<const __SIZE_BYTES: usize> = ::alkahest::ExactSize<0>;
+            type HeapSize<const __SIZE_BYTES: usize> = ::alkahest::ExactSize<0>;
 
             const INHABITED: bool = true;
         }
@@ -215,10 +215,27 @@ pub fn derive_tuple(
     let mut field_inhabiteds = field_inhabiteds.iter();
 
     // Generate stack size expression.
-    let stack_size = match field_stack_sizes.next() {
-        None => quote::quote! {::alkahest::SizeBound::Exact(0)},
-        Some(first) => {
-            quote::quote! { #first #( .add(#field_stack_sizes) )* }
+    let stack_size = match field_stack_sizes.len() {
+        0 => quote::quote! {::alkahest::SizeBound::Exact(0)},
+        1 => {
+            let first = field_stack_sizes.next().unwrap();
+            quote::quote! { #first }
+        }
+        _ => {
+            let first = field_stack_sizes.next().unwrap();
+            quote::quote! {{
+                let mut total = #first;
+
+                #(
+                    let next = #field_stack_sizes;
+                    if total.is_unbounded() && !next.is_zero() {
+                        panic!("Composite formula contains stack-unbounded element that is not the last one");
+                    }
+                    total = total.add(next);
+                )*
+
+                total
+            }}
         }
     };
 
@@ -275,8 +292,8 @@ pub fn derive_tuple(
         }
 
         impl #formula_impl_generics ::alkahest::Formula for #ident #formula_ty_generics #formula_where_clause {
-            type StackSize<const __SIZE_BYTES: u8> = #stack_size_ident #size_ty_generics;
-            type HeapSize<const __SIZE_BYTES: u8> = #heap_size_ident #size_ty_generics;
+            type StackSize<const __SIZE_BYTES: usize> = #stack_size_ident #size_ty_generics;
+            type HeapSize<const __SIZE_BYTES: usize> = #heap_size_ident #size_ty_generics;
 
             const INHABITED: bool = #inhabited;
         }
@@ -333,10 +350,27 @@ pub fn derive_record(
     let mut field_inhabiteds = field_inhabiteds.iter();
 
     // Generate stack size expression.
-    let stack_size = match field_stack_sizes.next() {
-        None => quote::quote! {::alkahest::SizeBound::Exact(0)},
-        Some(first) => {
-            quote::quote! { #first #( .add(#field_stack_sizes) )* }
+    let stack_size = match field_stack_sizes.len() {
+        0 => quote::quote! {::alkahest::SizeBound::Exact(0)},
+        1 => {
+            let first = field_stack_sizes.next().unwrap();
+            quote::quote! { #first }
+        }
+        _ => {
+            let first = field_stack_sizes.next().unwrap();
+            quote::quote! {{
+                let mut total = #first;
+
+                #(
+                    let next = #field_stack_sizes;
+                    if total.is_unbounded() && !next.is_zero() {
+                        panic!("Composite formula contains stack-unbounded element that is not the last one");
+                    }
+                    total = total.add(next);
+                )*
+
+                total
+            }}
         }
     };
 
@@ -402,8 +436,8 @@ pub fn derive_record(
         }
 
         impl #formula_impl_generics ::alkahest::Formula for #ident #formula_ty_generics #formula_where_clause {
-            type StackSize<const __SIZE_BYTES: u8> = #stack_size_ident #size_ty_generics;
-            type HeapSize<const __SIZE_BYTES: u8> = #heap_size_ident #size_ty_generics;
+            type StackSize<const __SIZE_BYTES: usize> = #stack_size_ident #size_ty_generics;
+            type HeapSize<const __SIZE_BYTES: usize> = #heap_size_ident #size_ty_generics;
             const INHABITED: bool = #inhabited;
         }
     });
@@ -764,8 +798,8 @@ pub fn derive_enum<T, S>(
         }
 
         impl #formula_impl_generics ::alkahest::Formula for #ident #formula_ty_generics #formula_where_clause {
-            type StackSize<const __SIZE_BYTES: u8> = #stack_size_ident #size_ty_generics;
-            type HeapSize<const __SIZE_BYTES: u8> = #heap_size_ident #size_ty_generics;
+            type StackSize<const __SIZE_BYTES: usize> = #stack_size_ident #size_ty_generics;
+            type HeapSize<const __SIZE_BYTES: usize> = #heap_size_ident #size_ty_generics;
             const INHABITED: bool = #inhabited;
         }
     });

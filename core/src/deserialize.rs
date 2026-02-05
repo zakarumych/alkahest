@@ -17,7 +17,7 @@ pub(crate) fn cold_err<T>(e: DeserializeError) -> Result<T, DeserializeError> {
 pub enum DeserializeError {
     /// Indicates that input buffer is smaller than
     /// expected value length.
-    OutOfBounds,
+    OutOfBounds(usize),
 
     /// Relative address is invalid.
     WrongAddress,
@@ -26,7 +26,7 @@ pub enum DeserializeError {
     WrongLength,
 
     /// Size value exceeds the maximum `usize` for current platform.
-    InvalidUsize(u128),
+    TooLarge(u128),
 
     /// Enum variant is invalid.
     WrongVariant(usize),
@@ -46,7 +46,7 @@ pub enum DeserializeError {
 }
 
 pub trait Deserializer<'de> {
-    const SIZE_BYTES: u8;
+    const SIZE_BYTES: usize;
 
     fn read_bytes(&mut self, len: usize) -> Result<&'de [u8], DeserializeError>;
 
@@ -111,7 +111,7 @@ pub trait Deserializer<'de> {
     fn input(&self) -> &'de [u8];
 
     #[doc(hidden)]
-    fn size_bytes(&self) -> u8;
+    fn size_bytes(&self) -> usize;
 }
 
 /// Trait for types that can be deserialized
@@ -149,7 +149,7 @@ pub trait Deserialize<'de, F: ?Sized> {
 /// Deserializer from raw bytes.
 /// Provides methods for deserialization of values.
 #[must_use = "Deserializer should be used to deserialize values"]
-pub(crate) struct DeserializerImpl<'de, const SIZE_BYTES: u8> {
+pub(crate) struct DeserializerImpl<'de, const SIZE_BYTES: usize> {
     /// Input buffer sub-slice usable for deserialization.
     input: &'de [u8],
 
@@ -157,13 +157,8 @@ pub(crate) struct DeserializerImpl<'de, const SIZE_BYTES: u8> {
     debug_exhausted: bool,
 }
 
-impl<'de, const SIZE_BYTES: u8> DeserializerImpl<'de, SIZE_BYTES> {
+impl<'de, const SIZE_BYTES: usize> DeserializerImpl<'de, SIZE_BYTES> {
     /// Creates new deserializer from input buffer.
-    ///
-    /// # Errors
-    ///
-    /// Returns `DeserializeError::OutOfBounds` if
-    /// `stack` is greater than `input.len()`.
     #[inline]
     pub const fn new(input: &'de [u8]) -> Self {
         DeserializerImpl {
@@ -202,8 +197,8 @@ impl<'de, const SIZE_BYTES: u8> DeserializerImpl<'de, SIZE_BYTES> {
     }
 }
 
-impl<'de, const SIZE_BYTES: u8> Deserializer<'de> for DeserializerImpl<'de, SIZE_BYTES> {
-    const SIZE_BYTES: u8 = SIZE_BYTES;
+impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for DeserializerImpl<'de, SIZE_BYTES> {
+    const SIZE_BYTES: usize = SIZE_BYTES;
 
     /// Reads specified number of bytes from the input buffer.
     /// Returns slice of bytes.
@@ -285,30 +280,8 @@ impl<'de, const SIZE_BYTES: u8> Deserializer<'de> for DeserializerImpl<'de, SIZE
         #[cfg(debug_assertions)]
         self.debug_validate();
 
-        let len = usize::from(SIZE_BYTES);
-        let max_len = size_of::<usize>();
-
-        let input = self.read_bytes(len)?;
-        let mut bytes = [0u8; size_of::<usize>()];
-
-        if max_len < len {
-            // If SIZE_BYTES exceeds usize, ensure that the extra bytes are zero.
-            let all_zero = input[max_len..] == [0u8; 256][..len - max_len];
-            if !all_zero {
-                return Err(DeserializeError::InvalidUsize(u128::from_le_bytes({
-                    debug_assert!(input.len() <= 16);
-                    let mut arr = [0u8; 16];
-                    arr[..input.len()].copy_from_slice(input);
-                    arr
-                })));
-            }
-
-            bytes[..max_len].copy_from_slice(&input[..max_len]);
-        } else {
-            bytes[..len].copy_from_slice(&input[..len]);
-        }
-
-        Ok(usize::from_le_bytes(bytes))
+        let input = self.read_bytes(SIZE_BYTES)?;
+        read_usize::<SIZE_BYTES>(input)
     }
 
     /// Reads and deserializes field from the input buffer.
@@ -407,7 +380,7 @@ impl<'de, const SIZE_BYTES: u8> Deserializer<'de> for DeserializerImpl<'de, SIZE
     }
 
     #[doc(hidden)]
-    fn size_bytes(&self) -> u8 {
+    fn size_bytes(&self) -> usize {
         SIZE_BYTES
     }
 }
@@ -415,14 +388,14 @@ impl<'de, const SIZE_BYTES: u8> Deserializer<'de> for DeserializerImpl<'de, SIZE
 /// Deserializer from raw bytes.
 /// Provides methods for deserialization of values.
 #[must_use = "Deserializer should be used to deserialize values"]
-pub struct TrackingDeserializerImpl<'de, 'consumed, const SIZE_BYTES: u8> {
+pub struct TrackingDeserializerImpl<'de, 'consumed, const SIZE_BYTES: usize> {
     /// Input buffer sub-slice usable for deserialization.
     inner: DeserializerImpl<'de, SIZE_BYTES>,
 
     rest: &'consumed mut usize,
 }
 
-impl<'de, 'consumed, const SIZE_BYTES: u8> Drop
+impl<'de, 'consumed, const SIZE_BYTES: usize> Drop
     for TrackingDeserializerImpl<'de, 'consumed, SIZE_BYTES>
 {
     fn drop(&mut self) {
@@ -430,7 +403,7 @@ impl<'de, 'consumed, const SIZE_BYTES: u8> Drop
     }
 }
 
-impl<'de, 'consumed, const SIZE_BYTES: u8> TrackingDeserializerImpl<'de, 'consumed, SIZE_BYTES> {
+impl<'de, 'consumed, const SIZE_BYTES: usize> TrackingDeserializerImpl<'de, 'consumed, SIZE_BYTES> {
     #[inline]
     pub const fn new(input: &'de [u8], rest: &'consumed mut usize) -> Self {
         TrackingDeserializerImpl {
@@ -440,10 +413,10 @@ impl<'de, 'consumed, const SIZE_BYTES: u8> TrackingDeserializerImpl<'de, 'consum
     }
 }
 
-impl<'de, const SIZE_BYTES: u8> Deserializer<'de>
+impl<'de, const SIZE_BYTES: usize> Deserializer<'de>
     for TrackingDeserializerImpl<'de, '_, SIZE_BYTES>
 {
-    const SIZE_BYTES: u8 = SIZE_BYTES;
+    const SIZE_BYTES: usize = SIZE_BYTES;
 
     /// Reads specified number of bytes from the input buffer.
     /// Returns slice of bytes.
@@ -556,20 +529,20 @@ impl<'de, const SIZE_BYTES: u8> Deserializer<'de>
     }
 
     #[doc(hidden)]
-    fn size_bytes(&self) -> u8 {
+    fn size_bytes(&self) -> usize {
         SIZE_BYTES
     }
 }
 
 // /// Iterator over deserialized values.
 // #[must_use]
-// pub struct DeIter<'de, F: ?Sized, T, const SIZE_BYTES: u8 = 8> {
+// pub struct DeIter<'de, F: ?Sized, T, const SIZE_BYTES: usize = 8> {
 //     de: Deserializer<'de>,
 //     len: usize,
 //     marker: PhantomData<fn(F) -> T>,
 // }
 
-// impl<'de, F, T, const SIZE_BYTES: u8> DeIter<'de, F, T, SIZE_BYTES>
+// impl<'de, F, T, const SIZE_BYTES: usize> DeIter<'de, F, T, SIZE_BYTES>
 // where
 //     F: Formula + ?Sized,
 //     T: Deserialize<'de, F>,
@@ -582,7 +555,7 @@ impl<'de, const SIZE_BYTES: u8> Deserializer<'de>
 //     }
 // }
 
-// impl<'de, F, T, const SIZE_BYTES: u8> Clone for DeIter<'de, F, T, SIZE_BYTES>
+// impl<'de, F, T, const SIZE_BYTES: usize> Clone for DeIter<'de, F, T, SIZE_BYTES>
 // where
 //     F: ?Sized,
 // {
@@ -602,7 +575,7 @@ impl<'de, const SIZE_BYTES: u8> Deserializer<'de>
 //     }
 // }
 
-// impl<'de, F, T, const SIZE_BYTES: u8> Iterator for DeIter<'de, F, T, SIZE_BYTES>
+// impl<'de, F, T, const SIZE_BYTES: usize> Iterator for DeIter<'de, F, T, SIZE_BYTES>
 // where
 //     F: Formula + ?Sized,
 //     T: Deserialize<'de, F>,
@@ -655,7 +628,7 @@ impl<'de, const SIZE_BYTES: u8> Deserializer<'de>
 //     {
 //         match F::MAX_STACK_SIZE {
 //             None => loop {
-//                 if self.de.stack < usize::from(SIZE_BYTES) {
+//                 if self.de.stack < SIZE_BYTES {
 //                     break;
 //                 }
 
@@ -701,7 +674,7 @@ impl<'de, const SIZE_BYTES: u8> Deserializer<'de>
 //     }
 // }
 
-// impl<'de, F, T, const SIZE_BYTES: u8> DeIter<'de, F, T, SIZE_BYTES>
+// impl<'de, F, T, const SIZE_BYTES: usize> DeIter<'de, F, T, SIZE_BYTES>
 // where
 //     F: Formula + ?Sized,
 //     T: Deserialize<'de, F>,
@@ -709,7 +682,7 @@ impl<'de, const SIZE_BYTES: u8> Deserializer<'de>
 //     const ELEMENT_SIZE: usize = F::MAX_STACK_SIZE.unwrap();
 // }
 
-// impl<'de, F, T, const SIZE_BYTES: u8> DoubleEndedIterator for DeIter<'de, F, T, SIZE_BYTES>
+// impl<'de, F, T, const SIZE_BYTES: usize> DoubleEndedIterator for DeIter<'de, F, T, SIZE_BYTES>
 // where
 //     F: Formula + ?Sized,
 //     T: Deserialize<'de, F>,
@@ -766,7 +739,7 @@ impl<'de, const SIZE_BYTES: u8> Deserializer<'de>
 //     }
 // }
 
-// impl<'de, F, T, const SIZE_BYTES: u8> ExactSizeIterator for DeIter<'de, F, T, SIZE_BYTES>
+// impl<'de, F, T, const SIZE_BYTES: usize> ExactSizeIterator for DeIter<'de, F, T, SIZE_BYTES>
 // where
 //     F: Formula + ?Sized,
 //     T: Deserialize<'de, F>,
@@ -777,7 +750,7 @@ impl<'de, const SIZE_BYTES: u8> Deserializer<'de>
 //     }
 // }
 
-// impl<'de, F, T, const SIZE_BYTES: u8> FusedIterator for DeIter<'de, F, T, SIZE_BYTES>
+// impl<'de, F, T, const SIZE_BYTES: usize> FusedIterator for DeIter<'de, F, T, SIZE_BYTES>
 // where
 //     F: Formula + ?Sized,
 //     T: Deserialize<'de, F>,
@@ -786,12 +759,20 @@ impl<'de, const SIZE_BYTES: u8> Deserializer<'de>
 
 /// Deserializes value from the input.
 /// Returns deserialized value.
+/// Input slice must be exactly the length returned by serialization function.
+///
+/// To use with streams where end of input is not known in advance use [`pack`] and [`unpack`] functions.
 ///
 /// # Errors
 ///
 /// Returns `DeserializeError` if deserialization fails.
+///
+/// [`pack`]: crate::pack
+/// [`unpack`]: crate::unpack
 #[inline]
-pub fn deserialize<'de, E, T, const SIZE_BYTES: u8>(input: &'de [u8]) -> Result<T, DeserializeError>
+pub fn deserialize<'de, E, T, const SIZE_BYTES: usize>(
+    input: &'de [u8],
+) -> Result<T, DeserializeError>
 where
     E: Element + ?Sized,
     T: Deserialize<'de, E::Formula>,
@@ -803,12 +784,18 @@ where
 
 /// Deserializes value from the input.
 /// Updates value in-place.
+/// Input slice must be exactly the length returned by serialization function.
+///
+/// To use with streams where end of input is not known in advance use [`pack`] and [`unpack`] functions.
 ///
 /// # Errors
 ///
 /// Returns `DeserializeError` if deserialization fails.
+///
+/// [`pack`]: crate::pack
+/// [`unpack`]: crate::unpack
 #[inline]
-pub fn deserialize_in_place<'de, E, T, const SIZE_BYTES: u8>(
+pub fn deserialize_in_place<'de, E, T, const SIZE_BYTES: usize>(
     place: &mut T,
     input: &'de [u8],
 ) -> Result<(), DeserializeError>
@@ -820,4 +807,134 @@ where
     E::deserialize_in_place(place, &mut de)?;
 
     Ok(())
+}
+
+pub fn read_usize<const SIZE_BYTES: usize>(input: &[u8]) -> Result<usize, DeserializeError> {
+    const {
+        assert!(SIZE_BYTES > 0 && SIZE_BYTES <= 16);
+    }
+
+    const LEN: usize = size_of::<usize>();
+
+    debug_assert_eq!(input.len(), SIZE_BYTES);
+
+    match () {
+        () if SIZE_BYTES > LEN => {
+            let zero_tail = input[LEN..] == [0u8; 256][..SIZE_BYTES - LEN];
+            if !zero_tail {
+                return Err(DeserializeError::TooLarge(u128::from_le_bytes({
+                    let mut arr = [0u8; 16];
+                    arr[..input.len()].copy_from_slice(input);
+                    arr
+                })));
+            }
+            let mut bytes = [0u8; LEN];
+            bytes.copy_from_slice(&input[..LEN]);
+            Ok(usize::from_le_bytes(bytes))
+        }
+        () if SIZE_BYTES < LEN => {
+            let mut bytes = [0u8; LEN];
+            bytes[..SIZE_BYTES].copy_from_slice(input);
+            Ok(usize::from_le_bytes(bytes))
+        }
+        () => {
+            let mut bytes = [0u8; LEN];
+            bytes.copy_from_slice(input);
+            Ok(usize::from_le_bytes(bytes))
+        }
+    }
+}
+
+macro_rules! fixed_size_module {
+    ($(#[$meta:meta])* $vis:vis mod $module:ident { $size_bytes:literal }) => {
+        $(#[$meta])*
+         $vis mod $module {
+            use super::*;
+
+            /// Deserializes value from the input.
+            /// Returns deserialized value.
+            ///
+            /// # Errors
+            ///
+            /// Returns `DeserializeError` if deserialization fails.
+            #[inline]
+            pub fn deserialize<'de, E, T>(
+                input: &'de [u8],
+            ) -> Result<T, DeserializeError>
+            where
+                E: Element + ?Sized,
+                T: Deserialize<'de, E::Formula>,
+            {
+                let mut de = DeserializerImpl::<$size_bytes>::new(input);
+                let value = E::deserialize(&mut de)?;
+                Ok(value)
+            }
+
+            /// Deserializes value from the input.
+            /// Updates value in-place.
+            ///
+            /// # Errors
+            ///
+            /// Returns `DeserializeError` if deserialization fails.
+            #[inline]
+            pub fn deserialize_in_place<'de, E, T>(
+                place: &mut T,
+                input: &'de [u8],
+            ) -> Result<(), DeserializeError>
+            where
+                E: Element + ?Sized,
+                T: Deserialize<'de, E::Formula> + ?Sized,
+            {
+                let mut de = DeserializerImpl::<$size_bytes>::new(input);
+                E::deserialize_in_place(place, &mut de)?;
+
+                Ok(())
+            }
+        }
+    };
+}
+
+fixed_size_module! {
+    /// Deserialization functions for small data.
+    ///
+    /// They use only 1 byte to encode sizes and indirection,
+    /// so max size is 255 bytes and max length of sequences is 255 elements,
+    /// even if elements are zero-sized.
+    pub mod small { 1 }
+}
+
+fixed_size_module! {
+    /// Deserialization functions for medium data.
+    ///
+    /// They use only 2 bytes to encode sizes and indirection,
+    /// so max size is 65535 bytes and max length of sequences is 65535 elements,
+    /// even if elements are zero-sized.
+    pub mod medium { 2 }
+}
+
+fixed_size_module! {
+    /// Deserialization functions for large data.
+    ///
+    /// They use only 4 bytes to encode sizes and indirection,
+    /// so max size is 4294967295 bytes and max length of sequences is 4294967295 elements,
+    /// even if elements are zero-sized.
+    pub mod large { 4 }
+}
+
+fixed_size_module! {
+    /// Deserialization functions for huge data.
+    ///
+    /// They use 8 bytes to encode sizes and indirection,
+    /// so max size is 18446744073709551615 bytes and max length of
+    /// sequences is 18446744073709551615 elements, even if elements are zero-sized.
+    pub mod huge { 8 }
+}
+
+fixed_size_module! {
+    /// Deserialization functions for humongous data.
+    ///
+    /// They use 16 bytes to encode sizes and indirection,
+    /// so max size is 340282366920938463463374607431768211455 bytes and max length of
+    /// sequences is 340282366920938463463374607431768211455 elements, even if elements are zero-sized.
+    pub mod humongous { 16 }
 }

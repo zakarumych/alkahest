@@ -7,8 +7,8 @@ use crate::{
 pub type Never = core::convert::Infallible;
 
 impl Formula for Never {
-    type StackSize<const SIZE_BYTES: u8> = ExactSize<0>;
-    type HeapSize<const SIZE_BYTES: u8> = ExactSize<0>;
+    type StackSize<const SIZE_BYTES: usize> = ExactSize<0>;
+    type HeapSize<const SIZE_BYTES: usize> = ExactSize<0>;
 
     const INHABITED: bool = false;
 }
@@ -42,7 +42,7 @@ impl<F: ?Sized> Serialize<F> for Never {
     }
 
     #[inline(always)]
-    fn size_hint<const SIZE_BYTES: u8>(&self) -> Option<Sizes> {
+    fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
         match *self {}
     }
 }

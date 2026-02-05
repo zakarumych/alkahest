@@ -9,8 +9,15 @@ alkahest-proc = { workspace = true, optional = true }
 
 [features]
 proc = ["dep:alkahest-proc"]
+alloc = ["alkahest-core/alloc"]
+std = ["alkahest-core/std"]
 
 [[example]]
 name = "new"
 path = "examples/new.rs"
+required-features = ["proc"]
+
+[[example]]
+name = "test"
+path = "examples/test.rs"
 required-features = ["proc"]

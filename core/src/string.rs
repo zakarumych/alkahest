@@ -8,8 +8,8 @@ use crate::{
 pub struct String;
 
 impl Formula for String {
-    type StackSize<const SIZE_BYTES: u8> = UnboundedSize;
-    type HeapSize<const SIZE_BYTES: u8> = ExactSize<0>;
+    type StackSize<const SIZE_BYTES: usize> = UnboundedSize;
+    type HeapSize<const SIZE_BYTES: usize> = ExactSize<0>;
     const INHABITED: bool = true;
 }
 
@@ -25,8 +25,8 @@ impl Serialize<String> for alloc::string::String {
     }
 
     #[inline]
-    fn size_hint<const SIZE_BYTES: u8>(&self) -> Option<Sizes> {
-        let mut sizes = Sizes::with_stack(usize::from(SIZE_BYTES));
+    fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
+        let mut sizes = Sizes::with_stack(SIZE_BYTES);
         sizes.add_stack(self.len());
         Some(sizes)
     }
