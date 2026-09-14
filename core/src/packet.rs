@@ -248,7 +248,7 @@ where
     let total = total::<E, SIZE_BYTES>();
 
     match total {
-        None => match input.as_array::<SIZE_BYTES>() {
+        None => match input.first_chunk::<SIZE_BYTES>() {
             None => Err(DeserializeError::OutOfBounds(SIZE_BYTES)),
             Some(bytes) => read_usize::<SIZE_BYTES>(bytes),
         },

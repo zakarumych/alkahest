@@ -9,7 +9,6 @@ use crate::{
 #[inline]
 #[cold]
 pub(crate) fn cold_err<T>(e: DeserializeError) -> Result<T, DeserializeError> {
-    panic!("{:?}", e);
     Err(e)
 }
 
@@ -320,12 +319,6 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for DeserializerImpl<'de, S
     #[allow(refining_impl_trait)]
     fn at(&self, address: usize) -> Result<impl Deserializer<'de>, DeserializeError> {
         if self.input.len() < address {
-            panic!(
-                "Wrong address. Input={}, address={}",
-                self.input.len(),
-                address
-            );
-
             cold_err(DeserializeError::WrongAddress)
         } else {
             Ok(DeserializerImpl::<SIZE_BYTES>::new(&self.input[..address]))

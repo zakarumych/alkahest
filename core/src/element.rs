@@ -67,7 +67,7 @@ where
 
     const INHABITED: bool = F::INHABITED;
 
-    #[inline]
+    #[inline(always)]
     fn serialize<T, S>(value: &T, serializer: &mut S) -> Result<(), S::Error>
     where
         T: Serialize<F> + ?Sized,
@@ -76,7 +76,7 @@ where
         serializer.write_direct::<F, T>(value)
     }
 
-    #[inline]
+    #[inline(always)]
     fn size_hint<T, const SIZE_BYTES: usize>(value: &T) -> Option<Sizes>
     where
         T: Serialize<F> + ?Sized,
@@ -84,7 +84,7 @@ where
         value.size_hint::<SIZE_BYTES>()
     }
 
-    #[inline]
+    #[inline(always)]
     fn deserialize<'de, T, D>(deserializer: &mut D) -> Result<T, DeserializeError>
     where
         T: Deserialize<'de, F>,
@@ -93,7 +93,7 @@ where
         deserializer.read_value::<F, T>()
     }
 
-    #[inline]
+    #[inline(always)]
     fn deserialize_in_place<'de, T, D>(
         place: &mut T,
         deserializer: &mut D,
@@ -123,7 +123,7 @@ where
 
     const INHABITED: bool = E::INHABITED;
 
-    #[inline]
+    #[inline(always)]
     fn serialize<T, S>(value: &T, serializer: &mut S) -> Result<(), S::Error>
     where
         T: Serialize<E::Formula> + ?Sized,
@@ -132,7 +132,7 @@ where
         serializer.write_indirect::<E, T>(value)
     }
 
-    #[inline]
+    #[inline(always)]
     fn size_hint<T, const SIZE_BYTES: usize>(value: &T) -> Option<Sizes>
     where
         T: Serialize<E::Formula> + ?Sized,
@@ -146,7 +146,7 @@ where
         }
     }
 
-    #[inline]
+    #[inline(always)]
     fn deserialize<'de, T, D>(deserializer: &mut D) -> Result<T, DeserializeError>
     where
         T: Deserialize<'de, E::Formula>,
@@ -157,7 +157,7 @@ where
         E::deserialize(&mut heap)
     }
 
-    #[inline]
+    #[inline(always)]
     fn deserialize_in_place<'de, T, D>(
         place: &mut T,
         deserializer: &mut D,
@@ -177,7 +177,7 @@ where
     E: Element + ?Sized,
     T: Serialize<E::Formula>,
 {
-    #[inline]
+    #[inline(always)]
     fn serialize<S>(&self, mut serializer: S) -> Result<(), S::Error>
     where
         S: Serializer,
@@ -185,7 +185,7 @@ where
         E::serialize::<T, S>(&self.0, &mut serializer)
     }
 
-    #[inline]
+    #[inline(always)]
     fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
         E::size_hint::<T, SIZE_BYTES>(&self.0)
     }
@@ -196,7 +196,7 @@ where
     E: Element + ?Sized,
     T: Deserialize<'de, E::Formula>,
 {
-    #[inline]
+    #[inline(always)]
     fn deserialize<D>(mut deserializer: D) -> Result<Self, DeserializeError>
     where
         D: Deserializer<'de>,
@@ -205,7 +205,7 @@ where
         Ok(Indirect(value))
     }
 
-    #[inline]
+    #[inline(always)]
     fn deserialize_in_place<D>(&mut self, mut deserializer: D) -> Result<(), DeserializeError>
     where
         D: Deserializer<'de>,
@@ -214,17 +214,17 @@ where
     }
 }
 
-#[inline]
+#[inline(always)]
 pub const fn stack_size<E: Element + ?Sized, const SIZE_BYTES: usize>() -> SizeBound {
     E::StackSize::<SIZE_BYTES>::VALUE
 }
 
-#[inline]
+#[inline(always)]
 pub const fn heap_size<E: Element + ?Sized, const SIZE_BYTES: usize>() -> SizeBound {
     E::HeapSize::<SIZE_BYTES>::VALUE
 }
 
-#[inline]
+#[inline(always)]
 pub const fn inhabited<E: Element + ?Sized>() -> bool {
     E::INHABITED
 }

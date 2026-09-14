@@ -398,7 +398,7 @@ pub mod private {
 
     pub use {bool, f32, f64, i8, i16, i32, i64, i128, u8, u16, u32, u64, u128};
 
-    #[inline]
+    #[inline(always)]
     pub fn with_element<F, E>(f: impl FnOnce(&F) -> &E) -> WithElement<E>
     where
         F: Formula + ?Sized,
@@ -420,7 +420,7 @@ pub mod private {
     {
         /// Helper function to take element formula from a composite formula.
         /// And then use it to serialize element either directly.
-        #[inline]
+        #[inline(always)]
         pub fn serialize<T, S>(self, value: &T, serializer: &mut S) -> Result<(), S::Error>
         where
             T: Serialize<E::Formula> + ?Sized,
@@ -431,7 +431,7 @@ pub mod private {
 
         /// Helper function to take element formula from a composite formula.
         /// And then use it to get size hint for element direct serialization.
-        #[inline]
+        #[inline(always)]
         pub fn size_hint<T, const SIZE_BYTES: usize>(self, value: &T) -> Option<Sizes>
         where
             T: Serialize<E::Formula> + ?Sized,
@@ -444,7 +444,7 @@ pub mod private {
             }
         }
 
-        #[inline]
+        #[inline(always)]
         pub fn deserialize<'de, T, D>(self, deserializer: &mut D) -> Result<T, DeserializeError>
         where
             T: Deserialize<'de, E::Formula>,
@@ -453,7 +453,7 @@ pub mod private {
             E::deserialize(deserializer)
         }
 
-        #[inline]
+        #[inline(always)]
         pub fn deserialize_in_place<'de, T, D>(
             self,
             place: &mut T,
@@ -467,7 +467,7 @@ pub mod private {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub const fn discriminant_size(count: usize) -> usize {
         match count {
             0..=0xFF => 1,
@@ -479,7 +479,7 @@ pub mod private {
     }
 
     /// Helper function to serialize enum discriminant.
-    #[inline]
+    #[inline(always)]
     pub fn serialize_discriminant<S>(
         idx: usize,
         count: usize,

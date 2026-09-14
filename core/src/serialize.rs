@@ -23,32 +23,32 @@ impl Sizes {
 
     /// Create new `Sizes` with specified heap size.
     #[must_use]
-    #[inline]
+    #[inline(always)]
     pub const fn with_heap(heap: usize) -> Self {
         Sizes { heap, stack: 0 }
     }
 
     /// Create new `Sizes` with specified stack size.
     #[must_use]
-    #[inline]
+    #[inline(always)]
     pub const fn with_stack(stack: usize) -> Self {
         Sizes { heap: 0, stack }
     }
 
     /// Adds to the heap size.
-    #[inline]
+    #[inline(always)]
     pub fn add_heap(&mut self, heap: usize) {
         self.heap += heap;
     }
 
     /// Adds to the stack size.
-    #[inline]
+    #[inline(always)]
     pub fn add_stack(&mut self, stack: usize) {
         self.stack += stack;
     }
 
     /// Moves stack size to heap size.
-    #[inline]
+    #[inline(always)]
     pub fn to_heap(&mut self, until: usize) -> usize {
         let len = self.stack - until;
         self.heap += len;
@@ -57,7 +57,7 @@ impl Sizes {
     }
 
     /// Returns total size.
-    #[inline]
+    #[inline(always)]
     pub fn total(&self) -> usize {
         self.heap + self.stack
     }
@@ -66,6 +66,7 @@ impl Sizes {
 impl ops::Add for Sizes {
     type Output = Self;
 
+    #[inline(always)]
     fn add(self, rhs: Self) -> Self {
         Sizes {
             heap: self.heap + rhs.heap,
@@ -145,7 +146,7 @@ pub trait Serialize<F: ?Sized> {
     /// However if sizes are known ahead of time, returning them may improve serialization performance.
     ///
     /// Returning incorrect sizes may lead to corrupted serialization or panics.
-    #[inline]
+    #[inline(always)]
     fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
         None
     }
@@ -156,7 +157,7 @@ where
     F: ?Sized,
     T: Serialize<F> + ?Sized,
 {
-    #[inline]
+    #[inline(always)]
     fn serialize<S>(&self, serializer: S) -> Result<(), S::Error>
     where
         S: Serializer,
@@ -164,7 +165,7 @@ where
         <T as Serialize<F>>::serialize(&**self, serializer)
     }
 
-    #[inline]
+    #[inline(always)]
     fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
         <T as Serialize<F>>::size_hint::<SIZE_BYTES>(&**self)
     }
@@ -237,19 +238,6 @@ where
         }
     }
 
-    #[inline(always)]
-    fn reserved<'b>(
-        sizes: &'b mut Sizes,
-        buffer: B::Reserved<'b>,
-    ) -> SerialzierImpl<'b, B::Reserved<'b>, SIZE_BYTES> {
-        SerialzierImpl::new(sizes, buffer)
-    }
-
-    #[inline(always)]
-    fn reborrow(&mut self) -> SerialzierImpl<'_, B::Reborrow<'_>, SIZE_BYTES> {
-        SerialzierImpl::new(self.sizes, self.buffer.reborrow())
-    }
-
     #[inline(never)] // This is sad-path, so we put it on separate function to avoid bloating the main serialization logic.
     fn write_to_heap<E, T>(&mut self, value: &T) -> Result<(), B::Error>
     where
@@ -287,7 +275,7 @@ where
     /// # Errors
     ///
     /// Returns error if buffer write fails.
-    #[inline]
+    #[inline(always)]
     fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), Self::Error> {
         let mut reserved = simple_try!(self.buffer.reserve(
             self.sizes.heap,
@@ -369,7 +357,9 @@ where
 
         let old_sizes;
 
-        if let Some(sizes) = size_hint::<F, T, SIZE_BYTES>(value) {
+        if
+        // !B::reserved_is_self() &&
+        let Some(sizes) = size_hint::<F, T, SIZE_BYTES>(value) {
             // If size is known reserve.
 
             let reserved = simple_try!(self.buffer.reserve(
@@ -383,7 +373,7 @@ where
 
             old_sizes = *self.sizes;
 
-            let serializer = Self::reserved(&mut self.sizes, reserved);
+            let serializer = SerialzierImpl::<_, SIZE_BYTES>::new(&mut self.sizes, reserved);
             if let Err(err) = <T as Serialize<F>>::serialize(value, serializer) {
                 match err {}
             }
@@ -397,7 +387,10 @@ where
 
             old_sizes = *self.sizes;
 
-            simple_try!(<T as Serialize<F>>::serialize(value, self.reborrow()));
+            simple_try!(<T as Serialize<F>>::serialize(
+                value,
+                SerialzierImpl::<_, SIZE_BYTES>::new(self.sizes, self.buffer.reborrow())
+            ));
         }
 
         let actual_sizes = *self.sizes - old_sizes;
@@ -475,7 +468,7 @@ where
                 };
 
                 {
-                    let mut serializer = Self::reserved(&mut sizes, reserved);
+                    let mut serializer = SerialzierImpl::<_, SIZE_BYTES>::new(&mut sizes, reserved);
                     if let Err(err) = E::serialize(value, &mut serializer) {
                         match err {}
                     }
@@ -500,6 +493,7 @@ where
         self.write_usize(address)
     }
 
+    #[inline(always)]
     fn reserve_usize(&mut self) -> Result<usize, Self::Error> {
         simple_try!(self.buffer.reserve(
             self.sizes.heap,
@@ -517,6 +511,7 @@ where
         Ok(reserved)
     }
 
+    #[inline(always)]
     fn write_reserved_usize(&mut self, address: usize, value: usize) {
         write_usize::<_, SIZE_BYTES>(value, address, self.buffer.reborrow())
     }
@@ -659,7 +654,7 @@ where
 /// # Errors
 ///
 /// Returns [`BufferExhausted`] if the buffer is too small.
-#[inline]
+#[inline(always)]
 pub fn serialize<E, T, const SIZE_BYTES: usize>(
     value: &T,
     output: &mut [u8],
@@ -675,7 +670,7 @@ where
 /// Panics if the buffer is too small instead of returning an error.
 ///
 /// Use instead of using [`serialize`] with immediate [`unwrap`](Result::unwrap).
-#[inline]
+#[inline(always)]
 pub fn serialize_unchecked<E, T, const SIZE_BYTES: usize>(value: &T, output: &mut [u8]) -> usize
 where
     E: Element + ?Sized,
@@ -693,7 +688,7 @@ where
 /// Use when value is `Copy` or can be cheaply replicated to allocate
 /// the buffer for serialization in advance.
 /// Or to find out required size after [`serialize`] fails.
-#[inline]
+#[inline(always)]
 pub fn serialized_size<E, T, const SIZE_BYTES: usize>(value: &T) -> usize
 where
     E: Element + ?Sized,
@@ -735,7 +730,7 @@ impl fmt::Display for BufferSizeRequired {
 ///
 /// Returns [`BufferSizeRequired`] error if the buffer is too small.
 /// Error contains the exact number of bytes required.
-#[inline]
+#[inline(always)]
 pub fn serialize_or_size<E, T, const SIZE_BYTES: usize>(
     value: &T,
     output: &mut [u8],
@@ -766,7 +761,7 @@ where
 ///
 /// Use pre-allocated vector when possible to avoid reallocations.
 #[cfg(feature = "alloc")]
-#[inline]
+#[inline(always)]
 pub fn serialize_to_vec<E, T, const SIZE_BYTES: usize>(
     value: &T,
     output: &mut alloc::vec::Vec<u8>,
@@ -799,7 +794,7 @@ macro_rules! fixed_size_module {
             /// # Errors
             ///
             /// Returns [`BufferExhausted`] if the buffer is too small.
-            #[inline]
+            #[inline(always)]
             pub fn serialize<E, T>(value: &T, output: &mut [u8]) -> Result<usize, BufferExhausted>
             where
                 E: Element + ?Sized,
@@ -812,7 +807,7 @@ macro_rules! fixed_size_module {
             /// Panics if the buffer is too small instead of returning an error.
             ///
             /// Use instead of using [`serialize`] with immediate [`unwrap`](Result::unwrap).
-            #[inline]
+            #[inline(always)]
             pub fn serialize_unchecked<E, T>(value: &T, output: &mut [u8]) -> usize
             where
                 E: Element + ?Sized,
@@ -827,7 +822,7 @@ macro_rules! fixed_size_module {
             /// Use when value is `Copy` or can be cheaply replicated to allocate
             /// the buffer for serialization in advance.
             /// Or to find out required size after [`serialize`] fails.
-            #[inline]
+            #[inline(always)]
             pub fn serialized_size<E, T>(value: &T) -> usize
             where
                 E: Element + ?Sized,
@@ -848,7 +843,7 @@ macro_rules! fixed_size_module {
             ///
             /// Returns [`BufferSizeRequired`] error if the buffer is too small.
             /// Error contains the exact number of bytes required.
-            #[inline]
+            #[inline(always)]
             pub fn serialize_or_size<E, T>(
                 value: &T,
                 output: &mut [u8],
@@ -868,7 +863,7 @@ macro_rules! fixed_size_module {
             ///
             /// Use pre-allocated vector when possible to avoid reallocations.
             #[cfg(feature = "alloc")]
-            #[inline]
+            #[inline(always)]
             pub fn serialize_to_vec<E, T>(value: &T, output: &mut alloc::vec::Vec<u8>) -> usize
             where
                 E: Element + ?Sized,

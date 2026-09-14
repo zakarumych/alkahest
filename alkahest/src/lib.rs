@@ -182,39 +182,3 @@ got:      {:?}",
         round_trip_packet_test::<Complex, _>(&value);
     }
 }
-
-#[derive(alkahest::Mixture)]
-pub struct Vector3 {
-    pub x: f32,
-    pub y: f32,
-    pub z: f32,
-}
-
-#[derive(alkahest::Mixture)]
-pub struct Triangle {
-    pub v0: Vector3,
-    pub v1: Vector3,
-    pub v2: Vector3,
-    pub normal: Vector3,
-}
-
-#[derive(alkahest::Mixture)]
-pub struct Mesh {
-    pub triangles: Vec<Triangle>,
-}
-
-fn generate_mesh() -> Mesh {
-    core::hint::black_box(Mesh {
-        triangles: Vec::new(),
-    })
-}
-
-#[inline]
-pub fn serialize_mesh(mesh: &Mesh, buffer: &mut [u8]) -> usize {
-    alkahest::serialize_unchecked::<Mesh, Mesh>(mesh, buffer)
-}
-
-#[inline]
-pub fn deserialize_mesh(buffer: &[u8]) -> Mesh {
-    alkahest::deserialize::<Mesh, Mesh>(buffer).unwrap()
-}
