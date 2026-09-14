@@ -12,6 +12,7 @@ proc_easy::easy_parse! {
 
 proc_easy::easy_parse! {
     pub struct ModuleItem {
+        vis: syn::Visibility,
         mod_token: syn::Token![mod],
         ident: syn::Ident,
         content: EasyMaybe<EasyBraced<Empty>>,
@@ -46,6 +47,7 @@ fn alkahest_impl(
 
     let mut tokens = proc_macro2::TokenStream::new();
 
+    item.vis.to_tokens(&mut tokens);
     item.mod_token.to_tokens(&mut tokens);
     item.ident.to_tokens(&mut tokens);
 

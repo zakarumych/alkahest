@@ -47,7 +47,7 @@ impl<'de> Deserialize<'de, ()> for () {
 pub struct TupleStackSize<T: ?Sized, const SIZE_BYTES: usize>(T);
 pub struct TupleHeapSize<T: ?Sized, const SIZE_BYTES: usize>(T);
 
-macro_rules! formula_serialize {
+macro_rules! formula_serialize_deserialize {
     (,) => {};
     ($at:ident $($a:ident)* , $bt:ident $($b:ident)*) => {
         impl<$($a,)* $at, const SIZE_BYTES: usize> SizeType for TupleStackSize<($($a,)* $at,), SIZE_BYTES>
@@ -97,11 +97,11 @@ macro_rules! formula_serialize {
         impl<$($a,)* $at, $($b,)* $bt> Serialize<($($a,)* $at,)> for ($($b,)* $bt,)
         where
             $(
-                $a: Formula,
-                $b: Serialize<$a>,
+                $a: Element,
+                $b: Serialize<$a::Formula>,
             )*
-            $at: Formula + ?Sized,
-            $bt: Serialize<$at>,
+            $at: Element + ?Sized,
+            $bt: Serialize<$at::Formula>,
         {
             #[inline]
             fn serialize<S>(&self, mut serializer: S) -> Result<(), S::Error>
@@ -112,9 +112,9 @@ macro_rules! formula_serialize {
 
                 let ($($b,)* $bt,) = self;
                 $(
-                    serializer.write_direct($b)?;
+                    simple_try!($a::serialize($b, &mut serializer));
                 )*
-                serializer.write_direct($bt)
+                $at::serialize($bt, &mut serializer)
             }
 
             #[inline]
@@ -123,10 +123,10 @@ macro_rules! formula_serialize {
 
                 let ($($b,)* $bt,) = self;
 
-                let mut sizes = size_hint::<$at, _, SIZE_BYTES>($bt)?;
+                let mut sizes = simple_some!(size_hint::<$at, _, SIZE_BYTES>($bt));
 
                 $(
-                    sizes += size_hint::<$a, _, SIZE_BYTES>($b)?;
+                    sizes += simple_some!(size_hint::<$a, _, SIZE_BYTES>($b));
                 )*
 
                 Some(sizes)
@@ -136,11 +136,11 @@ macro_rules! formula_serialize {
         impl<'de, $($a,)* $at, $($b,)* $bt> Deserialize<'de, ($($a,)* $at,)> for ($($b,)* $bt,)
         where
             $(
-                $a: Formula,
-                $b: Deserialize<'de, $a>,
+                $a: Element,
+                $b: Deserialize<'de, $a::Formula>,
             )*
-            $at: Formula + ?Sized,
-            $bt: Deserialize<'de, $at>,
+            $at: Element + ?Sized,
+            $bt: Deserialize<'de, $at::Formula>,
         {
             #[inline]
             fn deserialize<D>(mut de: D) -> Result<($($b,)* $bt,), DeserializeError>
@@ -149,10 +149,10 @@ macro_rules! formula_serialize {
             {
                 #![allow(non_snake_case)]
                 $(
-                    let $b = de.read_direct::<$a, $b>()?;
+                    let $b = simple_try!($a::deserialize::<$b, _>(&mut de));
                 )*
 
-                let $bt = de.read_direct::<$at, $bt>()?;
+                let $bt = simple_try!($at::deserialize::<$bt, _>(&mut de));
 
                 let value = ($($b,)* $bt,);
                 Ok(value)
@@ -168,14 +168,12 @@ macro_rules! formula_serialize {
                 let ($($b,)* $bt,) = self;
 
                 $(
-                    de.read_direct_in_place::<$a, $b>($b)?;
+                    simple_try!($a::deserialize_in_place($b, &mut de));
                 )*
-                de.read_direct_in_place::<$at, $bt>($bt)?;
-
-                Ok(())
+                $at::deserialize_in_place($bt, &mut de)
             }
         }
     };
 }
 
-for_tuple_2!(formula_serialize);
+for_tuple_2!(formula_serialize_deserialize);

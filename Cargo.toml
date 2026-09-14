@@ -1,7 +1,6 @@
 [workspace]
-members = ["parse", "core", "proc", "alkahest"]
+members = ["core", "proc", "alkahest", "benchmark"]
 resolver = "3"
-edition = "2024"
 
 [workspace.package]
 version = "0.1.0"
@@ -12,6 +11,8 @@ alkahest-core = { path = "core" }
 alkahest-parse = { path = "parse" }
 alkahest-proc = { path = "proc" }
 
-unicode-ident = "1.0"
-quote = "1.0"
-proc-macro2 = "1.0"
+unicode-ident = "1.0.24"
+quote = "1.0.47"
+proc-macro2 = "1.0.107"
+rand = "0.10.2"
+basic-lexer = { path = "../basic-lexer" }

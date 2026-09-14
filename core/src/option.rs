@@ -59,7 +59,7 @@ where
                     E::INHABITED,
                     "Cannot serialize Some(_) for uninhabited option type"
                 );
-                serializer.write_bytes(&[1u8])?;
+                simple_try!(serializer.write_bytes(&[1u8]));
                 E::serialize(value, &mut serializer)
             }
         }
@@ -79,7 +79,7 @@ where
                     "Cannot serialize Some(_) for uninhabited option type"
                 );
                 let mut sizes = Sizes::with_stack(1);
-                sizes += E::size_hint::<T, SIZE_BYTES>(value)?;
+                sizes += simple_some!(E::size_hint::<T, SIZE_BYTES>(value));
                 Some(sizes)
             }
         }
@@ -97,11 +97,12 @@ where
         D: Deserializer<'de>,
     {
         if E::INHABITED {
-            let is_some: u8 = de.read_byte()?;
+            let is_some: u8 = simple_try!(de.read_byte());
             if is_some == 0 {
                 Ok(None)
             } else {
-                E::deserialize(&mut de).map(Some)
+                let value = simple_try!(E::deserialize(&mut de));
+                Ok(Some(value))
             }
         } else {
             // For uninhabited option type, we can only have None
@@ -115,14 +116,15 @@ where
         D: Deserializer<'de>,
     {
         if E::INHABITED {
-            let is_some: u8 = de.read_byte()?;
+            let is_some: u8 = simple_try!(de.read_byte());
             if is_some == 0 {
                 *self = None;
             } else {
                 match self {
-                    Some(value) => E::deserialize_in_place(value, &mut de)?,
+                    Some(value) => simple_try!(E::deserialize_in_place(value, &mut de)),
                     None => {
-                        *self = Some(E::deserialize(&mut de)?);
+                        let value = simple_try!(E::deserialize(&mut de));
+                        *self = Some(value);
                     }
                 }
             }

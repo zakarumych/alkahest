@@ -1,86 +1,164 @@
+use core::marker::PhantomData;
+
 use crate::{
-    deserialize::{Deserialize, DeserializeError, Deserializer, deserialize, deserialize_in_place},
-    element::{Element, stack_size},
-    formula::SizeBound,
+    Formula, List,
+    deserialize::{
+        Deserialize, DeserializeError, Deserializer, DeserializerImpl, cold_err, deserialize,
+        deserialize_in_place, read_usize,
+    },
+    element::Element,
 };
 
-pub struct Lazy<'de, E> {
+pub struct Lazy<'de, F: ?Sized> {
     input: &'de [u8],
     size_bytes: usize,
-    element: core::marker::PhantomData<E>,
+    marker: core::marker::PhantomData<F>,
 }
 
-impl<'de, E> Lazy<'de, E> {
+impl<F: ?Sized> Clone for Lazy<'_, F> {
+    #[inline]
+    fn clone(&self) -> Self {
+        Lazy {
+            input: self.input,
+            size_bytes: self.size_bytes,
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<'de, F> Lazy<'de, F>
+where
+    F: ?Sized,
+{
     #[inline]
     pub fn read<T>(&self) -> Result<T, DeserializeError>
     where
-        E: Element,
-        T: Deserialize<'de, E::Formula>,
+        F: Formula,
+        T: Deserialize<'de, F>,
     {
         with_size_bytes!(SIZE_BYTES = self.size_bytes => {
-            deserialize::<E, T, SIZE_BYTES>(self.input)
+            deserialize::<F, T, SIZE_BYTES>(self.input)
         } else {
-            Err(DeserializeError::Incompatible)
+            cold_err(DeserializeError::Incompatible)
         })
     }
 
     #[inline]
     pub fn read_in_place<T>(&self, place: &mut T) -> Result<(), DeserializeError>
     where
-        E: Element,
-        T: Deserialize<'de, E::Formula> + ?Sized,
+        F: Formula,
+        T: Deserialize<'de, F> + ?Sized,
     {
         with_size_bytes!(SIZE_BYTES = self.size_bytes => {
-            deserialize_in_place::<E, T, SIZE_BYTES>(place, self.input)
+            deserialize_in_place::<F, T, SIZE_BYTES>(place, self.input)
         } else {
-            Err(DeserializeError::Incompatible)
+            cold_err(DeserializeError::Incompatible)
+        })
+    }
+
+    fn read_usize(&mut self) -> Result<usize, DeserializeError> {
+        with_size_bytes!(SIZE_BYTES = self.size_bytes => {{
+            if self.input.len() < SIZE_BYTES {
+                cold_err(DeserializeError::OutOfBounds(SIZE_BYTES))
+            } else {
+                let start = self.input.len() - SIZE_BYTES;
+                let input = &self.input[start..];
+                let input = input.as_array().unwrap();
+                self.input = &self.input[..start];
+                read_usize::<SIZE_BYTES>(input)
+            }
+        }} else {
+            cold_err(DeserializeError::Incompatible)
         })
     }
 }
 
-impl<'de, E> Deserialize<'de, E> for Lazy<'de, E>
+impl<'de, E> Lazy<'de, List<E>>
 where
-    E: Element,
+    E: ?Sized,
 {
     #[inline]
-    fn deserialize<D>(mut deserializer: D) -> Result<Self, DeserializeError>
+    pub fn iter<T>(
+        &self,
+    ) -> Result<impl Iterator<Item = Result<T, DeserializeError>>, DeserializeError>
+    where
+        E: Element,
+        T: Deserialize<'de, E::Formula>,
+    {
+        let mut me = self.clone();
+        let len = simple_try!(me.read_usize());
+
+        Ok(LazyDeIter::<'_, E, T> {
+            input: me.input,
+            len,
+            size_bytes: me.size_bytes,
+            marker: PhantomData,
+        })
+    }
+}
+
+impl<'de, F> Deserialize<'de, F> for Lazy<'de, F>
+where
+    F: Formula + ?Sized,
+{
+    #[inline]
+    fn deserialize<D>(deserializer: D) -> Result<Self, DeserializeError>
     where
         D: Deserializer<'de>,
     {
-        let stack_size = with_size_bytes!(SIZE_BYTES = deserializer.size_bytes() => {
-            stack_size::<E, SIZE_BYTES>()
-        } else {
-            return Err(DeserializeError::Incompatible);
-        });
-
-        match stack_size {
-            SizeBound::Exact(size) => {
-                let input = deserializer.input();
-                deserializer.read_bytes(size)?;
-                Ok(Lazy {
-                    input,
-                    size_bytes: deserializer.size_bytes(),
-                    element: core::marker::PhantomData,
-                })
-            }
-            SizeBound::Bounded(0) => {
-                let input = deserializer.input();
-                Ok(Lazy {
-                    input,
-                    size_bytes: deserializer.size_bytes(),
-                    element: core::marker::PhantomData,
-                })
-            }
-            _ => Err(DeserializeError::Incompatible),
-        }
+        let input = deserializer.input();
+        Ok(Lazy {
+            input,
+            size_bytes: deserializer.size_bytes(),
+            marker: core::marker::PhantomData,
+        })
     }
 
-    #[inline(always)]
+    #[inline]
     fn deserialize_in_place<D>(&mut self, deserializer: D) -> Result<(), DeserializeError>
     where
         D: Deserializer<'de>,
     {
-        *self = <Self as Deserialize<'de, E>>::deserialize(deserializer)?;
+        *self = simple_try!(<Self as Deserialize<'de, F>>::deserialize(deserializer));
         Ok(())
+    }
+}
+
+struct LazyDeIter<'de, E: ?Sized, T> {
+    input: &'de [u8],
+    len: usize,
+    size_bytes: usize,
+    marker: PhantomData<fn(E) -> T>,
+}
+
+impl<'de, E, T> Iterator for LazyDeIter<'de, E, T>
+where
+    E: Element + ?Sized,
+    T: Deserialize<'de, E::Formula>,
+{
+    type Item = Result<T, DeserializeError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        with_size_bytes!(SIZE_BYTES = self.size_bytes => {{
+            if self.len == 0 {
+                return None;
+            }
+
+            let mut de = DeserializerImpl::<SIZE_BYTES>::new(self.input);
+            match E::deserialize::<T, _>(&mut de) {
+                Ok(item) => {
+                    self.len -= 1;
+                    self.input = de.input();
+                    Some(Ok(item))
+                }
+                Err(err) => {
+                    self.len = 0;
+                    self.input = &[];
+                    Some(cold_err(err))
+                }
+            }
+        }} else {
+            Some(cold_err(DeserializeError::Incompatible))
+        })
     }
 }

@@ -13,7 +13,7 @@ impl Serialize<Str> for String {
     where
         S: Serializer,
     {
-        serializer.write_usize(self.len())?;
+        simple_try!(serializer.write_usize(self.len()));
         serializer.write_bytes(self.as_bytes())
     }
 
@@ -31,8 +31,8 @@ impl<'de> Deserialize<'de, Str> for String {
     where
         D: Deserializer<'de>,
     {
-        let len = deserializer.read_usize()?;
-        let bytes = deserializer.read_bytes(len)?;
+        let len = simple_try!(deserializer.read_usize());
+        let bytes = simple_try!(deserializer.read_bytes(len));
         match core::str::from_utf8(bytes) {
             Ok(s) => Ok(String::from(s)),
             Err(error) => Err(DeserializeError::NonUtf8(error)),
@@ -44,8 +44,8 @@ impl<'de> Deserialize<'de, Str> for String {
     where
         D: Deserializer<'de>,
     {
-        let len = deserializer.read_usize()?;
-        let bytes = deserializer.read_bytes(len)?;
+        let len = simple_try!(deserializer.read_usize());
+        let bytes = simple_try!(deserializer.read_bytes(len));
         match core::str::from_utf8(bytes) {
             Ok(s) => {
                 self.clear();

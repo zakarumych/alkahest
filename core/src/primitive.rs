@@ -67,9 +67,8 @@ macro_rules! impl_primitive {
             where
                 D: Deserializer<'de>,
              {
-                let input = de.read_byte_array::<{size_of::<$ty>()}>()?;
-                // de.finish()?;
-                let value = <$ty>::from_le_bytes(input);
+                let input = simple_try!(de.read_byte_array::<{size_of::<$ty>()}>());
+                let value = <$ty>::from_le_bytes(*input);
                 return Ok(value);
             }
 
@@ -78,9 +77,8 @@ macro_rules! impl_primitive {
             where
                 D: Deserializer<'de>,
             {
-                let input = de.read_byte_array::<{size_of::<$ty>()}>()?;
-                // de.finish()?;
-                let value = <$ty>::from_le_bytes(input);
+                let input = simple_try!(de.read_byte_array::<{size_of::<$ty>()}>());
+                let value = <$ty>::from_le_bytes(*input);
                 *self = value;
                 Ok(())
             }
@@ -94,8 +92,8 @@ macro_rules! impl_primitive {
                 where
                     D: Deserializer<'de>,
                 {
-                    let input = de.read_byte_array::<{size_of::<$from>()}>()?;
-                    let value = <$from>::from_le_bytes(input);
+                    let input = simple_try!(de.read_byte_array::<{size_of::<$from>()}>());
+                    let value = <$from>::from_le_bytes(*input);
                     return Ok($ty::from(value));
                 }
 
@@ -104,8 +102,8 @@ macro_rules! impl_primitive {
                 where
                     D: Deserializer<'de>,
                 {
-                    let input = de.read_byte_array::<{size_of::<$from>()}>()?;
-                    let value = <$from>::from_le_bytes(input);
+                    let input = simple_try!(de.read_byte_array::<{size_of::<$from>()}>());
+                    let value = <$from>::from_le_bytes(*input);
                     *self = $ty::from(value);
                     Ok(())
                 }
@@ -151,7 +149,7 @@ impl<'de> Deserialize<'de, bool> for bool {
     where
         D: Deserializer<'de>,
     {
-        let byte = de.read_byte()?;
+        let byte = simple_try!(de.read_byte());
         Ok(byte != 0)
     }
 
@@ -160,7 +158,7 @@ impl<'de> Deserialize<'de, bool> for bool {
     where
         D: Deserializer<'de>,
     {
-        let byte = de.read_byte()?;
+        let byte = simple_try!(de.read_byte());
         *self = byte != 0;
         Ok(())
     }

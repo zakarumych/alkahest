@@ -4,6 +4,7 @@ use crate::{
     serialize::{Serialize, Serializer, Sizes},
 };
 
+/// A type that can never be constructed, used to represent a formula that is never inhabited.
 pub type Never = core::convert::Infallible;
 
 impl Formula for Never {
@@ -33,7 +34,7 @@ impl Formula for Never {
 ///
 /// Since `S::B` may never be constructed, the `A` variant is the only one to be serialized.
 impl<F: ?Sized> Serialize<F> for Never {
-    #[inline(always)]
+    #[inline]
     fn serialize<S>(&self, _serializer: S) -> Result<(), S::Error>
     where
         S: Serializer,
@@ -41,7 +42,7 @@ impl<F: ?Sized> Serialize<F> for Never {
         match *self {}
     }
 
-    #[inline(always)]
+    #[inline]
     fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
         match *self {}
     }
@@ -50,7 +51,7 @@ impl<F: ?Sized> Serialize<F> for Never {
 /// Anything can be deserialized from `Never` formula,
 /// because it is never exists in data, so deserialization of it never happens.
 impl<'de> Deserialize<'de, Never> for Never {
-    #[inline(always)]
+    #[inline]
     fn deserialize<D>(_deserializer: D) -> Result<Self, DeserializeError>
     where
         D: Deserializer<'de>,
@@ -58,7 +59,7 @@ impl<'de> Deserialize<'de, Never> for Never {
         unreachable!("Never formula should never be deserialized")
     }
 
-    #[inline(always)]
+    #[inline]
     fn deserialize_in_place<D>(&mut self, _deserializer: D) -> Result<(), DeserializeError>
     where
         D: Deserializer<'de>,

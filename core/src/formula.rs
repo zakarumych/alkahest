@@ -6,14 +6,17 @@ pub enum SizeBound {
 }
 
 impl SizeBound {
+    #[inline]
     pub const fn is_unbounded(&self) -> bool {
         matches!(self, SizeBound::Unbounded)
     }
 
+    #[inline]
     pub const fn is_zero(&self) -> bool {
         matches!(self, SizeBound::Bounded(0) | SizeBound::Exact(0))
     }
 
+    #[inline]
     pub const fn add(self, rhs: SizeBound) -> SizeBound {
         match (self, rhs) {
             (SizeBound::Bounded(s), SizeBound::Bounded(r))
@@ -31,6 +34,7 @@ impl SizeBound {
     }
 
     /// Returns the maximum of two size bounds.
+    #[inline]
     pub const fn max(self, rhs: SizeBound) -> SizeBound {
         match (self, rhs) {
             (SizeBound::Bounded(s), SizeBound::Bounded(r)) => {
@@ -53,6 +57,7 @@ impl SizeBound {
         }
     }
 
+    #[inline]
     pub const fn mul(self, rhs: usize) -> SizeBound {
         match self {
             SizeBound::Unbounded => SizeBound::Unbounded,
@@ -67,6 +72,7 @@ impl SizeBound {
         }
     }
 
+    #[inline]
     pub const fn not_exact(self) -> SizeBound {
         match self {
             SizeBound::Exact(size) => SizeBound::Bounded(size),

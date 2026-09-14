@@ -11,6 +11,7 @@ formula Bar = {
     y: u64,
 };
 
+// foobar
 formula Baz a = {
     items: [a; 4],
 };

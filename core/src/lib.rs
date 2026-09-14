@@ -1,5 +1,5 @@
 #![cfg_attr(not(feature = "std"), no_std)]
-#![forbid(unsafe_code)]
+// #![forbid(unsafe_code)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
@@ -56,7 +56,7 @@ macro_rules! formula_alias {
         type HeapSize<const SIZE_BYTES: usize> = <$element as $crate::Element>::HeapSize<SIZE_BYTES>;
         const INHABITED: bool = <$element as $crate::Element>::INHABITED;
 
-        #[inline(always)]
+        #[inline]
         fn serialize<T, S>(value: &T, serializer: &mut S) -> Result<(), S::Error>
         where
             T: $crate::Serialize<<$element as $crate::Element>::Formula> + ?Sized,
@@ -65,7 +65,7 @@ macro_rules! formula_alias {
             <$element as $crate::Element>::serialize::<T, S>(value, serializer)
         }
 
-        #[inline(always)]
+        #[inline]
         fn size_hint<T, const SIZE_BYTES: usize>(value: &T) -> Option<$crate::Sizes>
         where
             T: $crate::serialize::Serialize<<$element as $crate::Element>::Formula> + ?Sized,
@@ -73,7 +73,7 @@ macro_rules! formula_alias {
             <$element as $crate::Element>::size_hint::<T, SIZE_BYTES>(value)
         }
 
-        #[inline(always)]
+        #[inline]
         fn deserialize<'de, T, D>(deserializer: &mut D) -> Result<T, $crate::DeserializeError>
         where
             T: $crate::Deserialize<'de, <$element as $crate::Element>::Formula>,
@@ -82,7 +82,7 @@ macro_rules! formula_alias {
             <$element as $crate::Element>::deserialize::<T, D>(deserializer)
         }
 
-        #[inline(always)]
+        #[inline]
         fn deserialize_in_place<'de, T, D>(
             place: &mut T,
             deserializer: &mut D,
@@ -175,12 +175,32 @@ macro_rules! with_size_bytes {
     };
 }
 
+// Macro to avoid `?` operator for `Result`.
+macro_rules! simple_try {
+    ($x:expr) => {{
+        match $x {
+            Ok(value) => value,
+            Err(err) => return Err(err),
+        }
+    }};
+}
+
+// Macro to avoid `?` operator for `Option`.
+macro_rules! simple_some {
+    ($x:expr) => {{
+        match $x {
+            Some(value) => value,
+            None => return None,
+        }
+    }};
+}
+
 mod array;
 mod buffer;
 mod deserialize;
 mod element;
 mod formula;
-// mod iter;
+mod iter;
 mod lazy;
 mod list;
 mod never;
@@ -202,6 +222,7 @@ pub use self::{
     deserialize::{Deserialize, DeserializeError, Deserializer},
     element::{Element, Indirect, heap_size, inhabited, stack_size},
     formula::{BoundedSize, ExactSize, Formula, SizeBound, SizeType, UnboundedSize},
+    iter::MakeIter,
     lazy::Lazy,
     list::{Array, List},
     never::Never,
@@ -377,7 +398,7 @@ pub mod private {
 
     pub use {bool, f32, f64, i8, i16, i32, i64, i128, u8, u16, u32, u64, u128};
 
-    #[inline(always)]
+    #[inline]
     pub fn with_element<F, E>(f: impl FnOnce(&F) -> &E) -> WithElement<E>
     where
         F: Formula + ?Sized,
@@ -399,7 +420,7 @@ pub mod private {
     {
         /// Helper function to take element formula from a composite formula.
         /// And then use it to serialize element either directly.
-        #[inline(always)]
+        #[inline]
         pub fn serialize<T, S>(self, value: &T, serializer: &mut S) -> Result<(), S::Error>
         where
             T: Serialize<E::Formula> + ?Sized,
@@ -410,7 +431,7 @@ pub mod private {
 
         /// Helper function to take element formula from a composite formula.
         /// And then use it to get size hint for element direct serialization.
-        #[inline(always)]
+        #[inline]
         pub fn size_hint<T, const SIZE_BYTES: usize>(self, value: &T) -> Option<Sizes>
         where
             T: Serialize<E::Formula> + ?Sized,
@@ -423,7 +444,7 @@ pub mod private {
             }
         }
 
-        #[inline(always)]
+        #[inline]
         pub fn deserialize<'de, T, D>(self, deserializer: &mut D) -> Result<T, DeserializeError>
         where
             T: Deserialize<'de, E::Formula>,
@@ -432,7 +453,7 @@ pub mod private {
             E::deserialize(deserializer)
         }
 
-        #[inline(always)]
+        #[inline]
         pub fn deserialize_in_place<'de, T, D>(
             self,
             place: &mut T,
@@ -446,7 +467,7 @@ pub mod private {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     pub const fn discriminant_size(count: usize) -> usize {
         match count {
             0..=0xFF => 1,
@@ -458,7 +479,7 @@ pub mod private {
     }
 
     /// Helper function to serialize enum discriminant.
-    #[inline(always)]
+    #[inline]
     pub fn serialize_discriminant<S>(
         idx: usize,
         count: usize,
@@ -475,7 +496,7 @@ pub mod private {
     }
 
     /// Helper function to deserialize enum discriminant.
-    #[inline(always)]
+    #[inline]
     pub fn deserialize_discriminant<'de, D>(
         count: usize,
         deserializer: &mut D,
@@ -484,7 +505,7 @@ pub mod private {
         D: Deserializer<'de>,
     {
         let size = discriminant_size(count);
-        let bytes: &[u8] = deserializer.read_bytes(size)?;
+        let bytes: &[u8] = simple_try!(deserializer.read_bytes(size));
         let mut array = [0u8; 4];
 
         array[..size].copy_from_slice(bytes);

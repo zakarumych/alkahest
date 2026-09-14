@@ -3,10 +3,8 @@ use alkahest::{Deserialize, Element, Formula, Indirect, Mixture, Never, Serializ
 #[alkahest(Formula)]
 struct Parent;
 
-// #[alkahest]
-mod new {
-    alkahest::include_formulas!("new.alk");
-}
+#[alkahest]
+mod new {}
 
 #[derive(Mixture)]
 struct TryString<S> {
@@ -54,6 +52,14 @@ enum YD<B> {
 #[derive(Mixture)]
 struct TryIndirect<T> {
     a: Indirect<T>,
+}
+
+#[derive(alkahest::Mixture)]
+pub enum GameType {
+    Survival,
+    Creative,
+    Adventure,
+    Spectator,
 }
 
 fn main() {

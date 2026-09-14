@@ -7,12 +7,16 @@ use crate::{
 
 /// List formula is a variable-length sequence of element formulas.
 ///
-/// It has minimum and maximum length constraints, that can be 0 and usize::MAX to represent unbounded lists.
+/// It has minimum and maximum length constraints.
+/// The maximum of `usize::MAX` is used to represent an unbounded list and handled separately without arithmetic overflow.
+/// Default minimum length is 0 and default maximum length is `usize::MAX`,
+/// so that `List<T>` is a variable-length list of `T` with no length constraints.
 pub struct List<T: ?Sized, const MIN: usize = 0, const MAX: usize = { usize::MAX }>(PhantomData<T>);
 
 /// Fixed-size array formula is a list with equal minimum and maximum sizes.
 pub type Array<T, const N: usize> = List<T, N, N>;
 
+/// Stack size type for list formula.
 pub struct ListStackSize<E: Element, const MIN: usize, const MAX: usize, const SIZE_BYTES: usize>(
     E,
 );
@@ -23,6 +27,11 @@ where
     E: Element,
 {
     const VALUE: SizeBound = if E::INHABITED {
+        assert!(
+            MIN <= MAX,
+            "List minimum length must be less than or equal to maximum length",
+        );
+
         if MIN == MAX {
             // No need to store length if min == max
             stack_size::<E, SIZE_BYTES>().mul(MAX)
@@ -35,6 +44,10 @@ where
         }
     } else {
         // if E is uninhabited, list can only be empty
+        assert!(
+            MIN == 0,
+            "List with uninhabited element must allow empty list",
+        );
         SizeBound::Exact(0)
     };
 }
@@ -47,6 +60,11 @@ where
     E: Element,
 {
     const VALUE: SizeBound = if E::INHABITED {
+        assert!(
+            MIN <= MAX,
+            "List minimum length must be less than or equal to maximum length",
+        );
+
         if MIN == MAX {
             heap_size::<E, SIZE_BYTES>().mul(MAX)
         } else {
@@ -55,6 +73,10 @@ where
         }
     } else {
         // if E is uninhabited, list can only be empty
+        assert!(
+            MIN == 0,
+            "List with uninhabited element must allow empty list",
+        );
         SizeBound::Exact(0)
     };
 }

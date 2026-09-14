@@ -147,6 +147,7 @@ fn tuple_to_tokens(tuple: &Tuple) -> syn::TypeTuple {
         .collect();
 
     syn::TypeTuple {
+        attrs: Vec::new(),
         paren_token: syn::token::Paren(Span::call_site()),
         elems: elements,
     }
@@ -194,6 +195,7 @@ fn symbol_in_alkahest_private(symbol: &str) -> syn::Path {
 
 fn builtin_to_tokens(builtin: Builtin) -> syn::Type {
     syn::Type::Path(syn::TypePath {
+        attrs: Vec::new(),
         qself: None,
         path: match builtin {
             Builtin::Never => symbol_in_alkahest("Never"),
@@ -218,6 +220,7 @@ fn element_to_tokens(element: &Element) -> syn::Type {
     let ty = match &element.kind {
         ElementKind::Builtin(builtin) => builtin_to_tokens(*builtin),
         ElementKind::Option(element) => syn::Type::Path(syn::TypePath {
+            attrs: Vec::new(),
             qself: None,
             path: syn::Path {
                 leading_colon: None,
@@ -239,10 +242,12 @@ fn element_to_tokens(element: &Element) -> syn::Type {
             },
         }),
         ElementKind::Symbol(symbol) => syn::Type::Path(syn::TypePath {
+            attrs: Vec::new(),
             qself: None,
             path: path_to_tokens(symbol),
         }),
         ElementKind::List(list) => syn::Type::Path(syn::TypePath {
+            attrs: Vec::new(),
             qself: None,
             path: list_to_tokens(list),
         }),
@@ -252,6 +257,7 @@ fn element_to_tokens(element: &Element) -> syn::Type {
     if element.indirect {
         // Wrap type in alakhest::Indirect< ... >
         syn::Type::Path(syn::TypePath {
+            attrs: Vec::new(),
             qself: None,
             path: syn::Path {
                 leading_colon: Some(syn::Token![::](Span::call_site())),
@@ -289,17 +295,15 @@ fn make_generics(definition: &Definition) -> syn::Generics {
     generics.lt_token = Some(syn::Token![<](Span::call_site()));
 
     for param in definition.generics.iter() {
-        generics.params.push(
-            syn::TypeParam {
+        generics
+            .params
+            .push(syn::GenericParam::Type(syn::TypeParam {
                 attrs: Vec::new(),
-                ident: Ident::new(param, Span::call_site()),
+                ident: Ident::new(param.as_str(), Span::call_site()),
                 colon_token: None,
                 bounds: syn::punctuated::Punctuated::new(),
-                eq_token: None,
                 default: None,
-            }
-            .into(),
-        );
+            }));
     }
 
     generics
@@ -328,7 +332,7 @@ pub fn definition_to_tokens(definition: &Definition, tokens: &mut TokenStream) {
                 generics,
                 record.fields.iter().map(|f| {
                     (
-                        Ident::new(&f.name, Span::call_site()),
+                        Ident::new(f.name.as_str(), Span::call_site()),
                         element_to_tokens(&f.element),
                     )
                 }),
@@ -341,7 +345,7 @@ pub fn definition_to_tokens(definition: &Definition, tokens: &mut TokenStream) {
                 ident,
                 generics,
                 variants.iter().map(|named_variant| {
-                    let name = Ident::new(&named_variant.name, Span::call_site());
+                    let name = Ident::new(named_variant.name.as_str(), Span::call_site());
                     let kind = match &named_variant.variant {
                         Variant::Unit => VarianFormula::Unit,
                         Variant::Tuple(tuple) => VarianFormula::Tuple(
@@ -350,7 +354,7 @@ pub fn definition_to_tokens(definition: &Definition, tokens: &mut TokenStream) {
                         Variant::Record(record) => {
                             VarianFormula::Record(record.fields.iter().map(|f| {
                                 (
-                                    Ident::new(&f.name, Span::call_site()),
+                                    Ident::new(f.name.as_str(), Span::call_site()),
                                     element_to_tokens(&f.element),
                                 )
                             }))

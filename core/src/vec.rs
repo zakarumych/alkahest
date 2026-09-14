@@ -12,7 +12,7 @@ where
     E: Element,
     T: Serialize<E::Formula>,
 {
-    #[inline(always)]
+    #[inline]
     fn serialize<S>(&self, serializer: S) -> Result<(), S::Error>
     where
         S: Serializer,
@@ -20,7 +20,7 @@ where
         Serialize::<List<E>>::serialize(&self[..], serializer)
     }
 
-    #[inline(always)]
+    #[inline]
     fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
         Serialize::<List<E>>::size_hint::<SIZE_BYTES>(&self[..])
     }
@@ -31,13 +31,32 @@ where
     E: Element,
     T: Deserialize<'de, E::Formula>,
 {
-    #[inline(always)]
-    fn deserialize<D>(deserializer: D) -> Result<Self, DeserializeError>
+    #[inline]
+    fn deserialize<D>(mut deserializer: D) -> Result<Self, DeserializeError>
     where
         D: Deserializer<'de>,
     {
         let mut vec = Vec::new();
-        Deserialize::<List<E, MIN, MAX>>::deserialize_in_place(&mut vec, deserializer)?;
+        let len = if MIN == MAX {
+            debug_assert!(E::INHABITED || MIN == 0);
+            MIN
+        } else {
+            let len = simple_try!(deserializer.read_usize());
+            debug_assert!(E::INHABITED || len == 0);
+
+            if len < MIN || len > MAX {
+                return Err(DeserializeError::WrongLength);
+            }
+
+            len
+        };
+
+        vec.reserve_exact(len);
+
+        for _ in 0..len {
+            vec.push(simple_try!(E::deserialize(&mut deserializer)));
+        }
+
         Ok(vec)
     }
 
@@ -50,7 +69,7 @@ where
             debug_assert!(E::INHABITED || MIN == 0);
             MIN
         } else {
-            let len = deserializer.read_usize()?;
+            let len = simple_try!(deserializer.read_usize());
             debug_assert!(E::INHABITED || len == 0);
 
             if len < MIN || len > MAX {
@@ -68,10 +87,10 @@ where
         let extend = len - in_place;
 
         for i in 0..in_place {
-            E::deserialize_in_place(&mut self[i], &mut deserializer)?;
+            simple_try!(E::deserialize_in_place(&mut self[i], &mut deserializer));
         }
         for _ in 0..extend {
-            self.push(E::deserialize(&mut deserializer)?);
+            self.push(simple_try!(E::deserialize(&mut deserializer)));
         }
 
         Ok(())

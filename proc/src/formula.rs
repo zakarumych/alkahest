@@ -53,8 +53,10 @@ fn make_formula_generics(generics: &syn::Generics) -> syn::Generics {
             .predicates
             .extend(generics.type_params().map(|param| {
                 syn::WherePredicate::Type(syn::PredicateType {
+                    attrs: Vec::new(),
                     lifetimes: None,
                     bounded_ty: syn::Type::Path(syn::TypePath {
+                        attrs: Vec::new(),
                         qself: None,
                         path: syn::Path {
                             leading_colon: None,
@@ -68,8 +70,9 @@ fn make_formula_generics(generics: &syn::Generics) -> syn::Generics {
                     colon_token: syn::Token![:](Span::call_site()),
                     bounds: std::iter::once(syn::TypeParamBound::Trait(syn::TraitBound {
                         paren_token: None,
-                        modifier: syn::TraitBoundModifier::None,
                         lifetimes: None,
+                        modifiers: syn::TraitBoundModifiers::default(),
+                        maybe: None,
                         path: syn::Path {
                             leading_colon: Some(syn::Token![::](Span::call_site())),
                             segments: [
@@ -108,6 +111,7 @@ fn make_size_generics(formula_generics: &syn::Generics) -> syn::Generics {
             ident: syn::Ident::new("__SIZE_BYTES", Span::call_site()),
             colon_token: syn::Token![:](Span::call_site()),
             ty: syn::Type::Path(syn::TypePath {
+                attrs: Vec::new(),
                 qself: None,
                 path: syn::Path {
                     leading_colon: None,
@@ -118,11 +122,15 @@ fn make_size_generics(formula_generics: &syn::Generics) -> syn::Generics {
                     .collect(),
                 },
             }),
-            eq_token: None,
             default: None,
         }));
 
     size_generics
+}
+
+enum VariantInhabited {
+    True,
+    Expr(proc_macro2::TokenStream),
 }
 
 pub fn derive_unit(
@@ -482,7 +490,7 @@ pub fn derive_enum<T, S>(
                 syn::Fields::Unit,
                 quote::quote! { ::alkahest::SizeBound::Exact(0) },
                 quote::quote! { ::alkahest::SizeBound::Exact(0) },
-                quote::quote! { true },
+                VariantInhabited::True,
                 None,
             ),
             VarianFormula::Tuple(tuple) => {
@@ -503,10 +511,11 @@ pub fn derive_enum<T, S>(
                     let field = syn::Field {
                         attrs: Vec::new(),
                         vis: syn::Visibility::Inherited,
-                        mutability: syn::FieldMutability::None,
+                        modifiers: syn::FieldModifiers::default(),
                         ident: None,
                         colon_token: None,
                         ty: element,
+                        default: None,
                     };
 
                     (field, stack_size, heap_size, inhabited)
@@ -541,9 +550,9 @@ pub fn derive_enum<T, S>(
 
                 // Generate inhabited expression.
                 let inhabited = match field_inhabiteds.next() {
-                    None => quote::quote! { true },
+                    None => VariantInhabited::True,
                     Some(first) => {
-                        quote::quote! { #first #( && #field_inhabiteds )* }
+                        VariantInhabited::Expr(quote::quote! { #first #( && #field_inhabiteds )* })
                     }
                 };
 
@@ -572,10 +581,11 @@ pub fn derive_enum<T, S>(
                     let field = syn::Field {
                         attrs: Vec::new(),
                         vis: syn::Visibility::Inherited,
-                        mutability: syn::FieldMutability::None,
+                        modifiers: syn::FieldModifiers::default(),
                         ident: Some(name),
                         colon_token: Some(syn::Token![:](Span::call_site())),
                         ty: element,
+                        default: None,
                     };
 
                     (field, stack_size, heap_size, inhabited)
@@ -610,9 +620,9 @@ pub fn derive_enum<T, S>(
 
                 // Generate inhabited expression.
                 let inhabited = match field_inhabiteds.next() {
-                    None => quote::quote! { true },
+                    None => VariantInhabited::True,
                     Some(first) => {
-                        quote::quote! { #first #( && #field_inhabiteds )* }
+                        VariantInhabited::Expr(quote::quote! { #first #( && #field_inhabiteds )* })
                     }
                 };
 
@@ -664,13 +674,41 @@ pub fn derive_enum<T, S>(
             quote::quote! {0usize}
         }
         _ => {
-            quote::quote! {{
-                // Count number of inhabitated variants
-                let __inhabited_count: usize = #(if #variant_inhabiteds { 1 } else { 0 } )+*;
+            let base = variant_inhabiteds
+                .iter()
+                .filter(|inhabited| match inhabited {
+                    VariantInhabited::True => true,
+                    VariantInhabited::Expr(_) => false,
+                })
+                .count();
 
-                /// Calculates the number of bytes required to store the discriminant
-                __inhabited_count
-            }}
+            let variant_inhabiteds =
+                variant_inhabiteds
+                    .iter()
+                    .filter_map(|inhabited| match inhabited {
+                        VariantInhabited::True => None,
+                        VariantInhabited::Expr(expr) => {
+                            Some(quote::quote! { if #expr { 1 } else { 0 } })
+                        }
+                    });
+
+            if base == 0 {
+                quote::quote! {{
+                    // Count number of inhabitated variants
+                    let __inhabited_count: usize = #(#variant_inhabiteds)+*;
+
+                    /// Calculates the number of bytes required to store the discriminant
+                    __inhabited_count
+                }}
+            } else {
+                quote::quote! {{
+                    // Count number of inhabitated variants
+                    let __inhabited_count: usize = #base #(+ #variant_inhabiteds)*;
+
+                    /// Calculates the number of bytes required to store the discriminant
+                    __inhabited_count
+                }}
+            }
         }
     };
 
@@ -682,18 +720,31 @@ pub fn derive_enum<T, S>(
             // Take max size among inhabitated variants
             // Defaulting to Exact(0) if none are inhabitated
 
-            quote::quote! {{
-                let mut __max_size = ::alkahest::private::None;
-
-                #(
-                    if #variant_inhabiteds {
-                        let __size = #variant_stack_sizes;
+            let sizes = variant_inhabiteds.iter().zip(&variant_stack_sizes).map(
+                |(inhabited, stack_size)| match inhabited {
+                    VariantInhabited::True => quote::quote! {
+                        let __size = #stack_size;
                         __max_size = match __max_size {
                             ::alkahest::private::None => ::alkahest::private::Some(__size),
                             ::alkahest::private::Some(current_max) => ::alkahest::private::Some(current_max.max(__size)),
                         };
-                    }
-                )*
+                    },
+                    VariantInhabited::Expr(expr) => quote::quote! {
+                        if #expr {
+                            let __size = #stack_size;
+                            __max_size = match __max_size {
+                                ::alkahest::private::None => ::alkahest::private::Some(__size),
+                                ::alkahest::private::Some(current_max) => ::alkahest::private::Some(current_max.max(__size)),
+                            };
+                        }
+                    },
+                },
+            );
+
+            quote::quote! {{
+                let mut __max_size = ::alkahest::private::None;
+
+                #(#sizes)*
 
                 match __max_size {
                     ::alkahest::private::None => ::alkahest::SizeBound::Exact(::alkahest::private::discriminant_size(<#ident #formula_ty_generics>::__ALKAHEST_DISCRIMINANT_COUNT)),
@@ -710,18 +761,31 @@ pub fn derive_enum<T, S>(
         _ => {
             // Take max size among inhabitated variants
 
-            quote::quote! {{
-                let mut __max_size = ::alkahest::private::None;
-
-                #(
-                    if #variant_inhabiteds {
-                        let __size = #variant_heap_sizes;
+            let sizes = variant_inhabiteds.iter().zip(&variant_heap_sizes).map(
+                |(inhabited, heap_size)| match inhabited {
+                    VariantInhabited::True => quote::quote! {
+                        let __size = #heap_size;
                         __max_size = match __max_size {
                             ::alkahest::private::None => ::alkahest::private::Some(__size),
                             ::alkahest::private::Some(current_max) => ::alkahest::private::Some(current_max.max(__size)),
                         };
-                    }
-                )*
+                    },
+                    VariantInhabited::Expr(expr) => quote::quote! {
+                        if #expr {
+                            let __size = #heap_size;
+                            __max_size = match __max_size {
+                                ::alkahest::private::None => ::alkahest::private::Some(__size),
+                                ::alkahest::private::Some(current_max) => ::alkahest::private::Some(current_max.max(__size)),
+                            };
+                        }
+                    },
+                },
+            );
+
+            quote::quote! {{
+                let mut __max_size = ::alkahest::private::None;
+
+                #(#sizes)*
 
                 match __max_size {
                     ::alkahest::private::None => ::alkahest::SizeBound::Exact(0),
@@ -731,12 +795,28 @@ pub fn derive_enum<T, S>(
         }
     };
 
-    let mut variant_inhabited_iter = variant_inhabiteds.iter();
+    let mut variant_inhabited_iter = variant_inhabiteds.iter().peekable();
 
-    let inhabited = match variant_inhabited_iter.next() {
+    let inhabited = match variant_inhabited_iter.peek() {
         None => quote::quote! { false },
-        Some(first) => {
-            quote::quote! { (#first) #( || (#variant_inhabited_iter) )* }
+        Some(_) => {
+            if variant_inhabited_iter
+                .clone()
+                .any(|inhabited| matches!(inhabited, VariantInhabited::True))
+            {
+                // If any variant is unconditionally inhabited, the whole enum is inhabited
+                quote::quote! { true }
+            } else {
+                let variant_inhabited_iter =
+                    variant_inhabited_iter.map(|inhabited| match inhabited {
+                        VariantInhabited::True => {
+                            unreachable!("This case is handled by the outer condition")
+                        }
+                        VariantInhabited::Expr(expr) => expr,
+                    });
+
+                quote::quote! { #((#variant_inhabited_iter))&&* }
+            }
         }
     };
 
@@ -747,17 +827,66 @@ pub fn derive_enum<T, S>(
     let variant_discriminants = (0..variant_names.len()).map(|idx| {
         let inhabited = &variant_inhabiteds[idx];
 
-        match idx {
-            0 => quote::quote! { if #inhabited { 0 } else { usize::MAX } },
+        match (inhabited, idx) {
+            (VariantInhabited::True, 0) => {
+                quote::quote! {0usize}
+            }
+            (VariantInhabited::Expr(expr), 0) => {
+                quote::quote! {if #expr { 0 } else { usize::MAX }}
+            }
             _ => {
-                let prev = &variant_inhabiteds[..idx];
-                quote::quote! {{
-                    if #inhabited {
-                        #(if #prev { 1 } else { 0 })+*
-                    } else {
-                        usize::MAX
+                let base = variant_inhabiteds[..idx]
+                    .iter()
+                    .filter(|inhabited| match inhabited {
+                        VariantInhabited::True => true,
+                        VariantInhabited::Expr(_) => false,
+                    })
+                    .count();
+
+                let variant_inhabiteds =
+                    variant_inhabiteds[..idx]
+                        .iter()
+                        .filter_map(|inhabited| match inhabited {
+                            VariantInhabited::True => None,
+                            VariantInhabited::Expr(expr) => {
+                                Some(quote::quote! { if #expr { 1 } else { 0 } })
+                            }
+                        });
+
+                match (inhabited, base) {
+                    (VariantInhabited::True, 0) => {
+                        quote::quote! {{
+                            let __inhabited_predecessors: usize = #(#variant_inhabiteds)+*;
+                            __inhabited_predecessors
+                        }}
                     }
-                }}
+                    (VariantInhabited::True, _) => {
+                        quote::quote! {{
+                            let __inhabited_predecessors: usize = #base #(+ #variant_inhabiteds)*;
+                            __inhabited_predecessors
+                        }}
+                    }
+                    (VariantInhabited::Expr(expr), 0) => {
+                        quote::quote! {{
+                            if #expr {
+                                let __inhabited_predecessors: usize = #(#variant_inhabiteds)+*;
+                                __inhabited_predecessors
+                            } else {
+                                usize::MAX
+                            }
+                        }}
+                    }
+                    (VariantInhabited::Expr(expr), _) => {
+                        quote::quote! {{
+                            if #expr {
+                                let __inhabited_predecessors: usize = #base #(+ #variant_inhabiteds)*;
+                                __inhabited_predecessors
+                            } else {
+                                usize::MAX
+                            }
+                        }}
+                    }
+                }
             }
         }
     });

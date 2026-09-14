@@ -6,11 +6,16 @@ edition.workspace = true
 [dependencies]
 alkahest-core = { workspace = true }
 alkahest-proc = { workspace = true, optional = true }
+rand.workspace = true
+
+[dev-dependencies]
+rand.workspace = true
 
 [features]
 proc = ["dep:alkahest-proc"]
 alloc = ["alkahest-core/alloc"]
 std = ["alkahest-core/std"]
+default = ["std"]
 
 [[example]]
 name = "new"
@@ -20,4 +25,14 @@ required-features = ["proc"]
 [[example]]
 name = "test"
 path = "examples/test.rs"
+required-features = ["proc"]
+
+[[example]]
+name = "bench"
+path = "examples/bench.rs"
+required-features = ["proc"]
+
+[[example]]
+name = "bench_expanded"
+path = "examples/bench_expanded.rs"
 required-features = ["proc"]

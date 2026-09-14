@@ -66,9 +66,8 @@ impl Sizes {
 impl ops::Add for Sizes {
     type Output = Self;
 
-    #[inline]
     fn add(self, rhs: Self) -> Self {
-        Self {
+        Sizes {
             heap: self.heap + rhs.heap,
             stack: self.stack + rhs.stack,
         }
@@ -76,10 +75,22 @@ impl ops::Add for Sizes {
 }
 
 impl ops::AddAssign for Sizes {
-    #[inline]
+    #[inline(always)]
     fn add_assign(&mut self, rhs: Self) {
         self.heap += rhs.heap;
         self.stack += rhs.stack;
+    }
+}
+
+impl ops::Sub for Sizes {
+    type Output = Self;
+
+    #[inline(always)]
+    fn sub(self, rhs: Self) -> Self {
+        Sizes {
+            heap: self.heap - rhs.heap,
+            stack: self.stack - rhs.stack,
+        }
     }
 }
 
@@ -118,7 +129,6 @@ impl ops::AddAssign for Sizes {
 /// ```
 pub trait Serialize<F: ?Sized> {
     /// Serializes `self` into the given buffer.
-    /// `heap` specifies the size of the buffer's heap occupied prior to this call.
     ///
     /// # Errors
     ///
@@ -135,11 +145,28 @@ pub trait Serialize<F: ?Sized> {
     /// However if sizes are known ahead of time, returning them may improve serialization performance.
     ///
     /// Returning incorrect sizes may lead to corrupted serialization or panics.
-    ///
-    /// This function won't be called if `F` has both [`Formula::EXACT_SIZE`] and [`Formula::HEAPLESS`] set to `true`,
-    /// as size must be obtainable from [`Formula::max_stack_size`] in that case.
+    #[inline]
     fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
         None
+    }
+}
+
+impl<'a, F, T> Serialize<F> for &'a T
+where
+    F: ?Sized,
+    T: Serialize<F> + ?Sized,
+{
+    #[inline]
+    fn serialize<S>(&self, serializer: S) -> Result<(), S::Error>
+    where
+        S: Serializer,
+    {
+        <T as Serialize<F>>::serialize(&**self, serializer)
+    }
+
+    #[inline]
+    fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
+        <T as Serialize<F>>::size_hint::<SIZE_BYTES>(&**self)
     }
 }
 
@@ -180,13 +207,19 @@ pub trait Serializer {
     where
         E: Element + ?Sized,
         T: Serialize<E::Formula> + ?Sized;
+
+    /// Reserve space for one `usize` and return its address.
+    fn reserve_usize(&mut self) -> Result<usize, Self::Error>;
+
+    /// Write one `usize` to address previously obtained via [`Serializer::reserve_usize`]
+    fn write_reserved_usize(&mut self, address: usize, value: usize);
 }
 
 pub(crate) struct SerialzierImpl<'a, B: Buffer, const SIZE_BYTES: usize> {
     sizes: &'a mut Sizes,
     buffer: B,
 
-    // Number of bytes of padding to adde before next element.
+    // Number of bytes of padding to add before next element.
     // It is set when writing direct elements with actual size less than formula's max stack size.
     pad_next: usize,
 }
@@ -195,7 +228,7 @@ impl<'a, B, const SIZE_BYTES: usize> SerialzierImpl<'a, B, SIZE_BYTES>
 where
     B: Buffer,
 {
-    #[inline]
+    #[inline(always)]
     fn new(sizes: &'a mut Sizes, buffer: B) -> Self {
         SerialzierImpl {
             sizes,
@@ -204,25 +237,29 @@ where
         }
     }
 
+    #[inline(always)]
     fn reserved<'b>(
         sizes: &'b mut Sizes,
-        buffer: B::ReservedHeap<'b>,
-    ) -> SerialzierImpl<'b, B::ReservedHeap<'b>, SIZE_BYTES> {
+        buffer: B::Reserved<'b>,
+    ) -> SerialzierImpl<'b, B::Reserved<'b>, SIZE_BYTES> {
         SerialzierImpl::new(sizes, buffer)
     }
 
+    #[inline(always)]
     fn reborrow(&mut self) -> SerialzierImpl<'_, B::Reborrow<'_>, SIZE_BYTES> {
         SerialzierImpl::new(self.sizes, self.buffer.reborrow())
     }
 
-    #[inline]
+    #[inline(never)] // This is sad-path, so we put it on separate function to avoid bloating the main serialization logic.
     fn write_to_heap<E, T>(&mut self, value: &T) -> Result<(), B::Error>
     where
         E: Element + ?Sized,
         T: Serialize<E::Formula> + ?Sized,
     {
         let old_stack = self.sizes.stack;
-        E::serialize(value, self)?;
+        debug_assert_eq!(self.pad_next, 0);
+
+        simple_try!(E::serialize(value, self));
 
         let len = self.sizes.stack - old_stack;
 
@@ -231,17 +268,8 @@ where
 
         self.sizes.heap += len;
         self.sizes.stack = old_stack;
-        Ok(())
-    }
+        self.pad_next = 0;
 
-    #[inline]
-    fn write_padding(&mut self) -> Result<(), B::Error> {
-        if self.pad_next > 0 {
-            self.buffer
-                .pad_stack(self.sizes.heap, self.sizes.stack, self.pad_next)?;
-            self.sizes.stack += self.pad_next;
-            self.pad_next = 0;
-        }
         Ok(())
     }
 }
@@ -261,10 +289,38 @@ where
     /// Returns error if buffer write fails.
     #[inline]
     fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), Self::Error> {
-        self.write_padding()?;
-        self.buffer
-            .write_stack(self.sizes.heap, self.sizes.stack, bytes)?;
+        let mut reserved = simple_try!(self.buffer.reserve(
+            self.sizes.heap,
+            self.sizes.stack,
+            self.pad_next + bytes.len(),
+        ));
+
+        self.sizes.stack += self.pad_next;
+        self.pad_next = 0;
+
+        reserved.write_stack(self.sizes.stack, bytes);
+
         self.sizes.stack += bytes.len();
+
+        Ok(())
+    }
+
+    /// Specialized method to write usize value in `SIZE_BYTES` bytes.
+    #[inline(always)]
+    fn write_usize(&mut self, value: usize) -> Result<(), Self::Error> {
+        let reserved = simple_try!(self.buffer.reserve(
+            self.sizes.heap,
+            self.sizes.stack,
+            self.pad_next + SIZE_BYTES,
+        ));
+
+        self.sizes.stack += self.pad_next;
+        self.pad_next = 0;
+
+        write_usize::<_, SIZE_BYTES>(value, self.sizes.stack, reserved);
+
+        self.sizes.stack += SIZE_BYTES;
+
         Ok(())
     }
 
@@ -283,25 +339,68 @@ where
     {
         assert!(F::INHABITED);
 
-        self.write_padding()?;
+        let _is_zero = const {
+            if let SizeBound::Exact(0) | SizeBound::Bounded(0) = stack_size::<F, SIZE_BYTES>() {
+                debug_assert!(matches!(
+                    heap_size::<F, SIZE_BYTES>(),
+                    SizeBound::Exact(0) | SizeBound::Bounded(0)
+                ));
 
-        if let SizeBound::Exact(0) | SizeBound::Bounded(0) = stack_size::<F, SIZE_BYTES>() {
-            debug_assert!(matches!(
-                heap_size::<F, SIZE_BYTES>(),
-                SizeBound::Exact(0) | SizeBound::Bounded(0)
-            ));
+                true
+            } else {
+                false
+            }
+        };
+
+        #[cfg(not(debug_assertions))]
+        if _is_zero {
+            simple_try!(
+                self.buffer
+                    .reserve(self.sizes.heap, self.sizes.stack, self.pad_next)
+            );
+
+            self.sizes.stack += self.pad_next;
+            self.pad_next = 0;
 
             // No need to serialize zero-sized value.
             // In release builds we simply skip serialization.
-            #[cfg(not(debug_assertions))]
             return Ok(());
         }
 
-        let old_stack = self.sizes.stack;
+        let old_sizes;
 
-        <T as Serialize<F>>::serialize(value, self.reborrow())?;
+        if let Some(sizes) = size_hint::<F, T, SIZE_BYTES>(value) {
+            // If size is known reserve.
 
-        let actual_stack = self.sizes.stack - old_stack;
+            let reserved = simple_try!(self.buffer.reserve(
+                self.sizes.heap,
+                self.sizes.stack,
+                sizes.stack + sizes.heap + self.pad_next,
+            ));
+
+            self.sizes.stack += self.pad_next;
+            self.pad_next = 0;
+
+            old_sizes = *self.sizes;
+
+            let serializer = Self::reserved(&mut self.sizes, reserved);
+            if let Err(err) = <T as Serialize<F>>::serialize(value, serializer) {
+                match err {}
+            }
+        } else {
+            simple_try!(
+                self.buffer
+                    .reserve(self.sizes.heap, self.sizes.stack, self.pad_next)
+            );
+            self.sizes.stack += self.pad_next;
+            self.pad_next = 0;
+
+            old_sizes = *self.sizes;
+
+            simple_try!(<T as Serialize<F>>::serialize(value, self.reborrow()));
+        }
+
+        let actual_sizes = *self.sizes - old_sizes;
 
         match stack_size::<F, SIZE_BYTES>() {
             SizeBound::Unbounded => {
@@ -310,13 +409,30 @@ where
                 self.pad_next = usize::MAX;
             }
             SizeBound::Bounded(max_stack) => {
-                debug_assert!(actual_stack <= max_stack);
-                self.pad_next = old_stack + max_stack - self.sizes.stack;
+                debug_assert!(
+                    actual_sizes.stack <= max_stack,
+                    "{} <= {}",
+                    actual_sizes.stack,
+                    max_stack
+                );
+                self.pad_next = max_stack - actual_sizes.stack;
             }
             SizeBound::Exact(exact_stack) => {
                 // This branch can be chosen at compile time,
                 // so we simply avoid simple calculation of the branch above.
-                debug_assert_eq!(actual_stack, exact_stack);
+                debug_assert_eq!(actual_sizes.stack, exact_stack);
+            }
+        }
+
+        match heap_size::<F, SIZE_BYTES>() {
+            SizeBound::Unbounded => {}
+            SizeBound::Bounded(max_heap) => {
+                debug_assert!(actual_sizes.heap <= max_heap);
+            }
+            SizeBound::Exact(exact_heap) => {
+                // This branch can be chosen at compile time,
+                // so we simply avoid simple calculation of the branch above.
+                debug_assert_eq!(actual_sizes.heap, exact_heap);
             }
         }
 
@@ -337,23 +453,21 @@ where
         E: Element + ?Sized,
         T: Serialize<E::Formula> + ?Sized,
     {
-        const {
-            assert!(E::INHABITED);
-        }
+        assert!(E::INHABITED);
 
         // Can we get size hint for the value?
         match size_hint::<E, T, SIZE_BYTES>(&value) {
             None => {
                 // Size hint is unobtainable, serialize to heap through stack and move to heap.
-                self.write_to_heap::<E, T>(value)?;
+                simple_try!(self.write_to_heap::<E, T>(value));
             }
             Some(promised) => {
                 // Reserive heap space to avoid serializing to stack and moving to heap.
-                let reserved = self.buffer.reserve_heap(
+                let reserved = simple_try!(self.buffer.reserve_heap(
                     self.sizes.heap,
                     self.sizes.stack,
                     promised.total(),
-                )?;
+                ));
 
                 let mut sizes = Sizes {
                     heap: self.sizes.heap,
@@ -377,40 +491,40 @@ where
                     "Serialization used more stack than promised by `Serialize::size_hint`"
                 );
 
-                // Flush reserved stack to heap.
-                self.sizes.heap += sizes.stack;
+                // Flush reserved memory to heap.
+                self.sizes.heap = sizes.total();
             }
         }
 
-        self.write_padding()?;
-
         let address = self.sizes.heap;
-        self.write_usize(address)?;
-
-        Ok(())
+        self.write_usize(address)
     }
 
-    /// Specialized method to write usize value in `SIZE_BYTES` bytes.
-    fn write_usize(&mut self, value: usize) -> Result<(), Self::Error> {
-        self.write_padding()?;
-        write_usize::<_, SIZE_BYTES>(
-            value,
+    fn reserve_usize(&mut self) -> Result<usize, Self::Error> {
+        simple_try!(self.buffer.reserve(
             self.sizes.heap,
             self.sizes.stack,
-            self.buffer.reborrow(),
-        )?;
+            self.pad_next + SIZE_BYTES,
+        ));
+
+        self.sizes.stack += self.pad_next;
+        self.pad_next = 0;
+
+        let reserved = self.sizes.stack;
+
         self.sizes.stack += SIZE_BYTES;
-        Ok(())
+
+        Ok(reserved)
+    }
+
+    fn write_reserved_usize(&mut self, address: usize, value: usize) {
+        write_usize::<_, SIZE_BYTES>(value, address, self.buffer.reborrow())
     }
 }
 
 /// Specialized method to write usize value in `SIZE_BYTES` bytes.
-pub fn write_usize<B, const SIZE_BYTES: usize>(
-    value: usize,
-    heap: usize,
-    stack: usize,
-    mut buffer: B,
-) -> Result<(), B::Error>
+#[inline(always)]
+pub fn write_usize<B, const SIZE_BYTES: usize>(value: usize, stack: usize, mut buffer: B)
 where
     B: Buffer,
 {
@@ -424,20 +538,20 @@ where
         () if SIZE_BYTES < LEN => {
             let max_size = 1usize << (SIZE_BYTES * 8);
             assert!(
-                value < max_size,
+                value <= max_size,
                 "Value too large to fit in SIZE_BYTES bytes ({SIZE_BYTES})"
             );
             let bytes = value.to_le_bytes();
-            buffer.write_stack(heap, stack, &bytes[..SIZE_BYTES])
+            buffer.write_stack(stack, &bytes[..SIZE_BYTES])
         }
         () if SIZE_BYTES > LEN => {
             let mut bytes = [0u8; SIZE_BYTES];
             bytes[..LEN].copy_from_slice(&value.to_le_bytes());
-            buffer.write_stack(heap, stack, &bytes)
+            buffer.write_stack(stack, &bytes)
         }
         () => {
             // SIZE_BYTES == LEN
-            buffer.write_stack(heap, stack, &value.to_le_bytes())
+            buffer.write_stack(stack, &value.to_le_bytes())
         }
     }
 }
@@ -447,7 +561,7 @@ where
 /// Avoids calling [`Serialize::size_hint`] for exact-sized, heapless formulas.
 ///
 /// Should be used by composite [`Serialize`] implementations to implement their own [`Serialize::size_hint`].
-#[inline]
+#[inline(always)]
 pub fn size_hint<
     E: Element + ?Sized,
     T: Serialize<E::Formula> + ?Sized,
@@ -464,6 +578,7 @@ pub fn size_hint<
     }
 }
 
+#[inline(always)]
 pub fn make_serializer<'a, B, const SIZE_BYTES: usize>(
     buffer: B,
     sizes: &'a mut Sizes,
@@ -477,7 +592,6 @@ where
 /// Serializes value into buffer.
 /// Returns total number of bytes written and size of the root value.
 /// The buffer type controls bytes writing and failing strategy.
-#[inline]
 pub fn serialize_into<E, T, B, const SIZE_BYTES: usize>(
     value: &T,
     mut buffer: B,
@@ -487,16 +601,52 @@ where
     T: Serialize<E::Formula>,
     B: Buffer,
 {
-    let mut sizes = Sizes { heap: 0, stack: 0 };
-    {
-        let mut serializer = make_serializer::<_, SIZE_BYTES>(buffer.reborrow(), &mut sizes);
-
-        E::serialize(value, &mut serializer)?;
+    const {
+        assert!(E::INHABITED);
     }
 
-    buffer.move_to_heap(sizes.heap, sizes.stack, sizes.stack);
+    match size_hint::<E, T, SIZE_BYTES>(&value) {
+        None => {
+            let mut sizes = Sizes { heap: 0, stack: 0 };
+            {
+                let mut serializer =
+                    make_serializer::<_, SIZE_BYTES>(buffer.reborrow(), &mut sizes);
 
-    Ok(sizes.total())
+                simple_try!(E::serialize(value, &mut serializer));
+            }
+
+            buffer.move_to_heap(sizes.heap, sizes.stack, sizes.stack);
+
+            Ok(sizes.total())
+        }
+        Some(promised) => {
+            // Reserive heap space to avoid serializing to stack and moving to heap.
+            let reserved = simple_try!(buffer.reserve_heap(0, 0, promised.total()));
+
+            let mut sizes = Sizes { heap: 0, stack: 0 };
+
+            {
+                let mut serializer = make_serializer::<_, SIZE_BYTES>(reserved, &mut sizes);
+                if let Err(err) = E::serialize(value, &mut serializer) {
+                    match err {}
+                }
+            }
+
+            debug_assert_eq!(
+                sizes.stack, promised.stack,
+                "Serialization used different amount of stack than promised by `Serialize::size_hint`"
+            );
+            debug_assert_eq!(
+                sizes.heap, promised.heap,
+                "Serialization used different amount of heap than promised by `Serialize::size_hint`"
+            );
+
+            // No need to move to heap, as exact size was reserved,
+            // so no gap between stack and heap is possible.
+
+            Ok(sizes.total())
+        }
+    }
 }
 
 /// Serializes value into bytes slice.

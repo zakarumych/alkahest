@@ -45,7 +45,7 @@ where
 
     if total.is_none() {
         // Pre-reserve space for length prefix if total size is not known in advance.
-        let _ = buffer.reserve_heap(0, 0, SIZE_BYTES)?;
+        let _ = simple_try!(buffer.reserve_heap(0, 0, SIZE_BYTES));
     }
 
     // Initialize sizes with first `SIZE_BYTES` bytes reserved for length prefix
@@ -57,7 +57,7 @@ where
 
     {
         let mut serializer = make_serializer::<_, SIZE_BYTES>(buffer.reborrow(), &mut sizes);
-        E::serialize(value, &mut serializer)?;
+        simple_try!(E::serialize(value, &mut serializer));
     }
 
     // Move stack to the heap to make serialized data contiguous.
@@ -74,9 +74,7 @@ where
                 }
             };
 
-            if let Err(err) = write_usize::<_, SIZE_BYTES>(actual, 0, 0, reserved) {
-                match err {}
-            }
+            write_usize::<_, SIZE_BYTES>(actual, 0, reserved);
         }
         Some(total) => {
             assert_eq!(
@@ -242,23 +240,20 @@ where
 }
 
 /// Returns the number of bytes of the packed value in the input.
+#[inline]
 pub fn read_pack_size<E, const SIZE_BYTES: usize>(input: &[u8]) -> Result<usize, DeserializeError>
 where
     E: Element + ?Sized,
 {
     let total = total::<E, SIZE_BYTES>();
 
-    let total = match total {
-        None => {
-            if input.len() < SIZE_BYTES {
-                return Err(DeserializeError::OutOfBounds(SIZE_BYTES));
-            }
-            read_usize::<SIZE_BYTES>(&input[..SIZE_BYTES])?
-        }
-        Some(total) => total,
-    };
-
-    Ok(total)
+    match total {
+        None => match input.as_array::<SIZE_BYTES>() {
+            None => Err(DeserializeError::OutOfBounds(SIZE_BYTES)),
+            Some(bytes) => read_usize::<SIZE_BYTES>(bytes),
+        },
+        Some(total) => Ok(total),
+    }
 }
 
 /// Deserializes value from the input.
@@ -279,11 +274,11 @@ where
     E: Element + ?Sized,
     T: Deserialize<'de, E::Formula>,
 {
-    let total = read_pack_size::<E, SIZE_BYTES>(input)?;
+    let total = simple_try!(read_pack_size::<E, SIZE_BYTES>(input));
     if input.len() < total {
         return Err(DeserializeError::OutOfBounds(total));
     }
-    let value = deserialize::<E, T, SIZE_BYTES>(&input[..total])?;
+    let value = simple_try!(deserialize::<E, T, SIZE_BYTES>(&input[..total]));
     Ok((value, total))
 }
 
@@ -307,11 +302,14 @@ where
     E: Element + ?Sized,
     T: Deserialize<'de, E::Formula> + ?Sized,
 {
-    let total = read_pack_size::<E, SIZE_BYTES>(input)?;
+    let total = simple_try!(read_pack_size::<E, SIZE_BYTES>(input));
     if input.len() < total {
         return Err(DeserializeError::OutOfBounds(total));
     }
-    deserialize_in_place::<E, T, SIZE_BYTES>(place, &input[..total])?;
+    simple_try!(deserialize_in_place::<E, T, SIZE_BYTES>(
+        place,
+        &input[..total]
+    ));
     Ok(total)
 }
 
@@ -451,6 +449,7 @@ macro_rules! fixed_size_module {
             }
 
             /// Returns the number of bytes of the packed value in the input.
+            #[inline]
             pub fn read_pack_size<'de, E>(
                 input: &[u8],
             ) -> Result<usize, DeserializeError>

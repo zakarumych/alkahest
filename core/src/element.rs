@@ -12,7 +12,7 @@ use crate::{
 ///
 /// This makes it usage in check, for example it's not possible to wrap formula in `Indirect` twice
 /// and get twice indirected formula, because it makes no sense.
-pub struct Indirect<E: ?Sized>(E);
+pub struct Indirect<E: ?Sized>(pub E);
 
 /// Element of a composite formula.
 ///
@@ -67,7 +67,7 @@ where
 
     const INHABITED: bool = F::INHABITED;
 
-    #[inline(always)]
+    #[inline]
     fn serialize<T, S>(value: &T, serializer: &mut S) -> Result<(), S::Error>
     where
         T: Serialize<F> + ?Sized,
@@ -76,7 +76,7 @@ where
         serializer.write_direct::<F, T>(value)
     }
 
-    #[inline(always)]
+    #[inline]
     fn size_hint<T, const SIZE_BYTES: usize>(value: &T) -> Option<Sizes>
     where
         T: Serialize<F> + ?Sized,
@@ -84,16 +84,16 @@ where
         value.size_hint::<SIZE_BYTES>()
     }
 
-    #[inline(always)]
+    #[inline]
     fn deserialize<'de, T, D>(deserializer: &mut D) -> Result<T, DeserializeError>
     where
         T: Deserialize<'de, F>,
         D: Deserializer<'de>,
     {
-        deserializer.read_direct::<F, T>()
+        deserializer.read_value::<F, T>()
     }
 
-    #[inline(always)]
+    #[inline]
     fn deserialize_in_place<'de, T, D>(
         place: &mut T,
         deserializer: &mut D,
@@ -102,7 +102,7 @@ where
         T: Deserialize<'de, F> + ?Sized,
         D: Deserializer<'de>,
     {
-        deserializer.read_direct_in_place::<F, T>(place)
+        deserializer.read_value_in_place::<F, T>(place)
     }
 }
 
@@ -123,7 +123,7 @@ where
 
     const INHABITED: bool = E::INHABITED;
 
-    #[inline(always)]
+    #[inline]
     fn serialize<T, S>(value: &T, serializer: &mut S) -> Result<(), S::Error>
     where
         T: Serialize<E::Formula> + ?Sized,
@@ -132,28 +132,32 @@ where
         serializer.write_indirect::<E, T>(value)
     }
 
-    #[inline(always)]
+    #[inline]
     fn size_hint<T, const SIZE_BYTES: usize>(value: &T) -> Option<Sizes>
     where
         T: Serialize<E::Formula> + ?Sized,
     {
-        let heap = value.size_hint::<SIZE_BYTES>()?.total();
-        Some(Sizes {
-            stack: SIZE_BYTES,
-            heap,
-        })
+        match value.size_hint::<SIZE_BYTES>() {
+            None => None,
+            Some(sizes) => Some(Sizes {
+                stack: SIZE_BYTES,
+                heap: sizes.total(),
+            }),
+        }
     }
 
-    #[inline(always)]
+    #[inline]
     fn deserialize<'de, T, D>(deserializer: &mut D) -> Result<T, DeserializeError>
     where
         T: Deserialize<'de, E::Formula>,
         D: Deserializer<'de>,
     {
-        deserializer.read_indirect::<E, T>()
+        let address = simple_try!(deserializer.read_usize());
+        let mut heap = deserializer.at(address)?;
+        E::deserialize(&mut heap)
     }
 
-    #[inline(always)]
+    #[inline]
     fn deserialize_in_place<'de, T, D>(
         place: &mut T,
         deserializer: &mut D,
@@ -162,7 +166,9 @@ where
         T: Deserialize<'de, E::Formula> + ?Sized,
         D: Deserializer<'de>,
     {
-        deserializer.read_indirect_in_place::<E, T>(place)
+        let address = simple_try!(deserializer.read_usize());
+        let mut heap = deserializer.at(address)?;
+        E::deserialize_in_place(place, &mut heap)
     }
 }
 
@@ -171,7 +177,7 @@ where
     E: Element + ?Sized,
     T: Serialize<E::Formula>,
 {
-    #[inline(always)]
+    #[inline]
     fn serialize<S>(&self, mut serializer: S) -> Result<(), S::Error>
     where
         S: Serializer,
@@ -179,7 +185,7 @@ where
         E::serialize::<T, S>(&self.0, &mut serializer)
     }
 
-    #[inline(always)]
+    #[inline]
     fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
         E::size_hint::<T, SIZE_BYTES>(&self.0)
     }
@@ -190,16 +196,16 @@ where
     E: Element + ?Sized,
     T: Deserialize<'de, E::Formula>,
 {
-    #[inline(always)]
+    #[inline]
     fn deserialize<D>(mut deserializer: D) -> Result<Self, DeserializeError>
     where
         D: Deserializer<'de>,
     {
-        let value = E::deserialize::<T, D>(&mut deserializer)?;
+        let value = simple_try!(E::deserialize::<T, D>(&mut deserializer));
         Ok(Indirect(value))
     }
 
-    #[inline(always)]
+    #[inline]
     fn deserialize_in_place<D>(&mut self, mut deserializer: D) -> Result<(), DeserializeError>
     where
         D: Deserializer<'de>,
@@ -208,14 +214,17 @@ where
     }
 }
 
+#[inline]
 pub const fn stack_size<E: Element + ?Sized, const SIZE_BYTES: usize>() -> SizeBound {
     E::StackSize::<SIZE_BYTES>::VALUE
 }
 
+#[inline]
 pub const fn heap_size<E: Element + ?Sized, const SIZE_BYTES: usize>() -> SizeBound {
     E::HeapSize::<SIZE_BYTES>::VALUE
 }
 
+#[inline]
 pub const fn inhabited<E: Element + ?Sized>() -> bool {
     E::INHABITED
 }

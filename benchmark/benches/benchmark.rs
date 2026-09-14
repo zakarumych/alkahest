@@ -11,15 +11,15 @@ extern crate rkyv;
 #[cfg(feature = "speedy")]
 extern crate speedy;
 
-use alkahest::{alkahest, Deserialize, FormulaType, Lazy, SerIter, Serialize};
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use alkahest::{Deserialize, Element, Formula, Lazy, List, MakeIter, Serialize, alkahest};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 
 #[cfg(feature = "rkyv")]
 use bytecheck::CheckBytes;
 use rand::{
+    Rng, SeedableRng,
     distributions::{Alphanumeric, DistString},
     rngs::SmallRng,
-    Rng, SeedableRng,
 };
 
 #[derive(Debug, Clone, Formula, Serialize, Deserialize)]
@@ -85,7 +85,10 @@ pub enum ServerMessageRead<'de> {
     ClientChat { client_id: u64, message: &'de str },
 }
 
-#[derive(Debug, Formula, Serialize, Deserialize)]
+#[derive(Debug)]
+#[alkahest(Formula where G: Element)]
+#[alkahest(for<X> Serialize<NetPacket<X>> where X: Element, G: Serialize<X::Formula>)]
+#[alkahest(for<X> Deserialize<NetPacket<X>> where X: Element, G: Deserialize<'de, X::Formula>)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(
     feature = "rkyv",
@@ -98,15 +101,14 @@ pub struct NetPacket<G> {
 }
 
 #[derive(Debug)]
-#[alkahest(for<X: FormulaType> Serialize<NetPacket<X>> where G: Serialize<[X]>)]
+#[alkahest(for<X: Element> Serialize<NetPacket<X>> where G: Serialize<List<X>>)]
 pub struct NetPacketWrite<G> {
     pub game_messages: G,
 }
 
-#[derive(Debug)]
-#[alkahest(Deserialize<'de, NetPacket<G>> where G: FormulaType)]
+#[alkahest(Deserialize<'de, NetPacket<G>> where G: Element)]
 pub struct NetPacketRead<'de, G> {
-    pub game_messages: Lazy<'de, [G]>,
+    pub game_messages: Lazy<'de, List<G>>,
 }
 
 fn get_string(rng: &mut impl Rng) -> String {
@@ -121,7 +123,7 @@ fn messages<'a>(mut rng: impl Rng + 'a, len: usize) -> impl Iterator<Item = Game
         }),
         1 => GameMessage::Client(ClientMessage::Chat(get_string(&mut rng))),
         2 => GameMessage::Server(ServerMessage::ClientChat {
-            client_id: rng.gen(),
+            client_id: rng.r#gen(),
             message: get_string(&mut rng),
         }),
         3 => GameMessage::Server(ServerMessage::ServerData(rng.gen_range(0..10))),
@@ -145,12 +147,11 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         group.bench_function("serialize", |b| {
             b.iter(|| {
                 size = alkahest::serialize_to_vec::<NetPacket<GameMessage>, _>(
-                    NetPacketWrite {
-                        game_messages: SerIter(messages(rng.clone(), black_box(LEN))),
+                    &NetPacketWrite {
+                        game_messages: MakeIter(|| messages(rng.clone(), black_box(LEN))),
                     },
                     &mut buffer,
-                )
-                .0;
+                );
             })
         });
 
@@ -162,7 +163,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
                 >(&buffer[..size])
                 .unwrap();
 
-                for message in packet.game_messages.iter::<GameMessageRead>() {
+                for message in packet.game_messages.iter::<GameMessageRead>().unwrap() {
                     match message.unwrap() {
                         GameMessageRead::Client(ClientMessageRead::ClientData {
                             nickname,

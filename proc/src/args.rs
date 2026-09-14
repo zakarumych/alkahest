@@ -298,17 +298,19 @@ fn impl_for_each_type_param(generics: &syn::Generics, bound: &str) -> Option<syn
             .type_params()
             .map(|param| {
                 WherePredicate::Type(syn::PredicateType {
+                    attrs: Vec::new(),
                     lifetimes: None,
-                    bounded_ty: syn::TypePath {
+                    bounded_ty: syn::Type::Path(syn::TypePath {
+                        attrs: Vec::new(),
                         qself: None,
                         path: syn::Path::from(param.ident.clone()),
-                    }
-                    .into(),
+                    }),
                     colon_token: syn::Token![:](Span::call_site()),
                     bounds: std::iter::once(syn::TypeParamBound::Trait(syn::TraitBound {
                         paren_token: None,
-                        modifier: syn::TraitBoundModifier::None,
                         lifetimes: None,
+                        modifiers: syn::TraitBoundModifiers::default(),
+                        maybe: None,
                         path: syn::Path {
                             leading_colon: Some(syn::Token![::](Span::call_site())),
                             segments: [

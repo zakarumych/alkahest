@@ -6,6 +6,8 @@ use crate::{
     serialize::{Serialize, Serializer, Sizes},
 };
 
+// Array of `N` elements of type `T` can be serialized as a list of `N` elements of type `E` if `T` can be serialized as `E`,
+// and N is within the bounds of the list formula.
 impl<E, T, const N: usize, const MIN: usize, const MAX: usize> Serialize<List<E, MIN, MAX>>
     for [T; N]
 where
@@ -18,12 +20,12 @@ where
         S: Serializer,
     {
         const {
-            assert!(N >= MIN && N <= MAX); // This should be trait bound, but it is not yet supported in Rust
-            assert!(N == 0 || E::INHABITED);
+            assert!(N >= MIN && N <= MAX); // This should be trait bound, but it is not yet supported in Rust.
+            assert!(N == 0 || E::INHABITED); // Either empty or inhabited element type.
         }
 
         for item in self {
-            E::serialize(item, &mut serializer)?;
+            simple_try!(E::serialize(item, &mut serializer));
         }
 
         Ok(())
@@ -44,20 +46,12 @@ where
 
         match (stack_size::<E, SIZE_BYTES>(), heap_size::<E, SIZE_BYTES>()) {
             (SizeBound::Bounded(max_stack), SizeBound::Exact(heap_size)) => {
-                // For heapless types, we can optimize size hint calculation
-                // by using max stack size for all but the last element.
-                // and adding size hint for the last element.
-
                 sizes.add_stack((N - 1) * max_stack);
-                sizes += self.last().unwrap().size_hint::<SIZE_BYTES>()?;
                 sizes.add_heap(N * heap_size);
+                sizes.stack += simple_some!(self.last().unwrap().size_hint::<SIZE_BYTES>()).stack;
                 Some(sizes)
             }
             (SizeBound::Exact(max_stack), SizeBound::Exact(heap_size)) => {
-                // For heapless types, we can optimize size hint calculation
-                // by using max stack size for all but the last element.
-                // and adding size hint for the last element.
-
                 sizes.add_stack(N * max_stack);
                 sizes.add_heap(N * heap_size);
                 Some(sizes)
@@ -66,7 +60,7 @@ where
                 // For short slices, just sum up size hints.
                 0..4 => {
                     for item in self {
-                        sizes += E::size_hint::<T, SIZE_BYTES>(item)?;
+                        sizes += simple_some!(E::size_hint::<T, SIZE_BYTES>(item));
                     }
                     Some(sizes)
                 }
@@ -76,6 +70,8 @@ where
     }
 }
 
+// Array of `N` elements of type `T` can be deserialized from a list of `N` elements of type `E` if `T` can be deserialized from `E`,
+// and list formula is bounded to exactly `N` elements.
 impl<'de, E, T, const N: usize> Deserialize<'de, List<E, N, N>> for [T; N]
 where
     E: Element,
@@ -122,9 +118,14 @@ where
         }
 
         for i in 0..N {
-            E::deserialize_in_place::<T, D>(&mut self[i], &mut deserializer)?;
+            simple_try!(E::deserialize_in_place::<T, D>(
+                &mut self[i],
+                &mut deserializer
+            ));
         }
 
         Ok(())
     }
 }
+
+formula_alias!(for[E: Element, const N: usize] [E; N] as List<E, N, N>);
