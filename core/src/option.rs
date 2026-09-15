@@ -1,4 +1,5 @@
 use crate::{
+    advanced::size_hint,
     deserialize::{Deserialize, DeserializeError, Deserializer},
     element::{Element, heap_size, stack_size},
     formula::{Formula, SizeBound, SizeType},
@@ -69,23 +70,22 @@ where
 
     #[inline]
     fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
-        None
-        // match self {
-        //     None => Some(if E::INHABITED {
-        //         Sizes::with_stack(1)
-        //     } else {
-        //         Sizes::ZERO
-        //     }),
-        //     Some(value) => {
-        //         debug_assert!(
-        //             E::INHABITED,
-        //             "Cannot serialize Some(_) for uninhabited option type"
-        //         );
-        //         let mut sizes = Sizes::with_stack(1);
-        //         sizes += simple_some!(E::size_hint::<T, SIZE_BYTES>(value));
-        //         Some(sizes)
-        //     }
-        // }
+        match self {
+            None => Some(if E::INHABITED {
+                Sizes::with_stack(1)
+            } else {
+                Sizes::ZERO
+            }),
+            Some(value) => {
+                debug_assert!(
+                    E::INHABITED,
+                    "Cannot serialize Some(_) for uninhabited option type"
+                );
+                let mut sizes = Sizes::with_stack(1);
+                sizes += simple_some!(size_hint::<E, T, SIZE_BYTES>(value));
+                Some(sizes)
+            }
+        }
     }
 }
 

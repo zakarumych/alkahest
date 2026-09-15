@@ -25,6 +25,8 @@ pub trait Buffer {
     where
         Self: 'a;
 
+    const RESERVED_IS_SELF: bool;
+
     /// Reborrow this buffer.
     fn reborrow(&mut self) -> Self::Reborrow<'_>;
 
@@ -75,6 +77,8 @@ impl Buffer for DryBuffer {
     type Reborrow<'a> = Self;
     type Reserved<'a> = Self;
 
+    const RESERVED_IS_SELF: bool = true;
+
     #[inline(always)]
     fn reborrow(&mut self) -> DryBuffer {
         *self
@@ -124,6 +128,8 @@ impl<'a> Buffer for &'a mut [u8] {
         = &'b mut [u8]
     where
         'a: 'b;
+
+    const RESERVED_IS_SELF: bool = true;
 
     #[inline(always)]
     fn reborrow(&mut self) -> &'_ mut [u8] {
@@ -222,6 +228,8 @@ impl<'a> Buffer for CheckedFixedBuffer<'a> {
     where
         'a: 'b;
 
+    const RESERVED_IS_SELF: bool = false;
+
     #[inline(always)]
     fn reborrow(&mut self) -> CheckedFixedBuffer<'_> {
         CheckedFixedBuffer { buf: self.buf }
@@ -298,6 +306,8 @@ impl<'a> Buffer for MaybeFixedBuffer<'a> {
         = MaybeFixedBuffer<'b>
     where
         'a: 'b;
+
+    const RESERVED_IS_SELF: bool = true;
 
     #[inline(always)]
     fn reborrow(&mut self) -> MaybeFixedBuffer<'_> {
@@ -419,6 +429,8 @@ impl<'a> Buffer for VecBuffer<'a> {
         = &'b mut [u8]
     where
         'a: 'b;
+
+    const RESERVED_IS_SELF: bool = false;
 
     #[inline(always)]
     fn reborrow(&mut self) -> VecBuffer<'_> {

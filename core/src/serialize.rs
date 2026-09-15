@@ -357,9 +357,9 @@ where
 
         let old_sizes;
 
-        if
-        // !B::reserved_is_self() &&
-        let Some(sizes) = size_hint::<F, T, SIZE_BYTES>(value) {
+        if !B::RESERVED_IS_SELF
+            && let Some(sizes) = const { const_size_hint::<F, T, SIZE_BYTES>() }
+        {
             // If size is known reserve.
 
             let reserved = simple_try!(self.buffer.reserve(
@@ -551,11 +551,18 @@ where
     }
 }
 
-/// Returns size hint for serializing value according to formula `F`.
-///
-/// Avoids calling [`Serialize::size_hint`] for exact-sized, heapless formulas.
-///
-/// Should be used by composite [`Serialize`] implementations to implement their own [`Serialize::size_hint`].
+#[inline(always)]
+pub const fn const_size_hint<
+    E: Element + ?Sized,
+    T: Serialize<E::Formula> + ?Sized,
+    const SIZE_BYTES: usize,
+>() -> Option<Sizes> {
+    match const { (stack_size::<E, SIZE_BYTES>(), heap_size::<E, SIZE_BYTES>()) } {
+        (SizeBound::Exact(stack), SizeBound::Exact(heap)) => Some(Sizes { stack, heap }),
+        _ => None,
+    }
+}
+
 #[inline(always)]
 pub fn size_hint<
     E: Element + ?Sized,
@@ -570,11 +577,6 @@ pub fn size_hint<
     }
 }
 
-/// Returns size hint for serializing value according to formula `F`.
-///
-/// Avoids calling [`Serialize::size_hint`] for exact-sized, heapless formulas.
-///
-/// Should be used by composite [`Serialize`] implementations to implement their own [`Serialize::size_hint`].
 #[inline(always)]
 pub fn size_hint_padded<
     E: Element + ?Sized,

@@ -38,7 +38,7 @@ macro_rules! impl_primitive {
 
             #[inline]
             fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
-                None
+                unreachable!()
                 // Some(Sizes{ heap: 0, stack: size_of::<$ty>()})
             }
         }
@@ -55,7 +55,7 @@ macro_rules! impl_primitive {
 
                 #[inline]
                 fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
-                    None
+                    unreachable!()
                     // Some(Sizes{ heap: 0, stack: size_of::<$ty>()})
                 }
             }
