@@ -126,7 +126,7 @@ pub fn derive_impl(
             let variant_idx_serialize = variant.map(|variant| {
                 let idx = quote::format_ident!("__ALKAHEST_DISCRIMINANT_OF_{}", variant);
                 quote::quote! {
-                    ::alkahest::private::serialize_discriminant(<#formula>::#idx, <#formula>::__ALKAHEST_DISCRIMINANT_COUNT, &mut __serializer)?;
+                    ::alkahest::simple_try!(::alkahest::private::serialize_discriminant(<#formula>::#idx, <#formula>::__ALKAHEST_DISCRIMINANT_COUNT, &mut __serializer));
                 }
             });
 
@@ -157,11 +157,16 @@ pub fn derive_impl(
                 let bound_field = bound_field(idx, field);
 
                 let serialize = quote::quote! {
-                    #with_element .serialize(#bound_field, &mut __serializer)?;
+                    ::alkahest::simple_try!(#with_element .serialize(#bound_field, &mut __serializer));
                 };
 
+                let size_hint = if idx + 1 == data.fields.len() {
+                    quote::quote!(size_hint)
+                } else {
+                    quote::quote!(size_hint_padded)
+                };
                 let add_size_hint = quote::quote! {
-                    __total_size += #with_element.size_hint::<_, __SIZE_BYTES>(#bound_field)?;
+                    __total_size += ::alkahest::simple_some!(#with_element.#size_hint::<_, __SIZE_BYTES>(#bound_field));
                 };
 
                 (serialize, add_size_hint, check_idx)
@@ -217,7 +222,7 @@ pub fn derive_impl(
                 let variant_idx_serialize = {
                     let idx = quote::format_ident!("__ALKAHEST_DISCRIMINANT_OF_{}", variant);
                     quote::quote! {
-                        ::alkahest::private::serialize_discriminant(<#formula>::#idx, <#formula>::__ALKAHEST_DISCRIMINANT_COUNT, &mut __serializer)?;
+                        ::alkahest::simple_try!(::alkahest::private::serialize_discriminant(<#formula>::#idx, <#formula>::__ALKAHEST_DISCRIMINANT_COUNT, &mut __serializer));
                     }
                 };
 
@@ -234,11 +239,16 @@ pub fn derive_impl(
                     let bound_field = bound_field(idx, field);
 
                     let serialize = quote::quote! {
-                        #with_element.serialize(#bound_field, &mut __serializer)?;
+                        ::alkahest::simple_try!(#with_element.serialize(#bound_field, &mut __serializer));
                     };
 
+                    let size_hint = if idx + 1 == data_variant.fields.len() {
+                        quote::quote!(size_hint)
+                    } else {
+                        quote::quote!(size_hint_padded)
+                    };
                     let add_size_hint = quote::quote! {
-                        __total_size += #with_element.size_hint::<_, __SIZE_BYTES>(#bound_field)?;
+                        __total_size += ::alkahest::simple_some!(#with_element.#size_hint::<_, __SIZE_BYTES>(#bound_field));
                     };
 
                     (serialize, add_size_hint, check_idx)

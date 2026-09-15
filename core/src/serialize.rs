@@ -395,7 +395,7 @@ where
 
         let actual_sizes = *self.sizes - old_sizes;
 
-        match stack_size::<F, SIZE_BYTES>() {
+        match const { stack_size::<F, SIZE_BYTES>() } {
             SizeBound::Unbounded => {
                 // It is impossible to write padding for unbounded element.
                 // Thus we fence it with too large padding that will cause next write to fail.
@@ -417,7 +417,7 @@ where
             }
         }
 
-        match heap_size::<F, SIZE_BYTES>() {
+        match const { heap_size::<F, SIZE_BYTES>() } {
             SizeBound::Unbounded => {}
             SizeBound::Bounded(max_heap) => {
                 debug_assert!(actual_sizes.heap <= max_heap);
@@ -533,7 +533,7 @@ where
         () if SIZE_BYTES < LEN => {
             let max_size = 1usize << (SIZE_BYTES * 8);
             assert!(
-                value <= max_size,
+                value < max_size,
                 "Value too large to fit in SIZE_BYTES bytes ({SIZE_BYTES})"
             );
             let bytes = value.to_le_bytes();
@@ -564,12 +564,34 @@ pub fn size_hint<
 >(
     value: &T,
 ) -> Option<Sizes> {
-    match (stack_size::<E, SIZE_BYTES>(), heap_size::<E, SIZE_BYTES>()) {
-        (SizeBound::Exact(stack_size), SizeBound::Exact(heap_size)) => Some(Sizes {
-            heap: heap_size,
-            stack: stack_size,
-        }),
+    match const { (stack_size::<E, SIZE_BYTES>(), heap_size::<E, SIZE_BYTES>()) } {
+        (SizeBound::Exact(stack), SizeBound::Exact(heap)) => Some(Sizes { stack, heap }),
         _ => E::size_hint::<T, SIZE_BYTES>(value),
+    }
+}
+
+/// Returns size hint for serializing value according to formula `F`.
+///
+/// Avoids calling [`Serialize::size_hint`] for exact-sized, heapless formulas.
+///
+/// Should be used by composite [`Serialize`] implementations to implement their own [`Serialize::size_hint`].
+#[inline(always)]
+pub fn size_hint_padded<
+    E: Element + ?Sized,
+    T: Serialize<E::Formula> + ?Sized,
+    const SIZE_BYTES: usize,
+>(
+    value: &T,
+) -> Option<Sizes> {
+    match const { (stack_size::<E, SIZE_BYTES>(), heap_size::<E, SIZE_BYTES>()) } {
+        (SizeBound::Bounded(stack) | SizeBound::Exact(stack), SizeBound::Exact(heap)) => {
+            Some(Sizes { stack, heap })
+        }
+        (SizeBound::Bounded(stack) | SizeBound::Exact(stack), _) => Some(Sizes {
+            stack,
+            heap: simple_some!(E::size_hint::<T, SIZE_BYTES>(value)).heap,
+        }),
+        (SizeBound::Unbounded, _) => E::size_hint::<T, SIZE_BYTES>(value),
     }
 }
 

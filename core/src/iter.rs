@@ -1,8 +1,7 @@
 use crate::{
-    Element, SizeBound, heap_size,
+    Element,
     list::List,
     serialize::{Serialize, Serializer, Sizes},
-    stack_size,
 };
 
 pub struct MakeIter<F>(pub F);
@@ -39,74 +38,57 @@ where
     }
 
     fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
-        let mut iter = (self.0)();
+        // Materializing iterator and iterating it is too slow for size_hint.
+
+        // let mut iter = (self.0)();
 
         if !E::INHABITED {
-            debug_assert!(
-                iter.next().is_none(),
-                "For uninhabited element type, iterator can only be empty"
-            );
+            // debug_assert!(
+            //     iter.next().is_none(),
+            //     "For uninhabited element type, iterator can only be empty"
+            // );
 
             // For uninhabited element type, slice can only be empty
             return Some(Sizes::ZERO);
         }
 
-        match iter.size_hint() {
-            (lower, Some(upper)) if lower == upper => {
-                // Exact size case.
+        // let mut sizes = Sizes::with_stack(SIZE_BYTES);
 
-                let len = lower;
+        // match iter.size_hint() {
+        //     (lower, Some(upper)) if lower == upper => {
+        //         // Exact size case.
+        //         let len = lower;
 
-                let mut sizes = Sizes::with_stack(SIZE_BYTES);
+        //         if len == 0 {
+        //             return Some(sizes);
+        //         }
 
-                if len == 0 {
-                    return Some(sizes);
-                }
+        //         match const { (stack_size::<E, SIZE_BYTES>(), heap_size::<E, SIZE_BYTES>()) } {
+        //             (SizeBound::Exact(max_stack), SizeBound::Exact(heap_size)) => {
+        //                 sizes.add_stack(len * max_stack);
+        //                 sizes.add_heap(len * heap_size);
+        //                 return Some(sizes);
+        //             }
+        //             _ => {}
+        //         }
+        //     }
+        //     _ => {}
+        // }
 
-                match (stack_size::<E, SIZE_BYTES>(), heap_size::<E, SIZE_BYTES>()) {
-                    (SizeBound::Bounded(max_stack), SizeBound::Exact(heap_size)) => {
-                        sizes.add_stack((len - 1) * max_stack);
-                        sizes.add_heap(len * heap_size);
-                        sizes.stack +=
-                            simple_some!(iter.last().unwrap().size_hint::<SIZE_BYTES>()).stack;
-                        Some(sizes)
-                    }
-                    (SizeBound::Exact(max_stack), SizeBound::Exact(heap_size)) => {
-                        sizes.add_stack(len * max_stack);
-                        sizes.add_heap(len * heap_size);
-                        Some(sizes)
-                    }
-                    _ => match len {
-                        // For short slices, just sum up size hints.
-                        0..4 => {
-                            for item in iter.by_ref().take(4) {
-                                sizes += simple_some!(E::size_hint::<T, SIZE_BYTES>(&item));
-                            }
-                            debug_assert!(
-                                iter.next().is_none(),
-                                "Iterator should be empty after taking 4 elements"
-                            );
-                            Some(sizes)
-                        }
-                        _ => None,
-                    },
-                }
-            }
-            (lower, _) if lower > 4 => None,
-            (lower, Some(upper)) if lower > upper => None,
-            _ => {
-                let mut sizes = Sizes::with_stack(SIZE_BYTES);
+        // let Some(mut item) = iter.next() else {
+        //     return Some(sizes);
+        // };
 
-                for item in iter.by_ref().take(4) {
-                    sizes += simple_some!(E::size_hint::<T, SIZE_BYTES>(&item));
-                }
+        // for _ in 0..4 {
+        //     if let Some(next) = iter.next() {
+        //         sizes += simple_some!(size_hint_padded::<E, T, SIZE_BYTES>(&item));
+        //         item = next;
+        //     } else {
+        //         sizes += simple_some!(size_hint::<E, T, SIZE_BYTES>(&item));
+        //         return Some(sizes);
+        //     }
+        // }
 
-                if iter.next().is_some() {
-                    None
-                } else {
-                    Some(sizes)
-                }
-            }
-        }
+        None
     }
 }

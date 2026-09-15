@@ -1,11 +1,34 @@
 use crate::{
     Deserialize, DeserializeError, Deserializer,
-    element::{Element, Indirect},
+    element::{Element, Indirect, stack_size},
+    formula::SizeBound,
     list::List,
     serialize::{Serialize, Serializer, Sizes},
 };
 
 use alloc::vec::Vec;
+
+fn validate_length<'de, E: Element, D: Deserializer<'de>>(
+    deserializer: &D,
+    len: usize,
+) -> Result<(), DeserializeError> {
+    with_size_bytes!(SIZE_BYTES = deserializer.size_bytes() => {
+        {
+            let required = match stack_size::<E, SIZE_BYTES>() {
+                SizeBound::Exact(size) => size.checked_mul(len),
+                // Only the final element may omit trailing padding.
+                SizeBound::Bounded(size) => size.checked_mul(len.saturating_sub(1)),
+                SizeBound::Unbounded => Some(0),
+            };
+            match required {
+                Some(required) if required <= deserializer.input().len() => Ok(()),
+                _ => Err(DeserializeError::WrongLength),
+            }
+        }
+    } else {
+        Err(DeserializeError::Incompatible)
+    })
+}
 
 impl<E, T> Serialize<List<E>> for Vec<T>
 where
@@ -22,7 +45,8 @@ where
 
     #[inline]
     fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
-        Serialize::<List<E>>::size_hint::<SIZE_BYTES>(&self[..])
+        None
+        // Serialize::<List<E>>::size_hint::<SIZE_BYTES>(&self[..])
     }
 }
 
@@ -51,10 +75,15 @@ where
             len
         };
 
-        vec.reserve_exact(len);
+        simple_try!(validate_length::<E, _>(&deserializer, len));
 
         for _ in 0..len {
-            vec.push(simple_try!(E::deserialize(&mut deserializer)));
+            let value = simple_try!(E::deserialize(&mut deserializer));
+            simple_try!(
+                vec.try_reserve(1)
+                    .map_err(|_| DeserializeError::WrongLength)
+            );
+            vec.push(value);
         }
 
         Ok(vec)
@@ -79,9 +108,7 @@ where
             len
         };
 
-        if self.capacity() < len {
-            self.reserve_exact(len - self.len());
-        };
+        simple_try!(validate_length::<E, _>(&deserializer, len));
 
         let in_place = self.len().min(len);
         let extend = len - in_place;
@@ -90,8 +117,15 @@ where
             simple_try!(E::deserialize_in_place(&mut self[i], &mut deserializer));
         }
         for _ in 0..extend {
-            self.push(simple_try!(E::deserialize(&mut deserializer)));
+            let value = simple_try!(E::deserialize(&mut deserializer));
+            simple_try!(
+                self.try_reserve(1)
+                    .map_err(|_| DeserializeError::WrongLength)
+            );
+            self.push(value);
         }
+
+        self.truncate(len);
 
         Ok(())
     }

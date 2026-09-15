@@ -314,6 +314,10 @@ impl<'a> Buffer for MaybeFixedBuffer<'a> {
         stack: usize,
         len: usize,
     ) -> Result<MaybeFixedBuffer<'_>, Infallible> {
+        if *self.exhausted {
+            return Ok(self.reborrow());
+        }
+
         debug_assert!(self.buf.len() >= heap && self.buf.len() - heap >= stack);
         if self.buf.len() - heap - stack < len {
             *self.exhausted = true;
@@ -343,12 +347,21 @@ impl<'a> Buffer for MaybeFixedBuffer<'a> {
         stack: usize,
         len: usize,
     ) -> Result<MaybeFixedBuffer<'_>, Infallible> {
+        if *self.exhausted {
+            return Ok(self.reborrow());
+        }
+
         debug_assert!(self.buf.len() >= heap && self.buf.len() - heap >= stack);
         if self.buf.len() - heap - stack < len {
             *self.exhausted = true;
+            return Ok(self.reborrow());
         }
 
-        Ok(self.reborrow())
+        let end = heap + len;
+        Ok(MaybeFixedBuffer {
+            buf: &mut self.buf[..end],
+            exhausted: self.exhausted,
+        })
     }
 }
 
@@ -375,7 +388,8 @@ impl VecBuffer<'_> {
     #[inline(never)]
     fn do_reserve(&mut self, heap: usize, stack: usize, additional: usize) {
         let old_len = self.buf.len();
-        self.buf.resize(heap + stack + additional, 0);
+        self.buf.reserve(heap + stack + additional - old_len);
+        self.buf.resize(self.buf.capacity(), 0);
 
         let new_len = self.buf.len();
         self.buf

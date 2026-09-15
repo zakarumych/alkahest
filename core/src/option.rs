@@ -9,7 +9,9 @@ pub struct OptionStackSize<E: Element, const SIZE_BYTES: usize>(E);
 
 impl<E: Element, const SIZE_BYTES: usize> SizeType for OptionStackSize<E, SIZE_BYTES> {
     const VALUE: SizeBound = if E::INHABITED {
-        stack_size::<E, SIZE_BYTES>().add(SizeBound::Exact(1))
+        stack_size::<E, SIZE_BYTES>()
+            .max(SizeBound::Exact(0))
+            .add(SizeBound::Exact(1))
     } else {
         SizeBound::Exact(0)
     };
@@ -19,7 +21,7 @@ pub struct OptionHeapSize<E: Element, const SIZE_BYTES: usize>(E);
 
 impl<E: Element, const SIZE_BYTES: usize> SizeType for OptionHeapSize<E, SIZE_BYTES> {
     const VALUE: SizeBound = if E::INHABITED {
-        heap_size::<E, SIZE_BYTES>()
+        heap_size::<E, SIZE_BYTES>().max(SizeBound::Exact(0))
     } else {
         // if E is uninhabited, option can only be None, and thus has no heap size
         SizeBound::Exact(0)
@@ -67,22 +69,23 @@ where
 
     #[inline]
     fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
-        match self {
-            None => Some(if E::INHABITED {
-                Sizes::with_stack(1)
-            } else {
-                Sizes::ZERO
-            }),
-            Some(value) => {
-                debug_assert!(
-                    E::INHABITED,
-                    "Cannot serialize Some(_) for uninhabited option type"
-                );
-                let mut sizes = Sizes::with_stack(1);
-                sizes += simple_some!(E::size_hint::<T, SIZE_BYTES>(value));
-                Some(sizes)
-            }
-        }
+        None
+        // match self {
+        //     None => Some(if E::INHABITED {
+        //         Sizes::with_stack(1)
+        //     } else {
+        //         Sizes::ZERO
+        //     }),
+        //     Some(value) => {
+        //         debug_assert!(
+        //             E::INHABITED,
+        //             "Cannot serialize Some(_) for uninhabited option type"
+        //         );
+        //         let mut sizes = Sizes::with_stack(1);
+        //         sizes += simple_some!(E::size_hint::<T, SIZE_BYTES>(value));
+        //         Some(sizes)
+        //     }
+        // }
     }
 }
 

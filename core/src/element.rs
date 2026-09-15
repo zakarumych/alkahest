@@ -187,7 +187,8 @@ where
 
     #[inline(always)]
     fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
-        E::size_hint::<T, SIZE_BYTES>(&self.0)
+        None
+        // E::size_hint::<T, SIZE_BYTES>(&self.0)
     }
 }
 

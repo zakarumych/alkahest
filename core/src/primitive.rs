@@ -38,7 +38,8 @@ macro_rules! impl_primitive {
 
             #[inline]
             fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
-                Some(Sizes{ heap: 0, stack: size_of::<$ty>()})
+                None
+                // Some(Sizes{ heap: 0, stack: size_of::<$ty>()})
             }
         }
 
@@ -54,7 +55,8 @@ macro_rules! impl_primitive {
 
                 #[inline]
                 fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
-                    Some(Sizes{ heap: 0, stack: size_of::<$ty>()})
+                    None
+                    // Some(Sizes{ heap: 0, stack: size_of::<$ty>()})
                 }
             }
         )*
@@ -136,10 +138,11 @@ impl Serialize<bool> for bool {
 
     #[inline]
     fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
-        Some(Sizes {
-            heap: 0,
-            stack: size_of::<u8>(),
-        })
+        None
+        // Some(Sizes {
+        //     heap: 0,
+        //     stack: size_of::<u8>(),
+        // })
     }
 }
 

@@ -57,15 +57,19 @@ macro_rules! formula_serialize_deserialize {
         {
             const VALUE: SizeBound = {
                 #[allow(unused_mut)]
-                let mut total = stack_size::<$at::Formula, SIZE_BYTES>();
+                let mut total = SizeBound::Exact(0);
                 $(
-                    let next = stack_size::<$a::Formula, SIZE_BYTES>();
+                    let next = stack_size::<$a, SIZE_BYTES>();
                     if total.is_unbounded() && !next.is_zero() {
                         panic!("Tuple contains stack-unbounded element that is not the last one");
                     }
                     total = total.add(next);
                 )*
-                total
+                let next = stack_size::<$at, SIZE_BYTES>();
+                if total.is_unbounded() && !next.is_zero() {
+                    panic!("Tuple contains stack-unbounded element that is not the last one");
+                }
+                total.add(next)
             };
         }
 
@@ -76,9 +80,9 @@ macro_rules! formula_serialize_deserialize {
         {
             const VALUE: SizeBound = {
                 #[allow(unused_mut)]
-                let mut total = heap_size::<$at::Formula, SIZE_BYTES>();
+                let mut total = heap_size::<$at, SIZE_BYTES>();
                 $(
-                    total = total.add(heap_size::<$a::Formula, SIZE_BYTES>());
+                    total = total.add(heap_size::<$a, SIZE_BYTES>());
                 )*
                 total
             };
@@ -126,7 +130,11 @@ macro_rules! formula_serialize_deserialize {
                 let mut sizes = simple_some!(size_hint::<$at, _, SIZE_BYTES>($bt));
 
                 $(
-                    sizes += simple_some!(size_hint::<$a, _, SIZE_BYTES>($b));
+                    let mut next = simple_some!(size_hint::<$a, _, SIZE_BYTES>($b));
+                    if let SizeBound::Bounded(max_stack) = stack_size::<$a, SIZE_BYTES>() {
+                        next.stack = max_stack;
+                    }
+                    sizes += next;
                 )*
 
                 Some(sizes)

@@ -1,4 +1,5 @@
 use crate::{
+    advanced::size_hint,
     element::{Element, Indirect, heap_size, stack_size},
     formula::SizeBound,
     list::List,
@@ -41,11 +42,12 @@ where
             return Some(sizes);
         }
 
-        match (stack_size::<E, SIZE_BYTES>(), heap_size::<E, SIZE_BYTES>()) {
+        match const { (stack_size::<E, SIZE_BYTES>(), heap_size::<E, SIZE_BYTES>()) } {
             (SizeBound::Bounded(max_stack), SizeBound::Exact(heap_size)) => {
                 sizes.add_stack((self.len() - 1) * max_stack);
                 sizes.add_heap(self.len() * heap_size);
-                sizes.stack += simple_some!(self.last().unwrap().size_hint::<SIZE_BYTES>()).stack;
+                sizes.stack +=
+                    simple_some!(size_hint::<E, T, SIZE_BYTES>(self.last().unwrap())).stack;
                 Some(sizes)
             }
             (SizeBound::Exact(max_stack), SizeBound::Exact(heap_size)) => {
@@ -56,8 +58,14 @@ where
             _ => match self.len() {
                 // For short slices, just sum up size hints.
                 0..4 => {
-                    for item in self {
-                        sizes += simple_some!(E::size_hint::<T, SIZE_BYTES>(item));
+                    for (index, item) in self.iter().enumerate() {
+                        let mut next = simple_some!(size_hint::<E, T, SIZE_BYTES>(item));
+                        if index + 1 < self.len() {
+                            if let SizeBound::Bounded(max_stack) = stack_size::<E, SIZE_BYTES>() {
+                                next.stack = max_stack;
+                            }
+                        }
+                        sizes += next;
                     }
                     Some(sizes)
                 }

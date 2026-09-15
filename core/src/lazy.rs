@@ -6,7 +6,8 @@ use crate::{
         Deserialize, DeserializeError, Deserializer, DeserializerImpl, cold_err, deserialize,
         deserialize_in_place, read_usize,
     },
-    element::Element,
+    element::{Element, stack_size},
+    formula::SizeBound,
 };
 
 pub struct Lazy<'de, F: ?Sized> {
@@ -102,14 +103,25 @@ where
     F: Formula + ?Sized,
 {
     #[inline]
-    fn deserialize<D>(deserializer: D) -> Result<Self, DeserializeError>
+    fn deserialize<D>(mut deserializer: D) -> Result<Self, DeserializeError>
     where
         D: Deserializer<'de>,
     {
         let input = deserializer.input();
+        let size_bytes = deserializer.size_bytes();
+        let stack = with_size_bytes!(SIZE_BYTES = size_bytes => {
+            match const { stack_size::<F, SIZE_BYTES>() } {
+                SizeBound::Exact(size) => size,
+                SizeBound::Bounded(size) => size.min(input.len()),
+                SizeBound::Unbounded => input.len(),
+            }
+        } else {
+            return cold_err(DeserializeError::Incompatible);
+        });
+        simple_try!(deserializer.read_bytes(stack));
         Ok(Lazy {
             input,
-            size_bytes: deserializer.size_bytes(),
+            size_bytes,
             marker: core::marker::PhantomData,
         })
     }

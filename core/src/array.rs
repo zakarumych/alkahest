@@ -1,4 +1,5 @@
 use crate::{
+    advanced::{size_hint, size_hint_padded},
     deserialize::{Deserialize, DeserializeError, Deserializer},
     element::{Element, heap_size, stack_size},
     formula::SizeBound,
@@ -24,6 +25,10 @@ where
             assert!(N == 0 || E::INHABITED); // Either empty or inhabited element type.
         }
 
+        if MIN != MAX && E::INHABITED {
+            simple_try!(serializer.write_usize(N));
+        }
+
         for item in self {
             simple_try!(E::serialize(item, &mut serializer));
         }
@@ -38,17 +43,22 @@ where
             assert!(N == 0 || E::INHABITED);
         }
 
+        let mut sizes = if MIN != MAX && E::INHABITED {
+            Sizes::with_stack(SIZE_BYTES)
+        } else {
+            Sizes::ZERO
+        };
+
         if N == 0 {
-            return Some(Sizes::ZERO);
+            return Some(sizes);
         }
 
-        let mut sizes = Sizes::ZERO;
-
-        match (stack_size::<E, SIZE_BYTES>(), heap_size::<E, SIZE_BYTES>()) {
+        match const { (stack_size::<E, SIZE_BYTES>(), heap_size::<E, SIZE_BYTES>()) } {
             (SizeBound::Bounded(max_stack), SizeBound::Exact(heap_size)) => {
                 sizes.add_stack((N - 1) * max_stack);
                 sizes.add_heap(N * heap_size);
-                sizes.stack += simple_some!(self.last().unwrap().size_hint::<SIZE_BYTES>()).stack;
+                sizes.stack +=
+                    simple_some!(size_hint::<E, _, SIZE_BYTES>(self.last().unwrap())).stack;
                 Some(sizes)
             }
             (SizeBound::Exact(max_stack), SizeBound::Exact(heap_size)) => {
@@ -58,10 +68,11 @@ where
             }
             _ => match N {
                 // For short slices, just sum up size hints.
-                0..4 => {
-                    for item in self {
-                        sizes += simple_some!(E::size_hint::<T, SIZE_BYTES>(item));
+                1..4 => {
+                    for item in &self[..N - 1] {
+                        sizes += simple_some!(size_hint_padded::<E, T, SIZE_BYTES>(item));
                     }
+                    sizes += simple_some!(size_hint::<E, T, SIZE_BYTES>(&self[N - 1]));
                     Some(sizes)
                 }
                 _ => None,

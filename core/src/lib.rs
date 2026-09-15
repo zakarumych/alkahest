@@ -176,6 +176,7 @@ macro_rules! with_size_bytes {
 }
 
 // Macro to avoid `?` operator for `Result`.
+#[macro_export]
 macro_rules! simple_try {
     ($x:expr) => {{
         match $x {
@@ -186,6 +187,7 @@ macro_rules! simple_try {
 }
 
 // Macro to avoid `?` operator for `Option`.
+#[macro_export]
 macro_rules! simple_some {
     ($x:expr) => {{
         match $x {
@@ -243,7 +245,7 @@ pub mod advanced {
             Buffer, BufferExhausted, CheckedFixedBuffer, DryBuffer, MaybeFixedBuffer, VecBuffer,
         },
         packet::pack_into,
-        serialize::{make_serializer, serialize_into, size_hint, write_usize},
+        serialize::{make_serializer, serialize_into, size_hint, size_hint_padded, write_usize},
     };
 }
 
@@ -384,8 +386,9 @@ pub use self::large::*;
 pub mod private {
     use crate::{
         Deserialize, Deserializer,
+        advanced::size_hint,
         deserialize::DeserializeError,
-        element::{Element, heap_size, stack_size},
+        element::{Element, stack_size},
         formula::{Formula, SizeBound},
         serialize::{Serialize, Serializer, Sizes},
     };
@@ -436,12 +439,20 @@ pub mod private {
         where
             T: Serialize<E::Formula> + ?Sized,
         {
-            match const { (stack_size::<E, SIZE_BYTES>(), heap_size::<E, SIZE_BYTES>()) } {
-                (SizeBound::Exact(stack), SizeBound::Exact(heap)) => {
-                    return Some(Sizes { stack, heap });
-                }
-                _ => E::size_hint::<T, SIZE_BYTES>(value),
+            size_hint::<E, T, SIZE_BYTES>(value)
+        }
+
+        /// Size hint including stack padding before the next field.
+        #[inline(always)]
+        pub fn size_hint_padded<T, const SIZE_BYTES: usize>(self, value: &T) -> Option<Sizes>
+        where
+            T: Serialize<E::Formula> + ?Sized,
+        {
+            let mut sizes = simple_some!(size_hint::<E, T, SIZE_BYTES>(value));
+            if let SizeBound::Bounded(max_stack) = const { stack_size::<E, SIZE_BYTES>() } {
+                sizes.stack = max_stack;
             }
+            Some(sizes)
         }
 
         #[inline(always)]

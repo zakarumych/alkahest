@@ -161,9 +161,9 @@ impl<'de, const SIZE_BYTES: usize> DeserializerImpl<'de, SIZE_BYTES> {
     where
         F: Formula + ?Sized,
     {
-        match stack_size::<F, SIZE_BYTES>() {
+        match const { stack_size::<F, SIZE_BYTES>() } {
             SizeBound::Bounded(max_stack) => {
-                debug_assert!(*new_len >= self.input.len() - max_stack);
+                debug_assert!(*new_len >= self.input.len().saturating_sub(max_stack));
 
                 #[cfg(debug_assertions)]
                 if self.input.len() < max_stack {

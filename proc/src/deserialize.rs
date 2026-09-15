@@ -135,11 +135,11 @@ pub fn derive_impl(
                 let bound_field = bound_field(idx, field);
 
                 let deserialize = quote::quote! {
-                    let #bound_field = #with_element .deserialize(&mut __deserializer)?;
+                    let #bound_field = ::alkahest::simple_try!(#with_element .deserialize(&mut __deserializer));
                 };
 
                 let deserialize_in_place = quote::quote! {
-                    #with_element .deserialize_in_place(#bound_field, &mut __deserializer)?;
+                    ::alkahest::simple_try!(#with_element .deserialize_in_place(#bound_field, &mut __deserializer));
                 };
 
                 (deserialize, deserialize_in_place, check_idx)
@@ -178,7 +178,7 @@ pub fn derive_impl(
         }
         syn::Data::Enum(data) => {
             let deserialize_discriminant = quote::quote! {
-                let __discriminant = ::alkahest::private::deserialize_discriminant(<#formula>::__ALKAHEST_DISCRIMINANT_COUNT, &mut __deserializer)?;
+                let __discriminant = ::alkahest::simple_try!(::alkahest::private::deserialize_discriminant(<#formula>::__ALKAHEST_DISCRIMINANT_COUNT, &mut __deserializer));
             };
 
             let variants = data.variants.iter().map(|data_variant| {
@@ -206,11 +206,11 @@ pub fn derive_impl(
                     let bound_field = bound_field(idx, field);
 
                     let deserialize = quote::quote! {
-                        let #bound_field = #with_element.deserialize(&mut __deserializer)?;
+                        let #bound_field = ::alkahest::simple_try!(#with_element.deserialize(&mut __deserializer));
                     };
 
                     let deserialize_in_place = quote::quote! {
-                        #with_element.deserialize_in_place(#bound_field, &mut __deserializer)?;
+                        ::alkahest::simple_try!(#with_element.deserialize_in_place(#bound_field, &mut __deserializer));
                     };
 
                     (deserialize, deserialize_in_place, check_idx)
@@ -278,7 +278,7 @@ pub fn derive_impl(
                             #(#variants_deserialize_in_place)*
                             _ => {
                                 // Different variant, cannot deserialize in place
-                                *self = <Self as ::alkahest::private::DeserializeEnumVariant<#deserializer_lifetime, #formula>>::deserialize_enum_variant(__discriminant, __deserializer)?;
+                                *self = ::alkahest::simple_try!(<Self as ::alkahest::private::DeserializeEnumVariant<#deserializer_lifetime, #formula>>::deserialize_enum_variant(__discriminant, __deserializer));
                                 ::alkahest::private::Ok(())
                             }
                         }
