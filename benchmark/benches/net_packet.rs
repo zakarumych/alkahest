@@ -7,7 +7,7 @@ extern crate rkyv;
 #[cfg(feature = "speedy")]
 extern crate speedy;
 
-use alkahest::{Deserialize, Element, Formula, Lazy, List, MakeIter, Serialize, alkahest};
+use alkahest::{Deserialize, Element, Formula, Lazy, List, Serialize, alkahest};
 use criterion::{Criterion, black_box};
 
 #[cfg(feature = "rkyv")]
@@ -18,7 +18,7 @@ use rand::{
     rngs::SmallRng,
 };
 
-#[derive(Debug, Clone, Formula, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Formula, Serialize, Deserialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(
     feature = "rkyv",
@@ -31,7 +31,7 @@ pub enum GameMessage {
     Server(ServerMessage),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 #[cfg_attr(feature = "speedy", derive(speedy::Readable))]
 #[alkahest(Deserialize<'de, GameMessage>)]
 pub enum GameMessageRead<'de> {
@@ -39,7 +39,7 @@ pub enum GameMessageRead<'de> {
     Server(ServerMessageRead<'de>),
 }
 
-#[derive(Debug, Clone, Formula, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Formula, Serialize, Deserialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(
     feature = "rkyv",
@@ -52,7 +52,7 @@ pub enum ClientMessage {
     Chat(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 #[cfg_attr(feature = "speedy", derive(speedy::Readable))]
 #[alkahest(Deserialize<'de, ClientMessage>)]
 pub enum ClientMessageRead<'de> {
@@ -60,7 +60,7 @@ pub enum ClientMessageRead<'de> {
     Chat(&'de str),
 }
 
-#[derive(Debug, Clone, Formula, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Formula, Serialize, Deserialize)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(
     feature = "rkyv",
@@ -73,7 +73,7 @@ pub enum ServerMessage {
     ClientChat { client_id: u64, message: String },
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 #[cfg_attr(feature = "speedy", derive(speedy::Readable))]
 #[alkahest(Deserialize<'de, ServerMessage>)]
 pub enum ServerMessageRead<'de> {
@@ -81,7 +81,7 @@ pub enum ServerMessageRead<'de> {
     ClientChat { client_id: u64, message: &'de str },
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 #[alkahest(Formula where G: Element)]
 #[alkahest(for<X> Serialize<NetPacket<X>> where X: Element, G: Serialize<X::Formula>)]
 #[alkahest(for<X> Deserialize<NetPacket<X>> where X: Element, G: Deserialize<'de, X::Formula>)]
@@ -94,12 +94,6 @@ pub enum ServerMessageRead<'de> {
 #[cfg_attr(feature = "speedy", derive(speedy::Writable, speedy::Readable))]
 pub struct NetPacket<G> {
     pub game_messages: Vec<G>,
-}
-
-#[derive(Debug)]
-#[alkahest(for<X: Element> Serialize<NetPacket<X>> where G: Serialize<List<X>>)]
-pub struct NetPacketWrite<G> {
-    pub game_messages: G,
 }
 
 #[alkahest(Deserialize<'de, NetPacket<G>> where G: Element)]
@@ -130,88 +124,137 @@ fn messages<'a>(mut rng: impl Rng + 'a, len: usize) -> impl Iterator<Item = Game
     .filter(|msg| !matches!(msg, GameMessage::Server(ServerMessage::ServerData(3..=10))))
 }
 
-pub fn criterion_benchmark(c: &mut Criterion) {
-    let mut buffer = Vec::with_capacity(1 << 14);
-    buffer.resize(buffer.capacity(), 0);
-    let rng = SmallRng::seed_from_u64(42);
+fn as_read(message: &GameMessage) -> GameMessageRead<'_> {
+    match message {
+        GameMessage::Client(ClientMessage::ClientData { nickname, clan }) => {
+            GameMessageRead::Client(ClientMessageRead::ClientData { nickname, clan })
+        }
+        GameMessage::Client(ClientMessage::Chat(message)) => {
+            GameMessageRead::Client(ClientMessageRead::Chat(message))
+        }
+        GameMessage::Server(ServerMessage::ServerData(data)) => {
+            GameMessageRead::Server(ServerMessageRead::ServerData(*data))
+        }
+        GameMessage::Server(ServerMessage::ClientChat { client_id, message }) => {
+            GameMessageRead::Server(ServerMessageRead::ClientChat {
+                client_id: *client_id,
+                message,
+            })
+        }
+    }
+}
 
+fn observe_message(message: GameMessageRead<'_>) {
+    match message {
+        GameMessageRead::Client(ClientMessageRead::ClientData { nickname, clan }) => {
+            black_box(nickname);
+            black_box(clan);
+        }
+        GameMessageRead::Client(ClientMessageRead::Chat(message)) => {
+            black_box(message);
+        }
+        GameMessageRead::Server(ServerMessageRead::ServerData(data)) => {
+            black_box(data);
+        }
+        GameMessageRead::Server(ServerMessageRead::ClientChat { client_id, message }) => {
+            black_box(client_id);
+            black_box(message);
+        }
+    }
+}
+
+fn observe(packet: &NetPacket<GameMessage>) {
+    for message in &packet.game_messages {
+        observe_message(as_read(message));
+    }
+}
+
+#[cfg(feature = "rkyv")]
+fn archived_as_read(message: &ArchivedGameMessage) -> GameMessageRead<'_> {
+    match message {
+        ArchivedGameMessage::Client(ArchivedClientMessage::ClientData { nickname, clan }) => {
+            GameMessageRead::Client(ClientMessageRead::ClientData {
+                nickname: nickname.as_str(),
+                clan: clan.as_str(),
+            })
+        }
+        ArchivedGameMessage::Client(ArchivedClientMessage::Chat(message)) => {
+            GameMessageRead::Client(ClientMessageRead::Chat(message.as_str()))
+        }
+        ArchivedGameMessage::Server(ArchivedServerMessage::ServerData(data)) => {
+            GameMessageRead::Server(ServerMessageRead::ServerData(*data))
+        }
+        ArchivedGameMessage::Server(ArchivedServerMessage::ClientChat { client_id, message }) => {
+            GameMessageRead::Server(ServerMessageRead::ClientChat {
+                client_id: *client_id,
+                message: message.as_str(),
+            })
+        }
+    }
+}
+
+pub fn criterion_benchmark(c: &mut Criterion) {
     const LEN: usize = 100;
-    let mut size = 0;
+    let packet = NetPacket {
+        game_messages: messages(SmallRng::seed_from_u64(42), LEN).collect(),
+    };
+    let expected_read: Vec<_> = packet.game_messages.iter().map(as_read).collect();
 
     {
         let mut group = c.benchmark_group("net-packet/alkahest");
+        let mut encoded = Vec::new();
+        let size = alkahest::serialize_to_vec::<NetPacket<GameMessage>, _>(&packet, &mut encoded);
+        let encoded = &encoded[..size];
+        assert_eq!(
+            alkahest::deserialize::<NetPacket<GameMessage>, NetPacket<GameMessage>>(encoded)
+                .expect("valid network packet"),
+            packet
+        );
+        let read =
+            alkahest::deserialize::<NetPacket<GameMessage>, NetPacketRead<GameMessage>>(encoded)
+                .expect("valid lazy network packet");
+        assert_eq!(
+            read.game_messages
+                .iter::<GameMessageRead>()
+                .expect("valid message list")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("valid messages"),
+            expected_read
+        );
+
+        let mut output = Vec::with_capacity(size);
         group.bench_function("serialize", |b| {
             b.iter(|| {
-                size = alkahest::serialize_to_vec::<NetPacket<GameMessage>, _>(
-                    &NetPacketWrite {
-                        game_messages: MakeIter(|| messages(rng.clone(), black_box(LEN))),
-                    },
-                    &mut buffer,
-                );
+                black_box(alkahest::serialize_to_vec::<NetPacket<GameMessage>, _>(
+                    black_box(&packet),
+                    &mut output,
+                ));
+                black_box(&output);
             })
         });
-
         group.bench_function("read", |b| {
             b.iter(|| {
-                let packet = alkahest::deserialize::<
+                let read = alkahest::deserialize::<
                     NetPacket<GameMessage>,
                     NetPacketRead<GameMessage>,
-                >(&buffer[..size])
-                .unwrap();
-
-                for message in packet.game_messages.iter::<GameMessageRead>().unwrap() {
-                    match message.unwrap() {
-                        GameMessageRead::Client(ClientMessageRead::ClientData {
-                            nickname,
-                            clan,
-                        }) => {
-                            black_box(nickname);
-                            black_box(clan);
-                        }
-                        GameMessageRead::Client(ClientMessageRead::Chat(message)) => {
-                            black_box(message);
-                        }
-                        GameMessageRead::Server(ServerMessageRead::ServerData(data)) => {
-                            black_box(data);
-                        }
-                        GameMessageRead::Server(ServerMessageRead::ClientChat {
-                            client_id,
-                            message,
-                        }) => {
-                            black_box(client_id);
-                            black_box(message);
-                        }
-                    }
+                >(black_box(encoded))
+                .expect("valid lazy network packet");
+                for message in read
+                    .game_messages
+                    .iter::<GameMessageRead>()
+                    .expect("valid message list")
+                {
+                    observe_message(message.expect("valid message"));
                 }
             })
         });
-
         group.bench_function("deserialize", |b| {
             b.iter(|| {
-                let packet =
-                    alkahest::deserialize::<NetPacket<GameMessage>, NetPacket<GameMessage>>(
-                        &buffer[..size],
-                    )
-                    .unwrap();
-
-                for message in packet.game_messages.iter() {
-                    match message {
-                        GameMessage::Client(ClientMessage::ClientData { nickname, clan }) => {
-                            black_box(nickname);
-                            black_box(clan);
-                        }
-                        GameMessage::Client(ClientMessage::Chat(message)) => {
-                            black_box(message);
-                        }
-                        GameMessage::Server(ServerMessage::ServerData(data)) => {
-                            black_box(data);
-                        }
-                        GameMessage::Server(ServerMessage::ClientChat { client_id, message }) => {
-                            black_box(client_id);
-                            black_box(message);
-                        }
-                    }
-                }
+                let read = alkahest::deserialize::<NetPacket<GameMessage>, NetPacket<GameMessage>>(
+                    black_box(encoded),
+                )
+                .expect("valid network packet");
+                observe(&read);
             })
         });
     }
@@ -219,203 +262,135 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     #[cfg(feature = "bincode")]
     {
         let mut group = c.benchmark_group("net-packet/bincode");
+        let encoded = bincode::serialize(&packet).expect("serializable network packet");
+        assert_eq!(
+            bincode::deserialize::<NetPacket<GameMessage>>(&encoded).expect("valid network packet"),
+            packet
+        );
+        let mut output = Vec::with_capacity(encoded.len());
         group.bench_function("serialize", |b| {
             b.iter(|| {
-                buffer.clear();
-                bincode::serialize_into(
-                    &mut buffer,
-                    &NetPacket {
-                        game_messages: messages(rng.clone(), black_box(LEN)).collect(),
-                    },
-                )
-                .unwrap();
+                output.clear();
+                bincode::serialize_into(&mut output, black_box(&packet))
+                    .expect("serializable network packet");
+                black_box(&output);
             })
         });
-
         group.bench_function("deserialize", |b| {
             b.iter(|| {
-                let packet = bincode::deserialize::<NetPacket<GameMessage>>(&buffer).unwrap();
-
-                for message in packet.game_messages.iter() {
-                    match message {
-                        GameMessage::Client(ClientMessage::ClientData { nickname, clan }) => {
-                            black_box(nickname);
-                            black_box(clan);
-                        }
-                        GameMessage::Client(ClientMessage::Chat(message)) => {
-                            black_box(message);
-                        }
-                        GameMessage::Server(ServerMessage::ServerData(data)) => {
-                            black_box(data);
-                        }
-                        GameMessage::Server(ServerMessage::ClientChat { client_id, message }) => {
-                            black_box(client_id);
-                            black_box(message);
-                        }
-                    }
-                }
+                let read = bincode::deserialize::<NetPacket<GameMessage>>(black_box(&encoded))
+                    .expect("valid network packet");
+                observe(&read);
             })
         });
     }
 
     #[cfg(feature = "rkyv")]
     {
-        let mut group = c.benchmark_group("net-packet/rkyv");
-        let mut rkyv_ser = rkyv::ser::serializers::AllocSerializer::<1024>::default();
-        let mut pos = 0;
+        use rkyv::{
+            Deserialize,
+            ser::{
+                Serializer,
+                serializers::{AlignedSerializer, AllocSerializer},
+            },
+        };
 
+        let mut group = c.benchmark_group("net-packet/rkyv");
+        let encoded = rkyv::to_bytes::<_, 16536>(&packet).expect("serializable network packet");
+        let archive = rkyv::check_archived_root::<NetPacket<GameMessage>>(&encoded)
+            .expect("valid archived network packet");
+        let decoded: NetPacket<GameMessage> = archive
+            .deserialize(&mut rkyv::Infallible)
+            .expect("infallible network packet deserialization");
+        assert_eq!(decoded, packet);
+        assert_eq!(
+            archive
+                .game_messages
+                .iter()
+                .map(archived_as_read)
+                .collect::<Vec<_>>(),
+            expected_read
+        );
+
+        let mut output = rkyv::AlignedVec::with_capacity(encoded.len());
         group.bench_function("serialize", |b| {
             b.iter(|| {
-                use rkyv::ser::Serializer;
-
-                pos = rkyv_ser
-                    .serialize_value(&NetPacket {
-                        game_messages: messages(rng.clone(), black_box(LEN)).collect(),
-                    })
-                    .unwrap()
+                output.clear();
+                let mut serializer = AllocSerializer::<16536>::new(
+                    AlignedSerializer::new(std::mem::take(&mut output)),
+                    Default::default(),
+                    Default::default(),
+                );
+                black_box(
+                    serializer
+                        .serialize_value(black_box(&packet))
+                        .expect("serializable network packet"),
+                );
+                output = serializer.into_serializer().into_inner();
+                black_box(&output);
             })
         });
-
-        let vec: rkyv::AlignedVec = rkyv_ser.into_serializer().into_inner();
         group.bench_function("read", |b| {
             b.iter(|| {
-                let packet =
-                    rkyv::check_archived_value::<NetPacket<GameMessage>>(&vec[..], pos).unwrap();
-
-                for message in packet.game_messages.iter() {
-                    match message {
-                        ArchivedGameMessage::Client(ArchivedClientMessage::ClientData {
-                            nickname,
-                            clan,
-                        }) => {
-                            black_box(nickname);
-                            black_box(clan);
-                        }
-                        ArchivedGameMessage::Client(ArchivedClientMessage::Chat(message)) => {
-                            black_box(message);
-                        }
-                        ArchivedGameMessage::Server(ArchivedServerMessage::ServerData(data)) => {
-                            black_box(data);
-                        }
-                        ArchivedGameMessage::Server(ArchivedServerMessage::ClientChat {
-                            client_id,
-                            message,
-                        }) => {
-                            black_box(client_id);
-                            black_box(message);
-                        }
-                    }
+                let read = rkyv::check_archived_root::<NetPacket<GameMessage>>(black_box(&encoded))
+                    .expect("valid archived network packet");
+                for message in read.game_messages.iter() {
+                    observe_message(archived_as_read(message));
                 }
             })
         });
-
         group.bench_function("deserialize", |b| {
             b.iter(|| {
-                use rkyv::Deserialize;
                 let archive =
-                    rkyv::check_archived_value::<NetPacket<GameMessage>>(&vec[..], pos).unwrap();
-
-                let packet: NetPacket<GameMessage> =
-                    archive.deserialize(&mut rkyv::Infallible).unwrap();
-
-                for message in packet.game_messages.iter() {
-                    match message {
-                        GameMessage::Client(ClientMessage::ClientData { nickname, clan }) => {
-                            black_box(nickname);
-                            black_box(clan);
-                        }
-                        GameMessage::Client(ClientMessage::Chat(message)) => {
-                            black_box(message);
-                        }
-                        GameMessage::Server(ServerMessage::ServerData(data)) => {
-                            black_box(data);
-                        }
-                        GameMessage::Server(ServerMessage::ClientChat { client_id, message }) => {
-                            black_box(client_id);
-                            black_box(message);
-                        }
-                    }
-                }
+                    rkyv::check_archived_root::<NetPacket<GameMessage>>(black_box(&encoded))
+                        .expect("valid archived network packet");
+                let read: NetPacket<GameMessage> = archive
+                    .deserialize(&mut rkyv::Infallible)
+                    .expect("infallible network packet deserialization");
+                observe(&read);
             })
         });
     }
 
     #[cfg(feature = "speedy")]
     {
+        use speedy::{Readable, Writable};
+
         let mut group = c.benchmark_group("net-packet/speedy");
-
-        buffer.clear();
-        buffer.resize(buffer.capacity(), 0);
-
+        let encoded = packet.write_to_vec().expect("serializable network packet");
+        assert_eq!(
+            NetPacket::<GameMessage>::read_from_buffer(&encoded).expect("valid network packet"),
+            packet
+        );
+        assert_eq!(
+            NetPacket::<GameMessageRead>::read_from_buffer(&encoded)
+                .expect("valid borrowed network packet")
+                .game_messages,
+            expected_read
+        );
+        let mut output = vec![0; encoded.len()];
         group.bench_function("serialize", |b| {
             b.iter(|| {
-                speedy::Writable::write_to_buffer(
-                    &NetPacket {
-                        game_messages: messages(rng.clone(), black_box(LEN)).collect(),
-                    },
-                    &mut buffer,
-                )
-                .unwrap();
+                black_box(&packet)
+                    .write_to_buffer(&mut output)
+                    .expect("serializable network packet");
+                black_box(&output);
             })
         });
-
         group.bench_function("read", |b| {
             b.iter(|| {
-                let packet =
-                    <NetPacket<GameMessageRead> as speedy::Readable<_>>::read_from_buffer(&buffer)
-                        .unwrap();
-
-                for message in packet.game_messages.iter() {
-                    match message {
-                        GameMessageRead::Client(ClientMessageRead::ClientData {
-                            nickname,
-                            clan,
-                        }) => {
-                            black_box(nickname);
-                            black_box(clan);
-                        }
-                        GameMessageRead::Client(ClientMessageRead::Chat(message)) => {
-                            black_box(message);
-                        }
-                        GameMessageRead::Server(ServerMessageRead::ServerData(data)) => {
-                            black_box(data);
-                        }
-                        GameMessageRead::Server(ServerMessageRead::ClientChat {
-                            client_id,
-                            message,
-                        }) => {
-                            black_box(client_id);
-                            black_box(message);
-                        }
-                    }
+                let read = NetPacket::<GameMessageRead>::read_from_buffer(black_box(&encoded))
+                    .expect("valid borrowed network packet");
+                for message in read.game_messages {
+                    observe_message(message);
                 }
             })
         });
-
         group.bench_function("deserialize", |b| {
             b.iter(|| {
-                let packet =
-                    <NetPacket<GameMessage> as speedy::Readable<_>>::read_from_buffer(&buffer)
-                        .unwrap();
-
-                for message in packet.game_messages.iter() {
-                    match message {
-                        GameMessage::Client(ClientMessage::ClientData { nickname, clan }) => {
-                            black_box(nickname);
-                            black_box(clan);
-                        }
-                        GameMessage::Client(ClientMessage::Chat(message)) => {
-                            black_box(message);
-                        }
-                        GameMessage::Server(ServerMessage::ServerData(data)) => {
-                            black_box(data);
-                        }
-                        GameMessage::Server(ServerMessage::ClientChat { client_id, message }) => {
-                            black_box(client_id);
-                            black_box(message);
-                        }
-                    }
-                }
+                let read = NetPacket::<GameMessage>::read_from_buffer(black_box(&encoded))
+                    .expect("valid network packet");
+                observe(&read);
             })
         });
     }
