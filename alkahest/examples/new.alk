@@ -25,5 +25,5 @@ formula X = {
 };
 
 formula UsesParent = {
-    parent: .Parent,
+    parent: .Parent, // Parent is defined in Rust.
 };

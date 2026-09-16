@@ -1,10 +1,12 @@
+#![allow(unused)]
+
 use alkahest::{Deserialize, Element, Formula, Indirect, Mixture, Never, Serialize, alkahest};
 
 #[alkahest(Formula)]
 struct Parent;
 
-#[alkahest]
-mod new {}
+#[alkahest(path = "$/examples/new.alk")]
+mod new; // Requires Rust 1.99+
 
 #[derive(Mixture)]
 struct TryString<S> {
@@ -62,6 +64,4 @@ pub enum GameType {
     Spectator,
 }
 
-fn main() {
-    // use new::Foo;
-}
+fn main() {}

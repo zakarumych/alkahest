@@ -80,6 +80,7 @@ pub fn include_formulas(item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn alkahest(attr: TokenStream, item: TokenStream) -> TokenStream {
     if let Ok(item) = syn::parse::<module::ModuleItem>(item.clone()) {
+        // return item;
         return module::alkahest(attr, item);
     }
 

@@ -403,17 +403,7 @@ pub fn module_from_path(
     path: &std::path::Path,
     span: Span,
 ) -> Result<alkahest_parse::Module, syn::Error> {
-    let source_path = proc_macro::Span::call_site()
-        .local_file()
-        .ok_or_else(|| syn::Error::new(span, "Cannot determine the path of the source file"))?;
-
-    let base_path = source_path.parent().ok_or_else(|| {
-        syn::Error::new(span, "Cannot determine the directory of the source file")
-    })?;
-
-    let module_path = base_path.join(path);
-
-    let module_source = std::fs::read_to_string(&*module_path)
+    let module_source = std::fs::read_to_string(path)
         .map_err(|err| syn::Error::new(span, format!("Failed to read module file: {}", err)))?;
 
     let module = alkahest_parse::parse_module(module_source)

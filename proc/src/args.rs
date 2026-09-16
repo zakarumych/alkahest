@@ -4,6 +4,7 @@ use syn::{GenericParam, Ident, WherePredicate, parse::Lookahead1, token::Comma};
 
 proc_easy::easy_token!(path);
 proc_easy::easy_token!(formula);
+proc_easy::easy_token!(generate_module_file);
 proc_easy::easy_token!(Formula);
 proc_easy::easy_token!(Serialize);
 proc_easy::easy_token!(Deserialize);
@@ -20,6 +21,7 @@ proc_easy::easy_terminated! {
     @(Comma)
     pub struct ModuleArgs {
         pub path: Option<ModulePath>,
+        pub generate_module_file: Option<generate_module_file>,
     }
 }
 
