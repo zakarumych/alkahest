@@ -8,7 +8,7 @@ pub struct MakeIter<F>(pub F);
 
 impl<E, T, F, I> Serialize<List<E>> for MakeIter<F>
 where
-    E: Element,
+    E: Element + ?Sized,
     T: Serialize<E::Formula>,
     F: Fn() -> I,
     I: Iterator<Item = T>,

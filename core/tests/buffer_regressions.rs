@@ -1,17 +1,17 @@
-use alkahest_core::{Element, Indirect, List, MakeIter, Serialize, advanced::write_usize, small};
+use alkahest_core::{Formula, Indirect, List, MakeIter, Serialize, advanced::write_usize, small};
 
-fn check_buffers<E, T>(value: &T)
+fn check_buffers<F, T>(value: &T)
 where
-    E: Element,
-    T: Serialize<E::Formula>,
+    F: Formula,
+    T: Serialize<F>,
 {
-    let required = small::serialized_size::<E, _>(value);
+    let required = small::serialized_size::<F, _>(value);
     let mut expected = vec![0; required];
-    assert_eq!(small::serialize::<E, _>(value, &mut expected), Ok(required));
+    assert_eq!(small::serialize::<F, _>(value, &mut expected), Ok(required));
 
     for capacity in 0..=required + 8 {
         let mut actual = vec![0xa5; capacity];
-        match small::serialize_or_size::<E, _>(value, &mut actual) {
+        match small::serialize_or_size::<F, _>(value, &mut actual) {
             Ok(written) => {
                 assert!(capacity >= required);
                 assert_eq!(written, required);
@@ -24,13 +24,13 @@ where
         }
     }
 
-    let required = small::pack_size::<E, _>(value);
+    let required = small::pack_size::<F, _>(value);
     let mut expected = vec![0; required];
-    assert_eq!(small::pack::<E, _>(value, &mut expected), Ok(required));
+    assert_eq!(small::pack::<F, _>(value, &mut expected), Ok(required));
 
     for capacity in 0..=required + 8 {
         let mut actual = vec![0xa5; capacity];
-        match small::pack_or_size::<E, _>(value, &mut actual) {
+        match small::pack_or_size::<F, _>(value, &mut actual) {
             Ok(written) => {
                 assert!(capacity >= required);
                 assert_eq!(written, required);
@@ -48,8 +48,8 @@ where
 fn size_reporting_buffers_match_checked_buffers() {
     check_buffers::<u32, _>(&0x12345678u32);
     check_buffers::<(u32, u32), _>(&(11u32, 22u32));
-    check_buffers::<Indirect<u32>, _>(&0x12345678u32);
     check_buffers::<List<Indirect<u32>>, _>(&vec![11u32, 22, 33]);
+    check_buffers::<((Indirect<u32>, u8), u16), _>(&((11u32, 22u8), 33u16));
     check_buffers::<(), _>(&());
 }
 
@@ -58,7 +58,6 @@ fn size_reporting_buffers_handle_unknown_sizes_after_exhaustion() {
     let values = MakeIter(|| (0u32..12).filter(|value| value % 2 == 0));
     assert!(<MakeIter<_> as Serialize<List<u32>>>::size_hint::<1>(&values).is_none());
     check_buffers::<List<u32>, _>(&values);
-    check_buffers::<Indirect<List<u32>>, _>(&values);
 }
 
 fn check_size_boundary<const WIDTH: usize>() {

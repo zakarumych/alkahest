@@ -11,8 +11,9 @@ alkahest-core = { path = "core" }
 alkahest-parse = { path = "parse" }
 alkahest-proc = { path = "proc" }
 
-unicode-ident = "1.0.24"
-quote = "1.0.47"
+proc-easy = "0.5.0"
 proc-macro2 = "1.0.107"
+quote = "1.0.47"
 rand = "0.10.2"
-basic-lexer = { path = "../basic-lexer" }
+syn = "3.0.5"
+unicode-ident = "1.0.24"

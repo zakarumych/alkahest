@@ -1,5 +1,7 @@
+use std::hint::black_box;
+
 use alkahest::{Deserialize, Formula, Lazy, List, Serialize, alkahest};
-use criterion::{Criterion, black_box};
+use criterion::Criterion;
 
 #[cfg(feature = "rkyv")]
 use bytecheck::CheckBytes;

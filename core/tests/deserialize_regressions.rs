@@ -46,6 +46,23 @@ fn lazy_exact_field_rejects_truncated_input() {
 }
 
 #[test]
+fn trivial_values_reject_truncated_input_without_mutating_place() {
+    let input = 17u32.to_le_bytes();
+    for len in 0..input.len() {
+        assert!(matches!(
+            deserialize::<u32, u32, 1>(&input[..len]),
+            Err(DeserializeError::WrongLength)
+        ));
+        let mut place = 42u32;
+        assert!(matches!(
+            deserialize_in_place::<u32, _, 1>(&mut place, &input[..len]),
+            Err(DeserializeError::WrongLength)
+        ));
+        assert_eq!(place, 42);
+    }
+}
+
+#[test]
 fn lazy_unbounded_string_preserves_borrowed_input() {
     let source = String::from("lazy string");
     let mut buffer = [0; 32];

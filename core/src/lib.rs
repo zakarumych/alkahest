@@ -4,6 +4,13 @@
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
+#[inline]
+#[cold]
+#[doc(hidden)]
+pub fn cold_err<T, E>(e: E) -> Result<T, E> {
+    Err(e)
+}
+
 #[allow(unused_macros)]
 macro_rules! for_tuple {
     ($macro:ident) => {
@@ -56,7 +63,7 @@ macro_rules! formula_alias {
         type HeapSize<const SIZE_BYTES: usize> = <$element as $crate::Element>::HeapSize<SIZE_BYTES>;
         const INHABITED: bool = <$element as $crate::Element>::INHABITED;
 
-        #[inline]
+        #[inline(always)]
         fn serialize<T, S>(value: &T, serializer: &mut S) -> Result<(), S::Error>
         where
             T: $crate::Serialize<<$element as $crate::Element>::Formula> + ?Sized,
@@ -65,7 +72,7 @@ macro_rules! formula_alias {
             <$element as $crate::Element>::serialize::<T, S>(value, serializer)
         }
 
-        #[inline]
+        #[inline(always)]
         fn size_hint<T, const SIZE_BYTES: usize>(value: &T) -> Option<$crate::Sizes>
         where
             T: $crate::serialize::Serialize<<$element as $crate::Element>::Formula> + ?Sized,
@@ -73,7 +80,7 @@ macro_rules! formula_alias {
             <$element as $crate::Element>::size_hint::<T, SIZE_BYTES>(value)
         }
 
-        #[inline]
+        #[inline(always)]
         fn deserialize<'de, T, D>(deserializer: &mut D) -> Result<T, $crate::DeserializeError>
         where
             T: $crate::Deserialize<'de, <$element as $crate::Element>::Formula>,
@@ -82,7 +89,7 @@ macro_rules! formula_alias {
             <$element as $crate::Element>::deserialize::<T, D>(deserializer)
         }
 
-        #[inline]
+        #[inline(always)]
         fn deserialize_in_place<'de, T, D>(
             place: &mut T,
             deserializer: &mut D,
@@ -181,7 +188,7 @@ macro_rules! simple_try {
     ($x:expr) => {{
         match $x {
             Ok(value) => value,
-            Err(err) => return Err(err),
+            Err(err) => return $crate::cold_err(err),
         }
     }};
 }

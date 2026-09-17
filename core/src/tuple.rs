@@ -12,7 +12,7 @@ impl Formula for () {
 }
 
 impl Serialize<()> for () {
-    #[inline]
+    #[inline(always)]
     fn serialize<S>(&self, _serializer: S) -> Result<(), S::Error>
     where
         S: Serializer,
@@ -20,7 +20,7 @@ impl Serialize<()> for () {
         Ok(())
     }
 
-    #[inline]
+    #[inline(always)]
     fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
         Some(Sizes::ZERO)
     }
@@ -63,13 +63,10 @@ macro_rules! formula_serialize_deserialize {
                     if total.is_unbounded() && !next.is_zero() {
                         panic!("Tuple contains stack-unbounded element that is not the last one");
                     }
-                    total = total.add(next);
+                    total = total.padded().add(next);
                 )*
                 let next = stack_size::<$at, SIZE_BYTES>();
-                if total.is_unbounded() && !next.is_zero() {
-                    panic!("Tuple contains stack-unbounded element that is not the last one");
-                }
-                total.add(next)
+                total.padded().add(next)
             };
         }
 

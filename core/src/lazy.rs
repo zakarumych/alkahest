@@ -1,13 +1,14 @@
 use core::marker::PhantomData;
 
 use crate::{
-    Formula, List,
+    cold_err,
     deserialize::{
-        Deserialize, DeserializeError, Deserializer, DeserializerImpl, cold_err, deserialize,
+        ComplexDeserializer, Deserialize, DeserializeError, Deserializer, deserialize,
         deserialize_in_place, read_usize,
     },
     element::{Element, stack_size},
-    formula::SizeBound,
+    formula::{Formula, SizeBound},
+    list::List,
 };
 
 pub struct Lazy<'de, F: ?Sized> {
@@ -156,7 +157,7 @@ where
                 return None;
             }
 
-            let mut de = DeserializerImpl::<SIZE_BYTES>::new(self.input);
+            let mut de = ComplexDeserializer::<SIZE_BYTES>::new(self.input);
             match E::deserialize::<T, _>(&mut de) {
                 Ok(item) => {
                     self.len -= 1;

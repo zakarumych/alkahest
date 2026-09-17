@@ -1,23 +1,20 @@
 use alkahest_core::{
-    Element, Indirect, List, Never, Serialize, SizeBound, heap_size, manual_size, stack_size,
+    Array, Formula, Indirect, List, Never, Serialize, SizeBound, heap_size, manual_size, stack_size,
 };
 
-fn roundtrip<E, T, const SIZE_BYTES: usize>(value: &T)
+fn roundtrip<F, T, const SIZE_BYTES: usize>(value: &T)
 where
-    E: Element,
-    T: Serialize<E::Formula>
-        + for<'de> alkahest_core::Deserialize<'de, E::Formula>
-        + PartialEq
-        + core::fmt::Debug,
+    F: Formula,
+    T: Serialize<F> + for<'de> alkahest_core::Deserialize<'de, F> + PartialEq + core::fmt::Debug,
 {
     let mut bytes = [0u8; 256];
-    let len = manual_size::serialize::<E, _, SIZE_BYTES>(value, &mut bytes).expect("serialize");
-    assert_eq!(manual_size::serialized_size::<E, _, SIZE_BYTES>(value), len);
-    let decoded = manual_size::deserialize::<E, T, SIZE_BYTES>(&bytes[..len]).expect("deserialize");
+    let len = manual_size::serialize::<F, _, SIZE_BYTES>(value, &mut bytes).expect("serialize");
+    assert_eq!(manual_size::serialized_size::<F, _, SIZE_BYTES>(value), len);
+    let decoded = manual_size::deserialize::<F, T, SIZE_BYTES>(&bytes[..len]).expect("deserialize");
     assert_eq!(&decoded, value);
-    let len = manual_size::pack::<E, _, SIZE_BYTES>(value, &mut bytes).expect("pack");
-    assert_eq!(manual_size::pack_size::<E, _, SIZE_BYTES>(value), len);
-    let (decoded, consumed) = manual_size::unpack::<E, T, SIZE_BYTES>(&bytes).expect("unpack");
+    let len = manual_size::pack::<F, _, SIZE_BYTES>(value, &mut bytes).expect("pack");
+    assert_eq!(manual_size::pack_size::<F, _, SIZE_BYTES>(value), len);
+    let (decoded, consumed) = manual_size::unpack::<F, T, SIZE_BYTES>(&bytes).expect("unpack");
     assert_eq!(consumed, len);
     assert_eq!(&decoded, value);
 }
@@ -55,8 +52,8 @@ fn optional_composite_elements_include_padding() {
             roundtrip::<(Option<Indirect<u32>>, u8, Option<Indirect<u32>>), _, 4>(&(
                 first, 9u8, last,
             ));
-            roundtrip::<[Option<u32>; 2], _, 4>(&[first, last]);
-            roundtrip::<[Option<Indirect<u32>>; 2], _, 4>(&[first, last]);
+            roundtrip::<Array<Option<u32>, 2>, _, 4>(&[first, last]);
+            roundtrip::<Array<Option<Indirect<u32>>, 2>, _, 4>(&[first, last]);
         }
     }
 }
@@ -85,8 +82,8 @@ fn arrays_encode_lengths_only_for_variable_lists() {
             .expect("list")
             .is_empty()
     );
-    roundtrip::<[u8; 2], _, 1>(&[7u8, 8]);
-    roundtrip::<[u8; 0], [u8; 0], 1>(&[]);
+    roundtrip::<Array<u8, 2>, _, 1>(&[7u8, 8]);
+    roundtrip::<Array<u8, 0>, [u8; 0], 1>(&[]);
 }
 
 #[test]

@@ -1,5 +1,5 @@
 use crate::{
-    Deserialize, DeserializeError, Deserializer,
+    Deserialize, DeserializeError, Deserializer, cold_err,
     element::{Element, Indirect, stack_size},
     formula::SizeBound,
     list::List,
@@ -8,7 +8,7 @@ use crate::{
 
 use alloc::vec::Vec;
 
-fn validate_length<'de, E: Element, D: Deserializer<'de>>(
+fn validate_length<'de, E: Element + ?Sized, D: Deserializer<'de>>(
     deserializer: &D,
     len: usize,
 ) -> Result<(), DeserializeError> {
@@ -22,20 +22,20 @@ fn validate_length<'de, E: Element, D: Deserializer<'de>>(
             };
             match required {
                 Some(required) if required <= deserializer.input().len() => Ok(()),
-                _ => Err(DeserializeError::WrongLength),
+                _ => cold_err(DeserializeError::WrongLength),
             }
         }
     } else {
-        Err(DeserializeError::Incompatible)
+        cold_err(DeserializeError::Incompatible)
     })
 }
 
 impl<E, T> Serialize<List<E>> for Vec<T>
 where
-    E: Element,
+    E: Element + ?Sized,
     T: Serialize<E::Formula>,
 {
-    #[inline]
+    #[inline(always)]
     fn serialize<S>(&self, serializer: S) -> Result<(), S::Error>
     where
         S: Serializer,
@@ -43,16 +43,15 @@ where
         Serialize::<List<E>>::serialize(&self[..], serializer)
     }
 
-    #[inline]
+    #[inline(always)]
     fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
-        None
-        // Serialize::<List<E>>::size_hint::<SIZE_BYTES>(&self[..])
+        Serialize::<List<E>>::size_hint::<SIZE_BYTES>(&self[..])
     }
 }
 
 impl<'de, E, T, const MIN: usize, const MAX: usize> Deserialize<'de, List<E, MIN, MAX>> for Vec<T>
 where
-    E: Element,
+    E: Element + ?Sized,
     T: Deserialize<'de, E::Formula>,
 {
     #[inline]
@@ -69,7 +68,7 @@ where
             debug_assert!(E::INHABITED || len == 0);
 
             if len < MIN || len > MAX {
-                return Err(DeserializeError::WrongLength);
+                return cold_err(DeserializeError::WrongLength);
             }
 
             len
@@ -77,12 +76,13 @@ where
 
         simple_try!(validate_length::<E, _>(&deserializer, len));
 
+        simple_try!(
+            vec.try_reserve(len)
+                .map_err(|_| DeserializeError::WrongLength)
+        );
+
         for _ in 0..len {
             let value = simple_try!(E::deserialize(&mut deserializer));
-            simple_try!(
-                vec.try_reserve(1)
-                    .map_err(|_| DeserializeError::WrongLength)
-            );
             vec.push(value);
         }
 
@@ -102,13 +102,18 @@ where
             debug_assert!(E::INHABITED || len == 0);
 
             if len < MIN || len > MAX {
-                return Err(DeserializeError::WrongLength);
+                return cold_err(DeserializeError::WrongLength);
             }
 
             len
         };
 
         simple_try!(validate_length::<E, _>(&deserializer, len));
+
+        simple_try!(
+            self.try_reserve(len)
+                .map_err(|_| DeserializeError::WrongLength)
+        );
 
         let in_place = self.len().min(len);
         let extend = len - in_place;
@@ -118,10 +123,6 @@ where
         }
         for _ in 0..extend {
             let value = simple_try!(E::deserialize(&mut deserializer));
-            simple_try!(
-                self.try_reserve(1)
-                    .map_err(|_| DeserializeError::WrongLength)
-            );
             self.push(value);
         }
 

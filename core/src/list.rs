@@ -17,14 +17,17 @@ pub struct List<T: ?Sized, const MIN: usize = 0, const MAX: usize = { usize::MAX
 pub type Array<T, const N: usize> = List<T, N, N>;
 
 /// Stack size type for list formula.
-pub struct ListStackSize<E: Element, const MIN: usize, const MAX: usize, const SIZE_BYTES: usize>(
-    E,
-);
+pub struct ListStackSize<
+    E: Element + ?Sized,
+    const MIN: usize,
+    const MAX: usize,
+    const SIZE_BYTES: usize,
+>(E);
 
 impl<E, const MIN: usize, const MAX: usize, const SIZE_BYTES: usize> SizeType
     for ListStackSize<E, MIN, MAX, SIZE_BYTES>
 where
-    E: Element,
+    E: Element + ?Sized,
 {
     const VALUE: SizeBound = if E::INHABITED {
         assert!(
@@ -52,12 +55,17 @@ where
     };
 }
 
-pub struct ListHeapSize<E: Element, const MIN: usize, const MAX: usize, const SIZE_BYTES: usize>(E);
+pub struct ListHeapSize<
+    E: Element + ?Sized,
+    const MIN: usize,
+    const MAX: usize,
+    const SIZE_BYTES: usize,
+>(E);
 
 impl<E, const MIN: usize, const MAX: usize, const SIZE_BYTES: usize> SizeType
     for ListHeapSize<E, MIN, MAX, SIZE_BYTES>
 where
-    E: Element,
+    E: Element + ?Sized,
 {
     const VALUE: SizeBound = if E::INHABITED {
         assert!(

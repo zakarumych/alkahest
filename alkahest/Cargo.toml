@@ -31,8 +31,3 @@ required-features = ["proc"]
 name = "bench"
 path = "examples/bench.rs"
 required-features = ["proc"]
-
-[[example]]
-name = "bench_expanded"
-path = "examples/bench_expanded.rs"
-required-features = ["proc"]

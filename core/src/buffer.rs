@@ -3,6 +3,8 @@ use core::{convert::Infallible, fmt};
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
+use crate::cold_err;
+
 /// Buffer API that is used by serializer.
 /// Buffers can be extensible or fixed size.
 /// Extensible buffers grow automatically when needed.
@@ -15,16 +17,6 @@ pub trait Buffer {
     where
         Self: 'a;
 
-    /// Reserved heap buffer type.
-    ///
-    /// It is always infallible buffer.
-    /// In practice it is usually a mutable byte slice.
-    ///
-    /// Except for `DryBuffer` which reserves as `DryBuffer`.
-    type Reserved<'a>: Buffer<Error = Infallible>
-    where
-        Self: 'a;
-
     const RESERVED_IS_SELF: bool;
 
     /// Reborrow this buffer.
@@ -33,12 +25,15 @@ pub trait Buffer {
     /// Ensures that at least `additional` bytes can be written.
     ///
     /// Growable buffers should grow if needed, fixed buffers should return error if they cannot fit additional bytes.
-    fn reserve(
+    fn reserve(&mut self, heap: usize, stack: usize, additional: usize) -> Result<(), Self::Error>;
+
+    /// Reserves and returns reserved kind of buffer.
+    fn reserved(
         &mut self,
         heap: usize,
         stack: usize,
         additional: usize,
-    ) -> Result<Self::Reserved<'_>, Self::Error>;
+    ) -> Result<Option<&mut [u8]>, Self::Error>;
 
     /// Writes bytes to the stack.
     ///
@@ -59,12 +54,12 @@ pub trait Buffer {
     /// If more space is available, returns buffer aligned to heap.
     ///
     /// Returned buffer has same heap size filled, but stack is empty.
-    fn reserve_heap(
+    fn reserved_heap(
         &mut self,
         heap: usize,
         stack: usize,
         additional: usize,
-    ) -> Result<Self::Reserved<'_>, Self::Error>;
+    ) -> Result<Option<&mut [u8]>, Self::Error>;
 }
 
 /// No-op buffer that does not write anything.
@@ -75,7 +70,6 @@ pub struct DryBuffer;
 impl Buffer for DryBuffer {
     type Error = Infallible;
     type Reborrow<'a> = Self;
-    type Reserved<'a> = Self;
 
     const RESERVED_IS_SELF: bool = true;
 
@@ -85,13 +79,18 @@ impl Buffer for DryBuffer {
     }
 
     #[inline(always)]
-    fn reserve(
+    fn reserve(&mut self, _heap: usize, _stack: usize, _len: usize) -> Result<(), Infallible> {
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn reserved(
         &mut self,
         _heap: usize,
         _stack: usize,
         _len: usize,
-    ) -> Result<DryBuffer, Infallible> {
-        Ok(DryBuffer)
+    ) -> Result<Option<&mut [u8]>, Infallible> {
+        Ok(None)
     }
 
     #[inline(always)]
@@ -103,13 +102,13 @@ impl Buffer for DryBuffer {
     }
 
     #[inline(always)]
-    fn reserve_heap(
+    fn reserved_heap(
         &mut self,
         _heap: usize,
         _stack: usize,
         _len: usize,
-    ) -> Result<Self, Infallible> {
-        Ok(DryBuffer)
+    ) -> Result<Option<&mut [u8]>, Infallible> {
+        Ok(None)
     }
 }
 
@@ -124,11 +123,6 @@ impl<'a> Buffer for &'a mut [u8] {
     where
         'a: 'b;
 
-    type Reserved<'b>
-        = &'b mut [u8]
-    where
-        'a: 'b;
-
     const RESERVED_IS_SELF: bool = true;
 
     #[inline(always)]
@@ -137,7 +131,26 @@ impl<'a> Buffer for &'a mut [u8] {
     }
 
     #[inline(always)]
-    fn reserve(&mut self, heap: usize, stack: usize, len: usize) -> Result<&mut [u8], Infallible> {
+    fn reserve(&mut self, heap: usize, stack: usize, len: usize) -> Result<(), Infallible> {
+        debug_assert!(
+            self.len() >= heap && self.len() - heap >= stack,
+            "{} > {} + {}",
+            self.len(),
+            heap,
+            stack
+        );
+
+        debug_assert!(self.len() - heap - stack >= len);
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn reserved(
+        &mut self,
+        heap: usize,
+        stack: usize,
+        len: usize,
+    ) -> Result<Option<&mut [u8]>, Infallible> {
         debug_assert!(
             self.len() >= heap && self.len() - heap >= stack,
             "{} > {} + {}",
@@ -146,7 +159,7 @@ impl<'a> Buffer for &'a mut [u8] {
             stack
         );
         debug_assert!(self.len() - heap - stack >= len);
-        Ok(self)
+        Ok(Some(self))
     }
 
     #[inline(always)]
@@ -171,17 +184,17 @@ impl<'a> Buffer for &'a mut [u8] {
     }
 
     #[inline(always)]
-    fn reserve_heap(
+    fn reserved_heap(
         &mut self,
         heap: usize,
         stack: usize,
         len: usize,
-    ) -> Result<&mut [u8], Infallible> {
+    ) -> Result<Option<&mut [u8]>, Infallible> {
         debug_assert!(self.len() >= heap && self.len() - heap >= stack);
         assert!(self.len() >= heap && self.len() - heap >= len);
 
         let end = heap + len;
-        Ok(&mut self[..end])
+        Ok(Some(&mut self[..end]))
     }
 }
 
@@ -223,11 +236,6 @@ impl<'a> Buffer for CheckedFixedBuffer<'a> {
     where
         'a: 'b;
 
-    type Reserved<'b>
-        = &'b mut [u8]
-    where
-        'a: 'b;
-
     const RESERVED_IS_SELF: bool = false;
 
     #[inline(always)]
@@ -236,17 +244,26 @@ impl<'a> Buffer for CheckedFixedBuffer<'a> {
     }
 
     #[inline(always)]
-    fn reserve(
+    fn reserve(&mut self, heap: usize, stack: usize, len: usize) -> Result<(), BufferExhausted> {
+        debug_assert!(self.buf.len() >= heap && self.buf.len() - heap >= stack);
+        if self.buf.len() - heap - stack < len {
+            return cold_err(BufferExhausted);
+        }
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn reserved(
         &mut self,
         heap: usize,
         stack: usize,
         len: usize,
-    ) -> Result<&mut [u8], BufferExhausted> {
+    ) -> Result<Option<&mut [u8]>, BufferExhausted> {
         debug_assert!(self.buf.len() >= heap && self.buf.len() - heap >= stack);
         if self.buf.len() - heap - stack < len {
-            return Err(BufferExhausted);
+            return cold_err(BufferExhausted);
         }
-        Ok(&mut self.buf)
+        Ok(Some(&mut self.buf))
     }
 
     #[inline(always)]
@@ -260,20 +277,20 @@ impl<'a> Buffer for CheckedFixedBuffer<'a> {
     }
 
     #[inline(always)]
-    fn reserve_heap(
+    fn reserved_heap(
         &mut self,
         heap: usize,
         stack: usize,
         len: usize,
-    ) -> Result<&mut [u8], BufferExhausted> {
+    ) -> Result<Option<&mut [u8]>, BufferExhausted> {
         debug_assert!(self.buf.len() >= heap && self.buf.len() - heap >= stack);
 
         if self.buf.len() - heap - stack < len {
-            return Err(BufferExhausted);
+            return cold_err(BufferExhausted);
         }
 
         let end = heap + len;
-        Ok(&mut self.buf[..end])
+        Ok(Some(&mut self.buf[..end]))
     }
 }
 
@@ -302,11 +319,6 @@ impl<'a> Buffer for MaybeFixedBuffer<'a> {
     where
         'a: 'b;
 
-    type Reserved<'b>
-        = MaybeFixedBuffer<'b>
-    where
-        'a: 'b;
-
     const RESERVED_IS_SELF: bool = true;
 
     #[inline(always)]
@@ -318,14 +330,9 @@ impl<'a> Buffer for MaybeFixedBuffer<'a> {
     }
 
     #[inline(always)]
-    fn reserve(
-        &mut self,
-        heap: usize,
-        stack: usize,
-        len: usize,
-    ) -> Result<MaybeFixedBuffer<'_>, Infallible> {
+    fn reserve(&mut self, heap: usize, stack: usize, len: usize) -> Result<(), Infallible> {
         if *self.exhausted {
-            return Ok(self.reborrow());
+            return Ok(());
         }
 
         debug_assert!(self.buf.len() >= heap && self.buf.len() - heap >= stack);
@@ -333,7 +340,27 @@ impl<'a> Buffer for MaybeFixedBuffer<'a> {
             *self.exhausted = true;
         }
 
-        Ok(self.reborrow())
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn reserved(
+        &mut self,
+        heap: usize,
+        stack: usize,
+        len: usize,
+    ) -> Result<Option<&mut [u8]>, Infallible> {
+        if *self.exhausted {
+            return Ok(None);
+        }
+
+        debug_assert!(self.buf.len() >= heap && self.buf.len() - heap >= stack);
+        if self.buf.len() - heap - stack < len {
+            *self.exhausted = true;
+            return Ok(None);
+        }
+
+        Ok(Some(self.buf))
     }
 
     #[inline(always)]
@@ -351,27 +378,24 @@ impl<'a> Buffer for MaybeFixedBuffer<'a> {
     }
 
     #[inline(always)]
-    fn reserve_heap(
+    fn reserved_heap(
         &mut self,
         heap: usize,
         stack: usize,
         len: usize,
-    ) -> Result<MaybeFixedBuffer<'_>, Infallible> {
+    ) -> Result<Option<&mut [u8]>, Infallible> {
         if *self.exhausted {
-            return Ok(self.reborrow());
+            return Ok(None);
         }
 
         debug_assert!(self.buf.len() >= heap && self.buf.len() - heap >= stack);
         if self.buf.len() - heap - stack < len {
             *self.exhausted = true;
-            return Ok(self.reborrow());
+            return Ok(None);
         }
 
         let end = heap + len;
-        Ok(MaybeFixedBuffer {
-            buf: &mut self.buf[..end],
-            exhausted: self.exhausted,
-        })
+        Ok(Some(&mut self.buf[..end]))
     }
 }
 
@@ -425,11 +449,6 @@ impl<'a> Buffer for VecBuffer<'a> {
     where
         'a: 'b;
 
-    type Reserved<'b>
-        = &'b mut [u8]
-    where
-        'a: 'b;
-
     const RESERVED_IS_SELF: bool = false;
 
     #[inline(always)]
@@ -438,10 +457,22 @@ impl<'a> Buffer for VecBuffer<'a> {
     }
 
     #[inline(always)]
-    fn reserve(&mut self, heap: usize, stack: usize, len: usize) -> Result<&mut [u8], Infallible> {
+    fn reserve(&mut self, heap: usize, stack: usize, len: usize) -> Result<(), Infallible> {
         debug_assert!(self.buf.len() >= heap && self.buf.len() - heap >= stack);
         self.reserve_vec(heap, stack, len);
-        Ok(self.buf.as_mut_slice())
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn reserved(
+        &mut self,
+        heap: usize,
+        stack: usize,
+        len: usize,
+    ) -> Result<Option<&mut [u8]>, Infallible> {
+        debug_assert!(self.buf.len() >= heap && self.buf.len() - heap >= stack);
+        self.reserve_vec(heap, stack, len);
+        Ok(Some(self.buf.as_mut_slice()))
     }
 
     #[inline(always)]
@@ -455,16 +486,16 @@ impl<'a> Buffer for VecBuffer<'a> {
     }
 
     #[inline(always)]
-    fn reserve_heap(
+    fn reserved_heap(
         &mut self,
         heap: usize,
         stack: usize,
         len: usize,
-    ) -> Result<&mut [u8], Infallible> {
+    ) -> Result<Option<&mut [u8]>, Infallible> {
         debug_assert!(self.buf.len() >= heap && self.buf.len() - heap >= stack);
         self.reserve_vec(heap, stack, len);
 
         let end = heap + len;
-        Ok(&mut self.buf[..end])
+        Ok(Some(&mut self.buf[..end]))
     }
 }

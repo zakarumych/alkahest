@@ -12,8 +12,7 @@ evolution = []
 [dependencies]
 alkahest-parse.workspace = true
 
-proc-macro2 = { version = "1.0", features = ["span-locations"] }
-syn = { version = "3.0.5", features = ["derive"] }
-quote = "1.0"
-proc-easy = { version = "0.5.0" }
-blake3 = { version = "1.8.7" }
+proc-macro2 = { workspace = true, features = ["span-locations"] }
+syn = { workspace = true, features = ["derive"] }
+quote.workspace = true
+proc-easy.workspace = true

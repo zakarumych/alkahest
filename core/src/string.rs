@@ -1,6 +1,7 @@
 use alloc::string::String;
 
 use crate::{
+    cold_err,
     deserialize::{Deserialize, DeserializeError, Deserializer},
     element::Indirect,
     serialize::{Serialize, Serializer, Sizes},
@@ -8,7 +9,7 @@ use crate::{
 };
 
 impl Serialize<Str> for String {
-    #[inline]
+    #[inline(always)]
     fn serialize<S>(&self, mut serializer: S) -> Result<(), S::Error>
     where
         S: Serializer,
@@ -17,12 +18,9 @@ impl Serialize<Str> for String {
         serializer.write_bytes(self.as_bytes())
     }
 
-    #[inline]
+    #[inline(always)]
     fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
-        None
-        // let mut sizes = Sizes::with_stack(SIZE_BYTES);
-        // sizes.add_stack(self.len());
-        // Some(sizes)
+        Serialize::<Str>::size_hint::<SIZE_BYTES>(&self[..])
     }
 }
 
@@ -36,7 +34,7 @@ impl<'de> Deserialize<'de, Str> for String {
         let bytes = simple_try!(deserializer.read_bytes(len));
         match core::str::from_utf8(bytes) {
             Ok(s) => Ok(String::from(s)),
-            Err(error) => Err(DeserializeError::NonUtf8(error)),
+            Err(error) => cold_err(DeserializeError::NonUtf8(error)),
         }
     }
 
@@ -53,7 +51,7 @@ impl<'de> Deserialize<'de, Str> for String {
                 self.push_str(s);
                 Ok(())
             }
-            Err(error) => Err(DeserializeError::NonUtf8(error)),
+            Err(error) => cold_err(DeserializeError::NonUtf8(error)),
         }
     }
 }

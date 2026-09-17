@@ -28,7 +28,7 @@ macro_rules! impl_primitive {
         }
 
         impl Serialize<$ty> for $ty {
-            #[inline]
+            #[inline(always)]
             fn serialize<S>(&self, mut serializer: S) -> Result<(), S::Error>
             where
                 S: Serializer,
@@ -36,7 +36,7 @@ macro_rules! impl_primitive {
                 serializer.write_bytes(&self.to_le_bytes())
             }
 
-            #[inline]
+            #[inline(always)]
             fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
                 unreachable!()
                 // Some(Sizes{ heap: 0, stack: size_of::<$ty>()})
@@ -45,7 +45,7 @@ macro_rules! impl_primitive {
 
         $(
             impl Serialize<$ty> for $from {
-                #[inline]
+            #[inline(always)]
                 fn serialize<S>(&self, mut serializer: S) -> Result<(), S::Error>
                 where
                     S: Serializer,
@@ -53,7 +53,7 @@ macro_rules! impl_primitive {
                     serializer.write_bytes(&$ty::from(*self).to_le_bytes())
                 }
 
-                #[inline]
+                #[inline(always)]
                 fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
                     unreachable!()
                     // Some(Sizes{ heap: 0, stack: size_of::<$ty>()})
@@ -127,7 +127,7 @@ impl Formula for bool {
 }
 
 impl Serialize<bool> for bool {
-    #[inline]
+    #[inline(always)]
     fn serialize<S>(&self, mut serializer: S) -> Result<(), S::Error>
     where
         Self: Sized,
@@ -136,9 +136,9 @@ impl Serialize<bool> for bool {
         serializer.write_bytes(&[u8::from(*self)])
     }
 
-    #[inline]
+    #[inline(always)]
     fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
-        None
+        unreachable!()
         // Some(Sizes {
         //     heap: 0,
         //     stack: size_of::<u8>(),
@@ -147,7 +147,6 @@ impl Serialize<bool> for bool {
 }
 
 impl<'de> Deserialize<'de, bool> for bool {
-    #[inline]
     fn deserialize<D>(mut de: D) -> Result<Self, DeserializeError>
     where
         D: Deserializer<'de>,
@@ -156,7 +155,7 @@ impl<'de> Deserialize<'de, bool> for bool {
         Ok(byte != 0)
     }
 
-    #[inline]
+    #[inline(always)]
     fn deserialize_in_place<D>(&mut self, mut de: D) -> Result<(), DeserializeError>
     where
         D: Deserializer<'de>,

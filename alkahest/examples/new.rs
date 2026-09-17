@@ -5,7 +5,7 @@ use alkahest::{Deserialize, Element, Formula, Indirect, Mixture, Never, Serializ
 #[alkahest(Formula)]
 struct Parent;
 
-#[alkahest(path = "$/examples/new.alk")]
+#[alkahest(path = "$/examples/new.alk")] // "$" points to the crate root directory.
 mod new; // Requires Rust 1.99+
 
 #[derive(Mixture)]

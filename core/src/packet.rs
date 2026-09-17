@@ -1,10 +1,10 @@
 use crate::{
-    Deserialize, DeserializeError, Element, Serialize, SizeBound, Sizes,
-    advanced::make_serializer,
+    Deserialize, DeserializeError, Element, Formula, Serialize, SizeBound, Sizes,
+    advanced::{make_serializer, size_hint},
     buffer::{Buffer, BufferExhausted, CheckedFixedBuffer, DryBuffer, MaybeFixedBuffer},
     deserialize::{deserialize, deserialize_in_place, read_usize},
     element::{heap_size, stack_size},
-    serialize::{BufferSizeRequired, write_usize},
+    serialize::{BufferSizeRequired, make_trivial_serializer, trivial_size, write_usize},
 };
 
 #[inline]
@@ -32,20 +32,39 @@ where
 /// This allows more convenient use with byte streams where end of input is not known in advance.
 ///
 /// [`serialize_into`]: crate::serialize::serialize_into
-pub fn pack_into<E, T, B, const SIZE_BYTES: usize>(
+pub fn pack_into<F, T, B, const SIZE_BYTES: usize>(
     value: &T,
     mut buffer: B,
 ) -> Result<usize, B::Error>
 where
-    E: Element + ?Sized,
-    T: Serialize<E::Formula>,
+    F: Formula + ?Sized,
+    T: Serialize<F>,
     B: Buffer,
 {
-    let total = total::<E, SIZE_BYTES>();
+    const {
+        assert!(F::INHABITED);
+    }
+
+    if let Some(trivial_size) = const { trivial_size::<F, SIZE_BYTES>() } {
+        let reserved = simple_try!(buffer.reserved_heap(0, 0, trivial_size));
+
+        if let Some(reserved) = reserved {
+            if let Err(err) = <T as Serialize<F>>::serialize(
+                value,
+                make_trivial_serializer::<SIZE_BYTES>(&mut reserved[..trivial_size]),
+            ) {
+                match err {}
+            }
+        }
+
+        return Ok(trivial_size);
+    }
+
+    let total = const { total::<F, SIZE_BYTES>() };
 
     if total.is_none() {
         // Pre-reserve space for length prefix if total size is not known in advance.
-        let _ = simple_try!(buffer.reserve_heap(0, 0, SIZE_BYTES));
+        let _ = simple_try!(buffer.reserved_heap(0, 0, SIZE_BYTES));
     }
 
     // Initialize sizes with first `SIZE_BYTES` bytes reserved for length prefix
@@ -55,26 +74,61 @@ where
         stack: 0,
     };
 
-    {
-        let mut serializer = make_serializer::<_, SIZE_BYTES>(buffer.reborrow(), &mut sizes);
-        simple_try!(E::serialize(value, &mut serializer));
-    }
+    match size_hint::<F, T, SIZE_BYTES>(&value) {
+        None => {
+            {
+                let serializer = make_serializer::<_, SIZE_BYTES>(buffer.reborrow(), &mut sizes);
 
-    // Move stack to the heap to make serialized data contiguous.
-    buffer.move_to_heap(sizes.heap, sizes.stack, sizes.stack);
+                simple_try!(<T as Serialize<F>>::serialize(value, serializer));
+            }
+
+            buffer.move_to_heap(sizes.heap, sizes.stack, sizes.stack);
+        }
+        Some(promised) => {
+            // Reserive heap space to avoid serializing to stack and moving to heap.
+            let old_heap = sizes.heap;
+            let reserved = simple_try!(buffer.reserved_heap(old_heap, 0, promised.total()));
+
+            if let Some(reserved) = reserved {
+                let serializer = make_serializer::<_, SIZE_BYTES>(reserved, &mut sizes);
+                if let Err(err) = <T as Serialize<F>>::serialize(value, serializer) {
+                    match err {}
+                }
+            } else {
+                let serializer = make_serializer::<_, SIZE_BYTES>(DryBuffer, &mut sizes);
+                if let Err(err) = <T as Serialize<F>>::serialize(value, serializer) {
+                    match err {}
+                }
+            }
+
+            debug_assert_eq!(
+                sizes.stack, promised.stack,
+                "Serialization used different amount of stack than promised by `Serialize::size_hint`"
+            );
+            debug_assert_eq!(
+                sizes.heap, old_heap + promised.heap,
+                "Serialization used different amount of heap than promised by `Serialize::size_hint`"
+            );
+
+            // No need to move to heap, as exact size was reserved,
+            // so no gap between stack and heap is possible.
+        }
+    }
 
     let actual = sizes.total();
 
     match total {
         None => {
-            let reserved = match buffer.reserve_heap(0, 0, SIZE_BYTES) {
+            let reserved = match buffer.reserved_heap(0, 0, SIZE_BYTES) {
                 Ok(reserved) => reserved,
                 Err(_err) => {
                     unreachable!("Failed to reserve space for length prefix that was pre-reserved");
                 }
             };
 
-            write_usize::<_, SIZE_BYTES>(actual, 0, reserved);
+            if let Some(reserved) = reserved {
+                write_usize::<_, SIZE_BYTES>(actual, 0, reserved);
+            }
         }
         Some(total) => {
             assert_eq!(
@@ -106,15 +160,15 @@ where
 ///
 /// [`serialize`]: crate::serialize::serialize
 #[inline]
-pub fn pack<E, T, const SIZE_BYTES: usize>(
+pub fn pack<F, T, const SIZE_BYTES: usize>(
     value: &T,
     output: &mut [u8],
 ) -> Result<usize, BufferExhausted>
 where
-    E: Element + ?Sized,
-    T: Serialize<E::Formula>,
+    F: Formula + ?Sized,
+    T: Serialize<F>,
 {
-    pack_into::<E, T, _, SIZE_BYTES>(value, CheckedFixedBuffer::new(output))
+    pack_into::<F, T, _, SIZE_BYTES>(value, CheckedFixedBuffer::new(output))
 }
 
 /// Slightly faster version of [`pack`].
@@ -129,12 +183,12 @@ where
 ///
 /// [`serialize_unchecked`]: crate::serialize::serialize_unchecked
 #[inline]
-pub fn pack_unchecked<E, T, const SIZE_BYTES: usize>(value: &T, output: &mut [u8]) -> usize
+pub fn pack_unchecked<F, T, const SIZE_BYTES: usize>(value: &T, output: &mut [u8]) -> usize
 where
-    E: Element + ?Sized,
-    T: Serialize<E::Formula>,
+    F: Formula + ?Sized,
+    T: Serialize<F>,
 {
-    match pack_into::<E, T, _, SIZE_BYTES>(value, output) {
+    match pack_into::<F, T, _, SIZE_BYTES>(value, output) {
         Ok(size) => size,
         Err(never) => match never {},
     }
@@ -154,12 +208,12 @@ where
 ///
 /// [`serialized_size`]: crate::serialize::serialized_size
 #[inline]
-pub fn pack_size<E, T, const SIZE_BYTES: usize>(value: &T) -> usize
+pub fn pack_size<F, T, const SIZE_BYTES: usize>(value: &T) -> usize
 where
-    E: Element + ?Sized,
-    T: Serialize<E::Formula>,
+    F: Formula + ?Sized,
+    T: Serialize<F>,
 {
-    match pack_into::<E, T, _, SIZE_BYTES>(value, DryBuffer) {
+    match pack_into::<F, T, _, SIZE_BYTES>(value, DryBuffer) {
         Ok(size) => size,
         Err(never) => match never {},
     }
@@ -185,17 +239,17 @@ where
 ///
 /// [`serialize_or_size`]: crate::serialize::serialize_or_size
 #[inline]
-pub fn pack_or_size<E, T, const SIZE_BYTES: usize>(
+pub fn pack_or_size<F, T, const SIZE_BYTES: usize>(
     value: &T,
     output: &mut [u8],
 ) -> Result<usize, BufferSizeRequired>
 where
-    E: Element + ?Sized,
-    T: Serialize<E::Formula>,
+    F: Formula + ?Sized,
+    T: Serialize<F>,
 {
     let mut exhausted = false;
     let result =
-        pack_into::<E, T, _, SIZE_BYTES>(value, MaybeFixedBuffer::new(output, &mut exhausted));
+        pack_into::<F, T, _, SIZE_BYTES>(value, MaybeFixedBuffer::new(output, &mut exhausted));
     let size = match result {
         Ok(size) => size,
         Err(never) => match never {},
@@ -223,17 +277,17 @@ where
 /// [`serialize_to_vec`]: crate::serialize::serialize_to_vec
 #[cfg(feature = "alloc")]
 #[inline]
-pub fn pack_to_vec<E, T, const SIZE_BYTES: usize>(
+pub fn pack_to_vec<F, T, const SIZE_BYTES: usize>(
     value: &T,
     output: &mut alloc::vec::Vec<u8>,
 ) -> usize
 where
-    E: Element + ?Sized,
-    T: Serialize<E::Formula>,
+    F: Formula + ?Sized,
+    T: Serialize<F>,
 {
     use crate::buffer::VecBuffer;
 
-    match pack_into::<E, T, _, SIZE_BYTES>(value, VecBuffer::new(output)) {
+    match pack_into::<F, T, _, SIZE_BYTES>(value, VecBuffer::new(output)) {
         Ok(size) => size,
         Err(never) => match never {},
     }
@@ -241,11 +295,11 @@ where
 
 /// Returns the number of bytes of the packed value in the input.
 #[inline]
-pub fn read_pack_size<E, const SIZE_BYTES: usize>(input: &[u8]) -> Result<usize, DeserializeError>
+pub fn read_pack_size<F, const SIZE_BYTES: usize>(input: &[u8]) -> Result<usize, DeserializeError>
 where
-    E: Element + ?Sized,
+    F: Formula + ?Sized,
 {
-    let total = total::<E, SIZE_BYTES>();
+    let total = total::<F, SIZE_BYTES>();
 
     match total {
         None => match input.first_chunk::<SIZE_BYTES>() {
@@ -267,18 +321,18 @@ where
 /// # Errors
 ///
 /// Returns [`DeserializeError`] if deserialization fails.
-pub fn unpack<'de, E, T, const SIZE_BYTES: usize>(
+pub fn unpack<'de, F, T, const SIZE_BYTES: usize>(
     input: &'de [u8],
 ) -> Result<(T, usize), DeserializeError>
 where
-    E: Element + ?Sized,
-    T: Deserialize<'de, E::Formula>,
+    F: Formula + ?Sized,
+    T: Deserialize<'de, F>,
 {
-    let total = simple_try!(read_pack_size::<E, SIZE_BYTES>(input));
+    let total = simple_try!(read_pack_size::<F, SIZE_BYTES>(input));
     if input.len() < total {
         return Err(DeserializeError::OutOfBounds(total));
     }
-    let value = simple_try!(deserialize::<E, T, SIZE_BYTES>(&input[..total]));
+    let value = simple_try!(deserialize::<F, T, SIZE_BYTES>(&input[..total]));
     Ok((value, total))
 }
 
@@ -294,19 +348,19 @@ where
 ///
 /// Returns [`DeserializeError`] if deserialization fails.
 #[inline]
-pub fn unpack_in_place<'de, E, T, const SIZE_BYTES: usize>(
+pub fn unpack_in_place<'de, F, T, const SIZE_BYTES: usize>(
     place: &mut T,
     input: &'de [u8],
 ) -> Result<usize, DeserializeError>
 where
-    E: Element + ?Sized,
-    T: Deserialize<'de, E::Formula> + ?Sized,
+    F: Formula + ?Sized,
+    T: Deserialize<'de, F> + ?Sized,
 {
-    let total = simple_try!(read_pack_size::<E, SIZE_BYTES>(input));
+    let total = simple_try!(read_pack_size::<F, SIZE_BYTES>(input));
     if input.len() < total {
         return Err(DeserializeError::OutOfBounds(total));
     }
-    simple_try!(deserialize_in_place::<E, T, SIZE_BYTES>(
+    simple_try!(deserialize_in_place::<F, T, SIZE_BYTES>(
         place,
         &input[..total]
     ));
@@ -337,15 +391,15 @@ macro_rules! fixed_size_module {
             ///
             /// [`serialize`]: crate::serialize::serialize
             #[inline]
-            pub fn pack<E, T>(
+            pub fn pack<F, T>(
                 value: &T,
                 output: &mut [u8],
             ) -> Result<usize, BufferExhausted>
             where
-                E: Element + ?Sized,
-                T: Serialize<E::Formula>,
+                F: Formula + ?Sized,
+                T: Serialize<F>,
             {
-                super::pack::<E, T, $size_bytes>(value, output)
+                super::pack::<F, T, $size_bytes>(value, output)
             }
 
             /// Slightly faster version of [`pack`].
@@ -360,12 +414,12 @@ macro_rules! fixed_size_module {
             ///
             /// [`serialize_unchecked`]: crate::serialize::serialize_unchecked
             #[inline]
-            pub fn pack_unchecked<E, T>(value: &T, output: &mut [u8]) -> usize
+            pub fn pack_unchecked<F, T>(value: &T, output: &mut [u8]) -> usize
             where
-                E: Element + ?Sized,
-                T: Serialize<E::Formula>,
+                F: Formula + ?Sized,
+                T: Serialize<F>,
             {
-                super::pack_unchecked::<E, T, $size_bytes>(value, output)
+                super::pack_unchecked::<F, T, $size_bytes>(value, output)
             }
 
             /// Returns the number of bytes required to pack the value.
@@ -382,12 +436,12 @@ macro_rules! fixed_size_module {
             ///
             /// [`serialized_size`]: crate::serialize::serialized_size
             #[inline]
-            pub fn pack_size<E, T>(value: &T) -> usize
+            pub fn pack_size<F, T>(value: &T) -> usize
             where
-                E: Element + ?Sized,
-                T: Serialize<E::Formula>,
+                F: Formula + ?Sized,
+                T: Serialize<F>,
             {
-                super::pack_size::<E, T, $size_bytes>(value)
+                super::pack_size::<F, T, $size_bytes>(value)
             }
 
             /// Packs value into bytes slice.
@@ -410,15 +464,15 @@ macro_rules! fixed_size_module {
             ///
             /// [`serialize_or_size`]: crate::serialize::serialize_or_size
             #[inline]
-            pub fn pack_or_size<E, T>(
+            pub fn pack_or_size<F, T>(
                 value: &T,
                 output: &mut [u8],
             ) -> Result<usize, BufferSizeRequired>
             where
-                E: Element + ?Sized,
-                T: Serialize<E::Formula>,
+                F: Formula + ?Sized,
+                T: Serialize<F>,
             {
-                super::pack_or_size::<E, T, $size_bytes>(value, output)
+                super::pack_or_size::<F, T, $size_bytes>(value, output)
             }
 
             /// Packs value into byte vector.
@@ -437,26 +491,26 @@ macro_rules! fixed_size_module {
             /// [`serialize_to_vec`]: crate::serialize::serialize_to_vec
             #[cfg(feature = "alloc")]
             #[inline]
-            pub fn pack_to_vec<E, T>(
+            pub fn pack_to_vec<F, T>(
                 value: &T,
                 output: &mut alloc::vec::Vec<u8>,
             ) -> usize
             where
-                E: Element + ?Sized,
-                T: Serialize<E::Formula>,
+                F: Formula + ?Sized,
+                T: Serialize<F>,
             {
-                super::pack_to_vec::<E, T, $size_bytes>(value, output)
+                super::pack_to_vec::<F, T, $size_bytes>(value, output)
             }
 
             /// Returns the number of bytes of the packed value in the input.
             #[inline]
-            pub fn read_pack_size<'de, E>(
+            pub fn read_pack_size<'de, F>(
                 input: &[u8],
             ) -> Result<usize, DeserializeError>
             where
-                E: Element + ?Sized,
+                F: Formula + ?Sized,
             {
-                super::read_pack_size::<E, $size_bytes>(input)
+                super::read_pack_size::<F, $size_bytes>(input)
             }
 
             /// Deserializes value from the input.
@@ -471,12 +525,12 @@ macro_rules! fixed_size_module {
             ///
             /// Returns [`DeserializeError`] if deserialization fails.
             #[inline]
-            pub fn unpack<'de, E, T>(input: &'de [u8]) -> Result<(T, usize), DeserializeError>
+            pub fn unpack<'de, F, T>(input: &'de [u8]) -> Result<(T, usize), DeserializeError>
             where
-                E: Element + ?Sized,
-                T: Deserialize<'de, E::Formula>,
+                F: Formula + ?Sized,
+                T: Deserialize<'de, F>,
             {
-                super::unpack::<E, T, $size_bytes>(input)
+                super::unpack::<F, T, $size_bytes>(input)
             }
 
             /// Deserializes value from the input.
@@ -491,15 +545,15 @@ macro_rules! fixed_size_module {
             ///
             /// Returns [`DeserializeError`] if deserialization fails.
             #[inline]
-            pub fn unpack_in_place<'de, E, T>(
+            pub fn unpack_in_place<'de, F, T>(
                 place: &mut T,
                 input: &'de [u8],
             ) -> Result<usize, DeserializeError>
             where
-                E: Element + ?Sized,
-                T: Deserialize<'de, E::Formula> + ?Sized,
+                F: Formula + ?Sized,
+                T: Deserialize<'de, F> + ?Sized,
             {
-                super::unpack_in_place::<E, T, $size_bytes>(place, input)
+                super::unpack_in_place::<F, T, $size_bytes>(place, input)
             }
         }
     };

@@ -172,7 +172,7 @@ where
     }
 }
 
-impl<E, T> Serialize<E> for Indirect<T>
+impl<E, T> Serialize<Indirect<E>> for Indirect<T>
 where
     E: Element + ?Sized,
     T: Serialize<E::Formula>,
@@ -187,8 +187,7 @@ where
 
     #[inline(always)]
     fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
-        None
-        // E::size_hint::<T, SIZE_BYTES>(&self.0)
+        E::size_hint::<T, SIZE_BYTES>(&self.0)
     }
 }
 

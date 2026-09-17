@@ -239,7 +239,7 @@ pub fn derive_tuple(
                     if total.is_unbounded() && !next.is_zero() {
                         panic!("Composite formula contains stack-unbounded element that is not the last one");
                     }
-                    total = total.add(next);
+                    total = total.padded().add(next);
                 )*
 
                 total
@@ -374,7 +374,7 @@ pub fn derive_record(
                     if total.is_unbounded() && !next.is_zero() {
                         panic!("Composite formula contains stack-unbounded element that is not the last one");
                     }
-                    total = total.add(next);
+                    total = total.padded().add(next);
                 )*
 
                 total

@@ -12,7 +12,7 @@ use crate::{
 impl<E, T, const N: usize, const MIN: usize, const MAX: usize> Serialize<List<E, MIN, MAX>>
     for [T; N]
 where
-    E: Element,
+    E: Element + ?Sized,
     T: Serialize<E::Formula>,
 {
     #[inline]
@@ -85,7 +85,7 @@ where
 // and list formula is bounded to exactly `N` elements.
 impl<'de, E, T, const N: usize> Deserialize<'de, List<E, N, N>> for [T; N]
 where
-    E: Element,
+    E: Element + ?Sized,
     T: Deserialize<'de, E::Formula>,
 {
     #[inline]
@@ -100,14 +100,8 @@ where
         let mut options = [const { None::<T> }; N];
 
         for i in 0..N {
-            match E::deserialize::<T, D>(&mut deserializer) {
-                Ok(value) => {
-                    options[i] = Some(value);
-                }
-                Err(err) => {
-                    return Err(err);
-                }
-            }
+            let value = simple_try!(E::deserialize::<T, D>(&mut deserializer));
+            options[i] = Some(value);
         }
 
         // Unwrap is safe here because if loop above completed, all elements are `Some`.

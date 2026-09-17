@@ -8,7 +8,7 @@ use crate::{
 
 impl<E, T> Serialize<List<E>> for [T]
 where
-    E: Element,
+    E: Element + ?Sized,
     T: Serialize<E::Formula>,
 {
     #[inline]

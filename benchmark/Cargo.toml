@@ -14,14 +14,14 @@ default = ["alkahest/default", "speedy", "rkyv", "serde", "bincode"]
 alkahest = { path = "../alkahest", features = [
     "proc",
 ], default-features = false }
-criterion = { version = "0.5" }
+criterion = { version = "0.8" }
 serde = { version = "1.0", features = ["derive"], optional = true }
 serde_json = { version = "1.0", optional = true }
 bincode = { version = "1.3", optional = true }
 rkyv = { version = "0.7", features = ["validation"], optional = true }
 bytecheck = "0.6"
 speedy = { version = "0.8", optional = true }
-rand = { version = "0.8", features = ["small_rng"] }
+rand = { workspace = true }
 
 [[bench]]
 name = "benchmark"

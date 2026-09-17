@@ -11,7 +11,10 @@ fn reservations_use_existing_capacity_without_repeated_stack_moves() {
     let pointer = bytes.as_ptr();
     for stack in 0..capacity {
         let mut buffer = VecBuffer::new(&mut bytes);
-        let reserved = buffer.reserve(0, stack, 1).expect("infallible buffer");
+        let reserved = buffer
+            .reserved(0, stack, 1)
+            .expect("infallible buffer")
+            .unwrap();
         assert_eq!(reserved.len(), capacity);
         assert_eq!(reserved.as_ptr(), pointer);
         assert!(reserved[capacity - stack..].iter().all(|byte| *byte == 7));
@@ -28,8 +31,9 @@ fn growing_reservation_preserves_heap_and_stack() {
     bytes[old_len - 2..].copy_from_slice(&[8, 9]);
     let mut buffer = VecBuffer::new(&mut bytes);
     let reserved = buffer
-        .reserve_heap(2, 2, old_len)
-        .expect("infallible buffer");
+        .reserved_heap(2, 2, old_len)
+        .expect("infallible buffer")
+        .unwrap();
     assert_eq!(reserved.len(), old_len + 2);
     assert_eq!(&reserved[..2], &[1, 2]);
     assert_eq!(bytes.len(), bytes.capacity());

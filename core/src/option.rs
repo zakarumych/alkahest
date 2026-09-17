@@ -43,7 +43,7 @@ where
     E: Element,
     T: Serialize<E::Formula>,
 {
-    #[inline]
+    #[inline(always)]
     fn serialize<S>(&self, mut serializer: S) -> Result<(), S::Error>
     where
         S: Serializer,
@@ -68,7 +68,7 @@ where
         }
     }
 
-    #[inline]
+    #[inline(always)]
     fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
         match self {
             None => Some(if E::INHABITED {

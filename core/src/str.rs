@@ -1,4 +1,5 @@
 use crate::{
+    cold_err,
     deserialize::{Deserialize, DeserializeError, Deserializer},
     formula::{ExactSize, Formula, UnboundedSize},
     serialize::{Serialize, Serializer, Sizes},
@@ -14,7 +15,7 @@ impl Formula for Str {
 }
 
 impl Serialize<Str> for str {
-    #[inline]
+    #[inline(always)]
     fn serialize<S>(&self, mut serializer: S) -> Result<(), S::Error>
     where
         S: Serializer,
@@ -23,12 +24,11 @@ impl Serialize<Str> for str {
         serializer.write_bytes(self.as_bytes())
     }
 
-    #[inline]
+    #[inline(always)]
     fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
-        None
-        // let mut sizes = Sizes::with_stack(SIZE_BYTES);
-        // sizes.add_stack(self.len());
-        // Some(sizes)
+        let mut sizes = Sizes::with_stack(SIZE_BYTES);
+        sizes.add_stack(self.len());
+        Some(sizes)
     }
 }
 
@@ -42,7 +42,7 @@ impl<'de, 'fe: 'de> Deserialize<'fe, Str> for &'de str {
         let bytes = simple_try!(deserializer.read_bytes(len));
         match core::str::from_utf8(bytes) {
             Ok(s) => Ok(s),
-            Err(error) => Err(DeserializeError::NonUtf8(error)),
+            Err(error) => cold_err(DeserializeError::NonUtf8(error)),
         }
     }
 
@@ -58,7 +58,7 @@ impl<'de, 'fe: 'de> Deserialize<'fe, Str> for &'de str {
                 *self = s;
                 Ok(())
             }
-            Err(error) => Err(DeserializeError::NonUtf8(error)),
+            Err(error) => cold_err(DeserializeError::NonUtf8(error)),
         }
     }
 }

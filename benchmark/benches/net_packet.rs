@@ -7,14 +7,16 @@ extern crate rkyv;
 #[cfg(feature = "speedy")]
 extern crate speedy;
 
+use std::hint::black_box;
+
 use alkahest::{Deserialize, Element, Formula, Lazy, List, Serialize, alkahest};
-use criterion::{Criterion, black_box};
+use criterion::Criterion;
 
 #[cfg(feature = "rkyv")]
 use bytecheck::CheckBytes;
 use rand::{
-    Rng, SeedableRng,
-    distributions::{Alphanumeric, DistString},
+    Rng, RngExt, SeedableRng,
+    distr::{Alphanumeric, SampleString},
     rngs::SmallRng,
 };
 
@@ -106,17 +108,17 @@ fn get_string(rng: &mut impl Rng) -> String {
 }
 
 fn messages<'a>(mut rng: impl Rng + 'a, len: usize) -> impl Iterator<Item = GameMessage> + 'a {
-    core::iter::repeat_with(move || match rng.gen_range(0..4) {
+    core::iter::repeat_with(move || match rng.random_range(0..4) {
         0 => GameMessage::Client(ClientMessage::ClientData {
             nickname: get_string(&mut rng),
             clan: get_string(&mut rng),
         }),
         1 => GameMessage::Client(ClientMessage::Chat(get_string(&mut rng))),
         2 => GameMessage::Server(ServerMessage::ClientChat {
-            client_id: rng.r#gen(),
+            client_id: rng.random(),
             message: get_string(&mut rng),
         }),
-        3 => GameMessage::Server(ServerMessage::ServerData(rng.gen_range(0..10))),
+        3 => GameMessage::Server(ServerMessage::ServerData(rng.random_range(0..10))),
         _ => unreachable!(),
     })
     .take(len)
