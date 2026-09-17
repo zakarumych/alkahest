@@ -47,6 +47,11 @@ impl fmt::Display for DeserializeError {
 }
 
 pub trait Deserializer<'de> {
+    /// Whether values use forward layout within fully reserved stack slots.
+    /// Wrappers must forward this constant from the wrapped deserializer.
+    #[doc(hidden)]
+    const IS_TRIVIAL: bool = false;
+
     #[doc(hidden)]
     const SIZE_BYTES: usize;
 
@@ -769,54 +774,37 @@ impl<'de, const SIZE_BYTES: usize> TrivialDeserializer<'de, SIZE_BYTES> {
 }
 
 impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for TrivialDeserializer<'de, SIZE_BYTES> {
+    const IS_TRIVIAL: bool = true;
     const SIZE_BYTES: usize = SIZE_BYTES;
 
     /// Reads specified number of bytes from the input buffer.
     /// Returns slice of bytes.
     /// Advances the input buffer.
-    ///
-    /// # Errors
-    ///
-    /// Returns `DeserializeError` if not enough bytes on stack.
     #[inline]
     fn read_bytes(&mut self, len: usize) -> Result<&'de [u8], DeserializeError> {
-        let at = self.input.len() - len;
-        let (head, tail) = self.input.split_at(at);
-        self.input = head;
-        Ok(tail)
+        let (head, tail) = self.input.split_at(len);
+        self.input = tail;
+        Ok(head)
     }
 
     /// Reads specified number of bytes from the input buffer.
     /// Returns slice of bytes.
     /// Advances the input buffer.
-    ///
-    /// # Errors
-    ///
-    /// Returns `DeserializeError` if stack is empty.
     #[inline]
     fn read_byte(&mut self) -> Result<u8, DeserializeError> {
-        let [head @ .., last] = self.input else {
-            unreachable!();
-        };
-        self.input = head;
-        Ok(*last)
+        let first = self.input[0];
+        self.input = &self.input[1..];
+        Ok(first)
     }
 
     /// Reads specified number of bytes from the input buffer.
     /// Returns slice of bytes.
     /// Advances the input buffer.
-    ///
-    /// # Errors
-    ///
-    /// Returns `DeserializeError` if not enough bytes on stack.
     #[inline]
     fn read_byte_array<const N: usize>(&mut self) -> Result<&'de [u8; N], DeserializeError> {
-        let at = self.input.len() - N;
-
-        let (head, tail) = self.input.split_at(at);
-        self.input = head;
-
-        Ok(tail.as_array().unwrap())
+        let (head, tail) = self.input.split_at(N);
+        self.input = tail;
+        Ok(head.as_array().unwrap())
     }
 
     /// Reads and deserializes usize from the input buffer.
@@ -844,19 +832,13 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for TrivialDeserializer<'de
         T: Deserialize<'de, F>,
     {
         match const { (stack_size::<F, SIZE_BYTES>(), heap_size::<F, SIZE_BYTES>()) } {
-            (
-                SizeBound::Exact(stack_size) | SizeBound::Bounded(stack_size),
-                SizeBound::Exact(0),
-            ) => {
+            (SizeBound::Bounded(size) | SizeBound::Exact(size), SizeBound::Exact(0)) => {
                 // Switch to trivial layout serialization.
-                let (head, tail) = self.input.split_at(stack_size);
+                let (head, tail) = self.input.split_at(size);
                 self.input = tail;
 
-                let value = simple_try!(<T as Deserialize<F>>::deserialize(TrivialDeserializer::<
-                    SIZE_BYTES,
-                >::new(
-                    head
-                )));
+                let de = TrivialDeserializer::<SIZE_BYTES>::new(head);
+                let value = simple_try!(<T as Deserialize<F>>::deserialize(de));
 
                 Ok(value)
             }
@@ -878,18 +860,13 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for TrivialDeserializer<'de
         T: Deserialize<'de, F> + ?Sized,
     {
         match const { (stack_size::<F, SIZE_BYTES>(), heap_size::<F, SIZE_BYTES>()) } {
-            (
-                SizeBound::Exact(stack_size) | SizeBound::Bounded(stack_size),
-                SizeBound::Exact(0),
-            ) => {
+            (SizeBound::Bounded(size) | SizeBound::Exact(size), SizeBound::Exact(0)) => {
                 // Switch to trivial layout serialization.
-                let (head, tail) = self.input.split_at(stack_size);
+                let (head, tail) = self.input.split_at(size);
                 self.input = tail;
 
-                simple_try!(<T as Deserialize<F>>::deserialize_in_place(
-                    place,
-                    TrivialDeserializer::<SIZE_BYTES>::new(head)
-                ));
+                let de = TrivialDeserializer::<SIZE_BYTES>::new(head);
+                simple_try!(<T as Deserialize<F>>::deserialize_in_place(place, de));
 
                 Ok(())
             }
@@ -900,11 +877,7 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for TrivialDeserializer<'de
     }
 
     #[allow(refining_impl_trait)]
-    fn at(&self, _address: usize) -> Result<impl Deserializer<'de>, DeserializeError> {
-        if false {
-            return Ok(TrivialDeserializer::<SIZE_BYTES>::new(self.input));
-        }
-
+    fn at(&self, _address: usize) -> Result<ComplexDeserializer<'de, SIZE_BYTES>, DeserializeError> {
         unreachable!()
     }
 

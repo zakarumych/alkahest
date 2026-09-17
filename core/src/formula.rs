@@ -112,13 +112,7 @@ impl<const SIZE: usize> SizeType for BoundedSize<SIZE> {
     const VALUE: SizeBound = SizeBound::Bounded(SIZE);
 }
 
-pub struct SizeBytes<const SIZE_BYTES: usize>;
-
-impl<const SIZE_BYTES: usize> SizeType for SizeBytes<SIZE_BYTES> {
-    const VALUE: SizeBound = SizeBound::Exact(SIZE_BYTES as usize);
-}
-
-pub trait Formula: 'static {
+pub trait Formula: AsFormula + 'static {
     /// Stack size required for serializing this type.
     type StackSize<const SIZE_BYTES: usize>: SizeType + ?Sized;
 
@@ -128,4 +122,17 @@ pub trait Formula: 'static {
     /// Whether this formula is inhabited (i.e., has at least one valid value).
     /// Defaulted to true for convenience.
     const INHABITED: bool;
+}
+
+/// Type that points at the formula type.
+/// Formula types point to themselves.
+pub trait AsFormula {
+    type Formula: Formula + ?Sized;
+}
+
+impl<F> AsFormula for F
+where
+    F: Formula + ?Sized,
+{
+    type Formula = F;
 }

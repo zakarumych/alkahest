@@ -45,15 +45,15 @@ macro_rules! for_tuple_2 {
 }
 
 #[macro_export]
-macro_rules! formula_alias {
+macro_rules! element_alias {
     (for[$($generic:tt)*] $alias:ty as $element:ty) => {
         impl < $($generic)* > $crate::Element for $alias {
-            $crate::formula_alias!(@impl $alias as $element);
+            $crate::element_alias!(@impl $alias as $element);
         }
     };
     ($alias:ty as $element:ty) => {
         impl $crate::Element for $alias {
-            $crate::formula_alias!(@impl $alias as $element);
+            $crate::element_alias!(@impl $alias as $element);
         }
     };
     (@impl $alias:ty as $element:ty) => {
@@ -230,7 +230,7 @@ mod vec;
 pub use self::{
     deserialize::{Deserialize, DeserializeError, Deserializer},
     element::{Element, Indirect, heap_size, inhabited, stack_size},
-    formula::{BoundedSize, ExactSize, Formula, SizeBound, SizeType, UnboundedSize},
+    formula::{AsFormula, BoundedSize, ExactSize, Formula, SizeBound, SizeType, UnboundedSize},
     iter::MakeIter,
     lazy::Lazy,
     list::{Array, List},

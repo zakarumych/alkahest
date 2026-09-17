@@ -33,7 +33,7 @@ impl Formula for Never {
 /// ```
 ///
 /// Since `S::B` may never be constructed, the `A` variant is the only one to be serialized.
-impl<F: ?Sized> Serialize<F> for Never {
+impl<F: Formula + ?Sized> Serialize<F> for Never {
     #[inline]
     fn serialize<S>(&self, _serializer: S) -> Result<(), S::Error>
     where

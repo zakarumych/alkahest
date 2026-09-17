@@ -133,4 +133,4 @@ where
     }
 }
 
-formula_alias!(for[E: Element, const N: usize] [E; N] as List<E, N, N>);
+element_alias!(for[E: Element, const N: usize] [E; N] as List<E, N, N>);

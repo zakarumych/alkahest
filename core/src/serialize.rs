@@ -3,7 +3,7 @@ use core::{convert::Infallible, fmt, ops};
 use crate::{
     Element,
     buffer::{Buffer, BufferExhausted, CheckedFixedBuffer, DryBuffer, MaybeFixedBuffer},
-    element::{heap_size, stack_size},
+    element::{heap_size, stack_size, zero_sized},
     formula::{Formula, SizeBound},
 };
 
@@ -128,7 +128,7 @@ impl ops::Sub for Sizes {
 ///     }
 /// }
 /// ```
-pub trait Serialize<F: ?Sized> {
+pub trait Serialize<F: Formula + ?Sized> {
     /// Serializes `self` into the given buffer.
     ///
     /// # Errors
@@ -154,7 +154,7 @@ pub trait Serialize<F: ?Sized> {
 
 impl<'a, F, T> Serialize<F> for &'a T
 where
-    F: ?Sized,
+    F: Formula + ?Sized,
     T: Serialize<F> + ?Sized,
 {
     #[inline(always)]
@@ -204,10 +204,10 @@ pub trait Serializer {
     /// It is used when serializing fields of records, tuples, or elements of slices.
     ///
     /// Unlike `write_direct`, this method serializes the value into "heap" and writes only an address to the "stack" space.
-    fn write_indirect<E, T>(&mut self, value: &T) -> Result<(), Self::Error>
+    fn write_indirect<F, T>(&mut self, value: &T) -> Result<(), Self::Error>
     where
-        E: Element + ?Sized,
-        T: Serialize<E::Formula> + ?Sized;
+        F: Formula + ?Sized,
+        T: Serialize<F> + ?Sized;
 
     /// Reserve space for one `usize` and return its address.
     fn reserve_usize(&mut self) -> Result<usize, Self::Error>;
@@ -472,10 +472,13 @@ where
     {
         assert!(E::INHABITED);
 
-        if matches!(
-            const { (stack_size::<E, SIZE_BYTES>(), heap_size::<E, SIZE_BYTES>()) },
-            (SizeBound::Exact(0), SizeBound::Exact(0))
-        ) {
+        if const { zero_sized::<E>() } {
+            simple_try!(
+                self.buffer
+                    .reserve(self.sizes.heap, self.sizes.stack, self.pad_next)
+            );
+            self.sizes.stack += self.pad_next;
+            self.pad_next = 0;
             return Ok(());
         }
 
@@ -605,6 +608,7 @@ impl<'a, const SIZE_BYTES: usize> Serializer for TrivialSerializer<'a, SIZE_BYTE
         F: Formula + ?Sized,
         T: Serialize<F> + ?Sized,
     {
+        assert!(F::INHABITED);
         let _is_zero = is_zero::<F, SIZE_BYTES>();
 
         #[cfg(not(debug_assertions))]
@@ -614,23 +618,14 @@ impl<'a, const SIZE_BYTES: usize> Serializer for TrivialSerializer<'a, SIZE_BYTE
             return Ok(());
         }
 
-        match const { (stack_size::<F, SIZE_BYTES>(), heap_size::<F, SIZE_BYTES>()) } {
-            (
-                SizeBound::Exact(stack_size) | SizeBound::Bounded(stack_size),
-                SizeBound::Exact(0),
-            ) => {
+        match const { trivial_size::<F, SIZE_BYTES>() } {
+            Some(size) => {
                 // Switch to trivial layout serialization.
-                let (head, tail) = core::mem::take(&mut self.bytes).split_at_mut(stack_size);
+                let (head, tail) = core::mem::take(&mut self.bytes).split_at_mut(size);
                 self.bytes = tail;
 
-                if let Err(err) = <T as Serialize<F>>::serialize(
-                    value,
-                    TrivialSerializer::<SIZE_BYTES>::new(head),
-                ) {
-                    match err {}
-                }
-
-                Ok(())
+                let serializer = TrivialSerializer::<SIZE_BYTES>::new(head);
+                <T as Serialize<F>>::serialize(value, serializer)
             }
             _ => {
                 unreachable!()
@@ -647,12 +642,17 @@ impl<'a, const SIZE_BYTES: usize> Serializer for TrivialSerializer<'a, SIZE_BYTE
     ///
     /// Returns error if buffer write fails.
     #[inline]
-    fn write_indirect<E, T>(&mut self, _value: &T) -> Result<(), Infallible>
+    fn write_indirect<F, T>(&mut self, _value: &T) -> Result<(), Infallible>
     where
-        E: Element + ?Sized,
-        T: Serialize<E::Formula> + ?Sized,
+        F: Formula + ?Sized,
+        T: Serialize<F> + ?Sized,
     {
-        unreachable!()
+        assert!(F::INHABITED);
+        if const { zero_sized::<F>() } {
+            Ok(())
+        } else {
+            unreachable!()
+        }
     }
 
     #[inline(always)]
@@ -720,6 +720,7 @@ pub fn write_usize_trivial<const SIZE_BYTES: usize>(value: usize, bytes: &mut [u
         }
         () if SIZE_BYTES > LEN => {
             bytes[..LEN].copy_from_slice(&value.to_le_bytes());
+            bytes[LEN..SIZE_BYTES].fill(0);
         }
         () => {
             // SIZE_BYTES == LEN

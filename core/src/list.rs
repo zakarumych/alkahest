@@ -91,7 +91,7 @@ where
 
 impl<E, const MIN: usize, const MAX: usize> Formula for List<E, MIN, MAX>
 where
-    E: Element,
+    E: Element + ?Sized,
 {
     type StackSize<const SIZE_BYTES: usize> = ListStackSize<E, MIN, MAX, SIZE_BYTES>;
     type HeapSize<const SIZE_BYTES: usize> = ListHeapSize<E, MIN, MAX, SIZE_BYTES>;

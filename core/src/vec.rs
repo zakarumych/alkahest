@@ -111,7 +111,7 @@ where
         simple_try!(validate_length::<E, _>(&deserializer, len));
 
         simple_try!(
-            self.try_reserve(len)
+            self.try_reserve(len.saturating_sub(self.len()))
                 .map_err(|_| DeserializeError::WrongLength)
         );
 
@@ -134,4 +134,4 @@ where
 
 // Vec is commonly used in compound types,
 // so the alias makes it indirect.
-formula_alias!(for[E: Element] Vec<E> as Indirect<List<E>>);
+element_alias!(for[E: Element] Vec<E> as Indirect<List<E>>);

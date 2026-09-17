@@ -44,6 +44,14 @@ impl<'de> Deserialize<'de, ()> for () {
     }
 }
 
+/// The combined stack size of a tuple's elements.
+///
+/// A stack-unbounded element cannot precede a nonzero-sized element.
+///
+/// ```compile_fail
+/// use alkahest_core::{List, SizeBound, stack_size};
+/// const INVALID: SizeBound = stack_size::<(List<u8>, u8), 1>();
+/// ```
 pub struct TupleStackSize<T: ?Sized, const SIZE_BYTES: usize>(T);
 pub struct TupleHeapSize<T: ?Sized, const SIZE_BYTES: usize>(T);
 
@@ -66,6 +74,9 @@ macro_rules! formula_serialize_deserialize {
                     total = total.padded().add(next);
                 )*
                 let next = stack_size::<$at, SIZE_BYTES>();
+                if total.is_unbounded() && !next.is_zero() {
+                    panic!("Tuple contains stack-unbounded element that is not the last one");
+                }
                 total.padded().add(next)
             };
         }

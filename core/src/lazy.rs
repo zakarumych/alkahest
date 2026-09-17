@@ -3,8 +3,8 @@ use core::marker::PhantomData;
 use crate::{
     cold_err,
     deserialize::{
-        ComplexDeserializer, Deserialize, DeserializeError, Deserializer, deserialize,
-        deserialize_in_place, read_usize,
+        ComplexDeserializer, Deserialize, DeserializeError, Deserializer, TrivialDeserializer,
+        read_usize,
     },
     element::{Element, stack_size},
     formula::{Formula, SizeBound},
@@ -14,6 +14,7 @@ use crate::{
 pub struct Lazy<'de, F: ?Sized> {
     input: &'de [u8],
     size_bytes: usize,
+    is_trivial: bool,
     marker: core::marker::PhantomData<F>,
 }
 
@@ -23,6 +24,7 @@ impl<F: ?Sized> Clone for Lazy<'_, F> {
         Lazy {
             input: self.input,
             size_bytes: self.size_bytes,
+            is_trivial: self.is_trivial,
             marker: PhantomData,
         }
     }
@@ -39,7 +41,11 @@ where
         T: Deserialize<'de, F>,
     {
         with_size_bytes!(SIZE_BYTES = self.size_bytes => {
-            deserialize::<F, T, SIZE_BYTES>(self.input)
+            if self.is_trivial {
+                T::deserialize(TrivialDeserializer::<SIZE_BYTES>::new(self.input))
+            } else {
+                T::deserialize(ComplexDeserializer::<SIZE_BYTES>::new(self.input))
+            }
         } else {
             cold_err(DeserializeError::Incompatible)
         })
@@ -52,7 +58,11 @@ where
         T: Deserialize<'de, F> + ?Sized,
     {
         with_size_bytes!(SIZE_BYTES = self.size_bytes => {
-            deserialize_in_place::<F, T, SIZE_BYTES>(place, self.input)
+            if self.is_trivial {
+                T::deserialize_in_place(place, TrivialDeserializer::<SIZE_BYTES>::new(self.input))
+            } else {
+                T::deserialize_in_place(place, ComplexDeserializer::<SIZE_BYTES>::new(self.input))
+            }
         } else {
             cold_err(DeserializeError::Incompatible)
         })
@@ -123,6 +133,7 @@ where
         Ok(Lazy {
             input,
             size_bytes,
+            is_trivial: D::IS_TRIVIAL,
             marker: core::marker::PhantomData,
         })
     }

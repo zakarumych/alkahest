@@ -147,3 +147,141 @@ fn hostile_bounded_vector_length_is_rejected() {
     assert!(deserialize_in_place::<List<Option<u32>>, _, 8>(&mut place, &input).is_err());
     assert_eq!(place, [Some(42)]);
 }
+
+#[test]
+fn bounded_fields_use_trivial_layout_in_trivial_tuples() {
+    type F = (Option<u32>, u8);
+    for first in [Some(0x01020304u32), None] {
+        let source = (first, 7u8);
+        let mut buffer = [0xa5; 6];
+        let len = serialize::<F, _, 1>(&source, &mut buffer).expect("serialize tuple");
+        assert_eq!(len, 6);
+        assert_eq!(
+            buffer,
+            if first.is_some() {
+                [1, 4, 3, 2, 1, 7]
+            } else {
+                [0, 0xa5, 0xa5, 0xa5, 0xa5, 7]
+            }
+        );
+        let decoded: (Option<u32>, u8) = deserialize::<F, _, 1>(&buffer).expect("decode tuple");
+        assert_eq!(decoded, source);
+        let mut place = (Some(99u32), 0u8);
+        deserialize_in_place::<F, _, 1>(&mut place, &buffer).expect("update tuple");
+        assert_eq!(place, source);
+
+        let (lazy, last): (Lazy<'_, Option<u32>>, u8) =
+            deserialize::<F, _, 1>(&buffer).expect("capture optional field");
+        assert_eq!(last, 7);
+        assert_eq!(
+            lazy.read::<Option<u32>>().expect("read optional field"),
+            first
+        );
+        assert_eq!(
+            lazy.clone()
+                .read::<Option<u32>>()
+                .expect("read cloned field"),
+            first
+        );
+        let mut place = Some(99u32);
+        lazy.read_in_place(&mut place)
+            .expect("update optional field");
+        assert_eq!(place, first);
+
+        let mut standalone_buffer = [0xa5; 5];
+        let standalone_len = serialize::<Option<u32>, _, 1>(&first, &mut standalone_buffer)
+            .expect("serialize standalone option");
+        let standalone_input = &standalone_buffer[..standalone_len];
+        assert_eq!(
+            standalone_input,
+            if first.is_some() {
+                &[4, 3, 2, 1, 1][..]
+            } else {
+                &[0][..]
+            }
+        );
+        let standalone: Lazy<'_, Option<u32>> =
+            deserialize::<Option<u32>, _, 1>(standalone_input).expect("capture standalone option");
+        assert_eq!(
+            standalone
+                .clone()
+                .read::<Option<u32>>()
+                .expect("read standalone option"),
+            first
+        );
+        standalone
+            .read_in_place(&mut place)
+            .expect("update standalone option");
+        assert_eq!(place, first);
+
+        let mut captured = (standalone, 0u8);
+        deserialize_in_place::<F, _, 1>(&mut captured, &buffer).expect("capture in place");
+        assert_eq!(
+            captured
+                .0
+                .read::<Option<u32>>()
+                .expect("read recaptured field"),
+            first
+        );
+        assert_eq!(captured.1, 7);
+        deserialize_in_place::<Option<u32>, _, 1>(&mut captured.0, standalone_input)
+            .expect("recapture complex layout");
+        assert_eq!(
+            captured
+                .0
+                .read::<Option<u32>>()
+                .expect("read recaptured standalone option"),
+            first
+        );
+    }
+}
+
+#[test]
+fn nested_bounded_fields_and_arrays_keep_trivial_layout() {
+    type F = ((Option<u32>, u8), alkahest_core::Array<Option<u32>, 2>);
+    let source = ((Some(0x01020304u32), 7u8), [None, Some(0x05060708)]);
+    let mut buffer = [0xa5; 16];
+    let len = serialize::<F, _, 1>(&source, &mut buffer).expect("serialize nested tuple");
+    let decoded: ((Option<u32>, u8), [Option<u32>; 2]) =
+        deserialize::<F, _, 1>(&buffer[..len]).expect("decode nested tuple");
+    assert_eq!(decoded, source);
+    let mut place = ((None, 0u8), [Some(99u32), None]);
+    deserialize_in_place::<F, _, 1>(&mut place, &buffer[..len]).expect("update nested tuple");
+    assert_eq!(place, source);
+    let (lazy, array): (Lazy<'_, (Option<u32>, u8)>, [Lazy<'_, Option<u32>>; 2]) =
+        deserialize::<F, _, 1>(&buffer[..len]).expect("capture nested fields");
+    assert_eq!(
+        lazy.read::<(Option<u32>, u8)>().expect("read tuple"),
+        source.0
+    );
+    assert_eq!(
+        array[0].read::<Option<u32>>().expect("read absent element"),
+        None
+    );
+    assert_eq!(
+        array[1]
+            .read::<Option<u32>>()
+            .expect("read present element"),
+        source.1[1]
+    );
+}
+
+#[test]
+fn zero_sized_indirect_fields_consume_no_address() {
+    type F = (Indirect<()>, u8);
+    let mut buffer = [0xa5; 1];
+    let len = serialize::<F, _, 1>(&((), 7u8), &mut buffer).expect("serialize unit pointer");
+    assert_eq!(len, 1);
+    assert_eq!(buffer, [7]);
+    assert_eq!(
+        deserialize::<F, ((), u8), 1>(&buffer).expect("decode unit pointer"),
+        ((), 7)
+    );
+    let mut place = ((), 0u8);
+    deserialize_in_place::<F, _, 1>(&mut place, &buffer).expect("update unit pointer");
+    assert_eq!(place, ((), 7));
+    let (lazy, value): (Lazy<'_, ()>, u8) = deserialize::<F, _, 1>(&buffer).expect("lazy unit");
+    assert_eq!(value, 7);
+    lazy.read::<()>().expect("read lazy unit");
+    lazy.read_in_place(&mut ()).expect("update lazy unit");
+}

@@ -17,8 +17,8 @@ mod tests {
 
     fn serialize_test<E, T>(value: &T, expected: &[u8])
     where
-        E: Element,
-        T: Serialize<E::Formula>,
+        E: Formula,
+        T: Serialize<E>,
     {
         let mut buf = Vec::new();
         let size = serialize_to_vec::<E, T, 1>(value, &mut buf);
@@ -34,8 +34,8 @@ got:     {:02x?}",
 
     fn round_trip_test<E, T>(value: &T)
     where
-        E: Element,
-        T: Serialize<E::Formula> + for<'de> Deserialize<'de, E::Formula> + PartialEq + fmt::Debug,
+        E: Formula,
+        T: Serialize<E> + for<'de> Deserialize<'de, E> + PartialEq + fmt::Debug,
     {
         let mut buf = Vec::new();
         let size = serialize_to_vec::<E, T, 1>(value, &mut buf);
@@ -58,8 +58,8 @@ got:      {:?}",
 
     fn round_trip_packet_test<E, T>(value: &T)
     where
-        E: Element,
-        T: Serialize<E::Formula> + for<'de> Deserialize<'de, E::Formula> + PartialEq + fmt::Debug,
+        E: Formula,
+        T: Serialize<E> + for<'de> Deserialize<'de, E> + PartialEq + fmt::Debug,
     {
         let mut buf = Vec::new();
         let pack_size = pack_to_vec::<E, T, 1>(value, &mut buf);
@@ -103,10 +103,10 @@ got:      {:?}",
 
         serialize_test::<EmptyFormula, _>(&Empty, &[]);
 
-        serialize_test::<Indirect<EmptyFormula>, _>(&Empty, &[0x00]);
+        serialize_test::<(Indirect<EmptyFormula>,), _>(&(Empty,), &[]);
 
         round_trip_test::<EmptyFormula, _>(&Empty);
-        round_trip_test::<Indirect<EmptyFormula>, _>(&Empty);
+        round_trip_test::<(Indirect<EmptyFormula>,), _>(&(Empty,));
     }
 
     #[test]
@@ -120,13 +120,13 @@ got:      {:?}",
 
         serialize_test::<U32Formula, _>(&U32(0x12345678), &[0x78, 0x56, 0x34, 0x12]);
 
-        serialize_test::<Indirect<U32Formula>, _>(
-            &U32(0x12345678),
+        serialize_test::<(Indirect<U32Formula>,), _>(
+            &(U32(0x12345678),),
             &[0x78, 0x56, 0x34, 0x12, 0x04],
         );
 
         round_trip_test::<U32Formula, _>(&U32(0x12345678));
-        round_trip_test::<Indirect<U32Formula>, _>(&U32(0x12345678));
+        round_trip_test::<(Indirect<U32Formula>,), _>(&(U32(0x12345678),));
     }
 
     #[test]

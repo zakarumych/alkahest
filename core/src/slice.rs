@@ -75,4 +75,4 @@ where
     }
 }
 
-formula_alias!(for[E: Element] [E] as Indirect<List<E>>);
+element_alias!(for[E: Element] [E] as Indirect<List<E>>);

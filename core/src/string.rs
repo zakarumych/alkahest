@@ -58,4 +58,4 @@ impl<'de> Deserialize<'de, Str> for String {
 
 // String is commonly used in compound types,
 // but `Str`
-formula_alias!(String as Indirect<Str>);
+element_alias!(String as Indirect<Str>);

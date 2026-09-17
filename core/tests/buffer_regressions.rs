@@ -1,5 +1,28 @@
 use alkahest_core::{Formula, Indirect, List, MakeIter, Serialize, advanced::write_usize, small};
 
+#[test]
+fn trivial_wide_size_fields_clear_high_bytes() {
+    struct SizeField;
+    impl Formula for SizeField {
+        type StackSize<const SIZE_BYTES: usize> = alkahest_core::ExactSize<SIZE_BYTES>;
+        type HeapSize<const SIZE_BYTES: usize> = alkahest_core::ExactSize<0>;
+        const INHABITED: bool = true;
+    }
+    impl Serialize<SizeField> for usize {
+        fn serialize<S: alkahest_core::Serializer>(
+            &self,
+            mut serializer: S,
+        ) -> Result<(), S::Error> {
+            serializer.write_usize(*self)
+        }
+    }
+    let mut bytes = [0xa5; 16];
+    let len = alkahest_core::manual_size::serialize::<SizeField, _, 16>(&7usize, &mut bytes)
+        .expect("serialize wide size field");
+    assert_eq!(len, 16);
+    assert_eq!(bytes, 7u128.to_le_bytes());
+}
+
 fn check_buffers<F, T>(value: &T)
 where
     F: Formula,
