@@ -40,12 +40,12 @@ where
     where
         S: Serializer,
     {
-        Serialize::<List<E>>::serialize(&self[..], serializer)
+        Serialize::<List<E>>::serialize(self.as_slice(), serializer)
     }
 
     #[inline(always)]
     fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
-        Serialize::<List<E>>::size_hint::<SIZE_BYTES>(&self[..])
+        Serialize::<List<E>>::size_hint::<SIZE_BYTES>(self.as_slice())
     }
 }
 
@@ -81,10 +81,14 @@ where
                 .map_err(|_| DeserializeError::WrongLength)
         );
 
-        for _ in 0..len {
-            let value = simple_try!(E::deserialize(&mut deserializer));
-            vec.push(value);
-        }
+        simple_try!(E::deserialize_slice(&mut deserializer, len, |item| {
+            vec.push(item);
+        }));
+
+        // for _ in 0..len {
+        //     let value = simple_try!(E::deserialize(&mut deserializer));
+        //     vec.push(value);
+        // }
 
         Ok(vec)
     }
@@ -115,16 +119,26 @@ where
                 .map_err(|_| DeserializeError::WrongLength)
         );
 
-        let in_place = self.len().min(len);
-        let extend = len - in_place;
+        let mut i = 0;
+        simple_try!(E::deserialize_slice(&mut deserializer, len, |item| {
+            if i < self.len() {
+                self[i] = item;
+            } else {
+                self.push(item);
+            }
+            i += 1;
+        }));
 
-        for i in 0..in_place {
-            simple_try!(E::deserialize_in_place(&mut self[i], &mut deserializer));
-        }
-        for _ in 0..extend {
-            let value = simple_try!(E::deserialize(&mut deserializer));
-            self.push(value);
-        }
+        // let in_place = self.len().min(len);
+        // let extend = len - in_place;
+
+        // for i in 0..in_place {
+        //     // simple_try!(E::deserialize_in_place(&mut self[i], &mut deserializer));
+        // }
+        // for _ in 0..extend {
+        //     let value = simple_try!(E::deserialize(&mut deserializer));
+        //     self.push(value);
+        // }
 
         self.truncate(len);
 

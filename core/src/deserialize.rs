@@ -2,9 +2,9 @@ use core::{fmt, str::Utf8Error};
 
 use crate::{
     cold_err,
-    element::{Element, heap_size, stack_size},
+    element::{Element, stack_size},
     formula::{Formula, SizeBound},
-    serialize::trivial_size,
+    serialize::{trivial_padded_size, trivial_size},
 };
 
 /// Error that can occur during deserialization.
@@ -64,6 +64,11 @@ pub trait Deserializer<'de> {
     fn read_usize(&mut self) -> Result<usize, DeserializeError>;
 
     fn read_value<F, T>(&mut self) -> Result<T, DeserializeError>
+    where
+        F: Formula + ?Sized,
+        T: Deserialize<'de, F>;
+
+    fn read_slice<F, T>(&mut self, len: usize, push: impl FnMut(T)) -> Result<(), DeserializeError>
     where
         F: Formula + ?Sized,
         T: Deserialize<'de, F>;
@@ -134,7 +139,7 @@ pub(crate) struct ComplexDeserializer<'de, const SIZE_BYTES: usize> {
 
 impl<'de, const SIZE_BYTES: usize> ComplexDeserializer<'de, SIZE_BYTES> {
     /// Creates new deserializer from input buffer.
-    #[inline]
+    #[inline(always)]
     pub const fn new(input: &'de [u8]) -> Self {
         ComplexDeserializer {
             input,
@@ -144,12 +149,12 @@ impl<'de, const SIZE_BYTES: usize> ComplexDeserializer<'de, SIZE_BYTES> {
     }
 
     #[cfg(debug_assertions)]
-    #[inline]
+    #[inline(always)]
     fn debug_validate(&self) {
         assert!(!self.debug_exhausted, "Deserializer used after exhaustion");
     }
 
-    #[inline]
+    #[inline(always)]
     fn skip_padding<F>(&mut self, new_len: &mut usize)
     where
         F: Formula + ?Sized,
@@ -183,7 +188,7 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for ComplexDeserializer<'de
     /// # Errors
     ///
     /// Returns `DeserializeError` if not enough bytes on stack.
-    #[inline]
+    #[inline(always)]
     fn read_bytes(&mut self, len: usize) -> Result<&'de [u8], DeserializeError> {
         #[cfg(debug_assertions)]
         self.debug_validate();
@@ -204,7 +209,7 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for ComplexDeserializer<'de
     /// # Errors
     ///
     /// Returns `DeserializeError` if stack is empty.
-    #[inline]
+    #[inline(always)]
     fn read_byte(&mut self) -> Result<u8, DeserializeError> {
         #[cfg(debug_assertions)]
         self.debug_validate();
@@ -227,7 +232,7 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for ComplexDeserializer<'de
     /// # Errors
     ///
     /// Returns `DeserializeError` if not enough bytes on stack.
-    #[inline]
+    #[inline(always)]
     fn read_byte_array<const N: usize>(&mut self) -> Result<&'de [u8; N], DeserializeError> {
         #[cfg(debug_assertions)]
         self.debug_validate();
@@ -250,7 +255,7 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for ComplexDeserializer<'de
     /// # Errors
     ///
     /// Returns `DeserializeError` if deserialization fails.
-    #[inline]
+    #[inline(always)]
     fn read_usize(&mut self) -> Result<usize, DeserializeError> {
         #[cfg(debug_assertions)]
         self.debug_validate();
@@ -265,7 +270,7 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for ComplexDeserializer<'de
     /// # Errors
     ///
     /// Returns `DeserializeError` if deserialization fails.
-    #[inline]
+    #[inline(always)]
     fn read_value<F, T>(&mut self) -> Result<T, DeserializeError>
     where
         F: Formula + ?Sized,
@@ -274,39 +279,64 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for ComplexDeserializer<'de
         #[cfg(debug_assertions)]
         self.debug_validate();
 
-        match const { trivial_size::<F, SIZE_BYTES>() } {
-            Some(size) => {
-                // Switch to trivial layout deserialization.
+        if let Some(trivial_size) = const { trivial_size::<F, SIZE_BYTES>() } {
+            // Switch to trivial layout deserialization.
 
-                if size > self.input.len() {
-                    return cold_err(DeserializeError::WrongLength);
-                }
-
-                let at = self.input.len() - size;
-                let tail = &self.input[at..][..size];
-
-                let value = simple_try!(<T as Deserialize<F>>::deserialize(TrivialDeserializer::<
-                    SIZE_BYTES,
-                >::new(
-                    tail,
-                )));
-
-                self.input = &self.input[..at];
-
-                return Ok(value);
+            if trivial_size > self.input.len() {
+                return cold_err(DeserializeError::WrongLength);
             }
-            _ => {}
+
+            let at = self.input.len() - trivial_size;
+            let tail = &self.input[at..][..trivial_size];
+
+            let de = TrivialDeserializer::<SIZE_BYTES>::new(tail);
+            let value = simple_try!(<T as Deserialize<F>>::deserialize(de));
+
+            self.input = &self.input[..at];
+
+            return Ok(value);
         }
 
         let mut new_len: usize = 0;
-        let value = simple_try!(<T as Deserialize<'de, F>>::deserialize(
-            TrackingDeserializer::<SIZE_BYTES>::new(self.input, &mut new_len),
-        ));
+        let de = TrackingDeserializer::<SIZE_BYTES>::new(self.input, &mut new_len);
+        let value = simple_try!(<T as Deserialize<'de, F>>::deserialize(de));
 
         self.skip_padding::<F>(&mut new_len);
 
         self.input = &self.input[..new_len];
         Ok(value)
+    }
+
+    fn read_slice<F, T>(
+        &mut self,
+        len: usize,
+        mut push: impl FnMut(T),
+    ) -> Result<(), DeserializeError>
+    where
+        F: Formula + ?Sized,
+        T: Deserialize<'de, F>,
+    {
+        if let Some(trivial_size) = const { trivial_padded_size::<F, SIZE_BYTES>() } {
+            let slice_size = trivial_size * len;
+
+            let at = self.input.len() - slice_size;
+            let slice_input = &self.input[at..];
+
+            for chunk in slice_input.chunks_exact(trivial_size).rev() {
+                let de = TrivialDeserializer::<SIZE_BYTES>::new(chunk);
+                let item = simple_try!(<T as Deserialize<'de, F>>::deserialize(de));
+                push(item);
+            }
+
+            return Ok(());
+        }
+
+        for _ in 0..len {
+            let value = simple_try!(self.read_value::<F, T>());
+            push(value);
+        }
+
+        Ok(())
     }
 
     /// Reads and deserializes field from the input buffer in-place.
@@ -323,27 +353,24 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for ComplexDeserializer<'de
         #[cfg(debug_assertions)]
         self.debug_validate();
 
-        match const { trivial_size::<F, SIZE_BYTES>() } {
-            Some(size) => {
-                // Switch to trivial layout deserialization.
+        if let Some(trivial_size) = const { trivial_size::<F, SIZE_BYTES>() } {
+            // Switch to trivial layout deserialization.
 
-                if size > self.input.len() {
-                    return cold_err(DeserializeError::WrongLength);
-                }
-
-                let at = self.input.len() - size;
-                let tail = &self.input[at..][..size];
-
-                simple_try!(<T as Deserialize<F>>::deserialize_in_place(
-                    place,
-                    TrivialDeserializer::<SIZE_BYTES>::new(tail),
-                ));
-
-                self.input = &self.input[..at];
-
-                return Ok(());
+            if trivial_size > self.input.len() {
+                return cold_err(DeserializeError::WrongLength);
             }
-            _ => {}
+
+            let at = self.input.len() - trivial_size;
+            let tail = &self.input[at..][..trivial_size];
+
+            simple_try!(<T as Deserialize<F>>::deserialize_in_place(
+                place,
+                TrivialDeserializer::<SIZE_BYTES>::new(tail),
+            ));
+
+            self.input = &self.input[..at];
+
+            return Ok(());
         }
 
         let mut new_len: usize = 0;
@@ -370,13 +397,13 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for ComplexDeserializer<'de
     }
 
     #[allow(refining_impl_trait)]
-    #[inline]
+    #[inline(always)]
     fn input(&self) -> &'de [u8] {
         self.input
     }
 
     #[doc(hidden)]
-    #[inline]
+    #[inline(always)]
     fn size_bytes(&self) -> usize {
         SIZE_BYTES
     }
@@ -401,7 +428,7 @@ impl<'de, 'consumed, const SIZE_BYTES: usize> Drop
 }
 
 impl<'de, 'consumed, const SIZE_BYTES: usize> TrackingDeserializer<'de, 'consumed, SIZE_BYTES> {
-    #[inline]
+    #[inline(always)]
     pub const fn new(input: &'de [u8], rest: &'consumed mut usize) -> Self {
         TrackingDeserializer {
             inner: ComplexDeserializer::new(input),
@@ -420,7 +447,7 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for TrackingDeserializer<'d
     /// # Errors
     ///
     /// Returns `DeserializeError` if not enough bytes on stack.
-    #[inline]
+    #[inline(always)]
     fn read_bytes(&mut self, len: usize) -> Result<&'de [u8], DeserializeError> {
         self.inner.read_bytes(len)
     }
@@ -432,7 +459,7 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for TrackingDeserializer<'d
     /// # Errors
     ///
     /// Returns `DeserializeError` if stack is empty.
-    #[inline]
+    #[inline(always)]
     fn read_byte(&mut self) -> Result<u8, DeserializeError> {
         self.inner.read_byte()
     }
@@ -444,7 +471,7 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for TrackingDeserializer<'d
     /// # Errors
     ///
     /// Returns `DeserializeError` if not enough bytes on stack.
-    #[inline]
+    #[inline(always)]
     fn read_byte_array<const N: usize>(&mut self) -> Result<&'de [u8; N], DeserializeError> {
         self.inner.read_byte_array::<N>()
     }
@@ -455,7 +482,7 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for TrackingDeserializer<'d
     /// # Errors
     ///
     /// Returns `DeserializeError` if deserialization fails.
-    #[inline]
+    #[inline(always)]
     fn read_usize(&mut self) -> Result<usize, DeserializeError> {
         self.inner.read_usize()
     }
@@ -466,7 +493,7 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for TrackingDeserializer<'d
     /// # Errors
     ///
     /// Returns `DeserializeError` if deserialization fails.
-    #[inline]
+    #[inline(always)]
     fn read_value<F, T>(&mut self) -> Result<T, DeserializeError>
     where
         F: Formula + ?Sized,
@@ -475,12 +502,20 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for TrackingDeserializer<'d
         self.inner.read_value()
     }
 
+    fn read_slice<F, T>(&mut self, len: usize, push: impl FnMut(T)) -> Result<(), DeserializeError>
+    where
+        F: Formula + ?Sized,
+        T: Deserialize<'de, F>,
+    {
+        self.inner.read_slice(len, push)
+    }
+
     /// Reads and deserializes field from the input buffer in-place.
     ///
     /// # Errors
     ///
     /// Returns `DeserializeError` if deserialization fails.
-    #[inline]
+    #[inline(always)]
     fn read_value_in_place<F, T>(&mut self, place: &mut T) -> Result<(), DeserializeError>
     where
         F: Formula + ?Sized,
@@ -489,272 +524,23 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for TrackingDeserializer<'d
         self.inner.read_value_in_place(place)
     }
 
-    #[inline]
+    #[inline(always)]
     fn at(&self, address: usize) -> Result<impl Deserializer<'de>, DeserializeError> {
         self.inner.at(address)
     }
 
     #[allow(refining_impl_trait)]
-    #[inline]
+    #[inline(always)]
     fn input(&self) -> &'de [u8] {
         self.inner.input
     }
 
     #[doc(hidden)]
-    #[inline]
+    #[inline(always)]
     fn size_bytes(&self) -> usize {
         SIZE_BYTES
     }
 }
-
-// /// Iterator over deserialized values.
-// #[must_use]
-// pub struct DeIter<'de, E: ?Sized, T, D: Deserializer<'de>, const SIZE_BYTES: usize> {
-//     de: D,
-//     len: usize,
-//     marker: PhantomData<(&'de [u8], fn(E) -> T)>,
-// }
-
-// impl<'de, E, T, D, const SIZE_BYTES: usize> DeIter<'de, E, T, D>
-// where
-//     E: Element + ?Sized,
-//     T: Deserialize<'de, E::Formula>,
-//     D: Deserializer<'de, SIZE_BYTES = SIZE_BYTES> + Clone,
-// {
-//     /// Returns true if no items remains in the iterator.
-//     #[must_use]
-//     #[inline]
-//     pub fn is_empty(&self) -> bool {
-//         self.len == 0
-//     }
-
-//     fn read_at(&self, index: usize) -> Result<T, DeserializeError> {
-//         const {
-//             assert!(matches!(
-//                 stack_size::<E, SIZE_BYTES>(),
-//                 SizeBound::Bounded(_) | SizeBound::Exact(_)
-//             ));
-//         }
-
-//         let mut de = self.de.clone();
-
-//         match stack_size::<E, SIZE_BYTES>() {
-//             SizeBound::Bounded(size) | SizeBound::Exact(size) => {
-//                 if size * index <= de.input.len() {
-//                     let end = de.input.len() - size * index;
-//                     de.input = &de.input[..end];
-//                 } else {
-//                     de.input = &[];
-//                 }
-//                 E::deserialize::<T, _>(&mut de)
-//             }
-//             SizeBound::Unbounded => {
-//                 let mut de = self.de.clone();
-//                 for _ in 0..index {
-//                     let _ = simple_try!(E::deserialize::<T, _>(&mut de));
-//                 }
-//                 E::deserialize::<T, _>(&mut de)
-//             }
-//         }
-//     }
-// }
-
-// impl<'de, F, T, const SIZE_BYTES: usize> Clone for DeIter<'de, F, T, SIZE_BYTES>
-// where
-//     F: ?Sized,
-// {
-//     #[inline]
-//     fn clone(&self) -> Self {
-//         DeIter {
-//             de: self.de.clone(),
-//             marker: PhantomData,
-//             len: self.len,
-//         }
-//     }
-
-//     #[inline]
-//     fn clone_from(&mut self, source: &Self) {
-//         self.de = source.de.clone();
-//         self.len = source.len;
-//     }
-// }
-
-// impl<'de, E, T, D> Iterator for DeIter<'de, E, T, D>
-// where
-//     E: Element + ?Sized,
-//     T: Deserialize<'de, E::Formula>,
-//     D: Deserializer<'de>,
-// {
-//     type Item = Result<T, DeserializeError>;
-
-//     #[inline]
-//     fn size_hint(&self) -> (usize, Option<usize>) {
-//         (self.len, Some(self.len))
-//     }
-
-//     #[inline]
-//     fn next(&mut self) -> Option<Result<T, DeserializeError>> {
-//         if self.is_empty() {
-//             return None;
-//         }
-
-//         match E::deserialize(&mut self.de) {
-//             Ok(item) => {
-//                 self.len -= 1;
-//                 Some(Ok(item))
-//             }
-//             Err(err) => {
-//                 self.len = 0;
-//                 Some(Err(err))
-//             }
-//         }
-//     }
-
-//     #[inline]
-//     fn count(self) -> usize {
-//         self.len
-//     }
-
-//     #[inline]
-//     fn last(self) -> Option<Result<T, DeserializeError>> {
-//         if self.len == 0 {
-//             return None;
-//         }
-//         match self.read_at(self.len - 1) {
-//             Ok(item) => Some(Ok(item)),
-//             Err(err) => Some(Err(err)),
-//         }
-//     }
-
-//     #[inline]
-//     fn nth(&mut self, n: usize) -> Option<Result<T, DeserializeError>> {
-//         if n > 0 {
-//             if n >= self.len {
-//                 self.len = 0;
-//                 return None;
-//             }
-
-//             match stack_size::<E, SIZE_BYTES>() {
-//                 SizeBound::Unbounded => {
-//                     for _ in 0..n {
-//                         match self.next() {
-//                             None => return None,
-//                             Some(Err(err)) => {
-//                                 self.len = 0;
-//                                 return Some(Err(err));
-//                             }
-//                             Some(Ok(_)) => {}
-//                         }
-//                     }
-//                 }
-
-//                 SizeBound::Bounded(size) | SizeBound::Exact(size) => {
-//                     if size * n <= self.de.input.len() {
-//                         let end = self.de.input.len() - size * n;
-//                         self.de.input = &self.de.input[..end]
-//                     } else {
-//                         self.de.input = &[];
-//                     }
-//                 }
-//             }
-
-//             self.len -= n;
-//         }
-
-//         self.next()
-//     }
-
-//     #[inline]
-//     fn fold<B, Fun>(mut self, init: B, mut f: Fun) -> B
-//     where
-//         Fun: FnMut(B, Result<T, DeserializeError>) -> B,
-//     {
-//         let mut acc = init;
-//         for _ in 0..self.len {
-//             match E::deserialize(&mut self.de) {
-//                 Ok(item) => acc = f(acc, Ok(item)),
-//                 Err(err) => {
-//                     acc = f(acc, Err(err));
-//                     break;
-//                 }
-//             };
-//         }
-//         acc
-//     }
-// }
-
-// impl<'de, E, T, D> DoubleEndedIterator for DeIter<'de, E, T, D>
-// where
-//     E: Element + ?Sized,
-//     T: Deserialize<'de, E::Formula>,
-//     D: Deserializer<'de>,
-// {
-//     #[inline]
-//     fn next_back(&mut self) -> Option<Result<T, DeserializeError>> {
-//         if self.len == 0 {
-//             return None;
-//         }
-
-//         match self.read_at(self.len - 1) {
-//             Ok(item) => {
-//                 self.len -= 1;
-//                 Some(Ok(item))
-//             }
-//             Err(err) => {
-//                 self.len = 0;
-//                 Some(Err(err))
-//             }
-//         }
-//     }
-
-//     #[inline]
-//     fn nth_back(&mut self, n: usize) -> Option<Result<T, DeserializeError>> {
-//         if n > 0 {
-//             if n >= self.len {
-//                 self.len = 0;
-//                 return None;
-//             }
-//             self.len -= n;
-//         }
-//         self.next_back()
-//     }
-
-//     #[inline]
-//     fn rfold<B, Fun>(self, init: B, mut f: Fun) -> B
-//     where
-//         Fun: FnMut(B, Result<T, DeserializeError>) -> B,
-//     {
-//         let mut acc = init;
-//         for idx in (0..self.len).rev() {
-//             match self.read_at(idx) {
-//                 Ok(item) => acc = f(acc, Ok(item)),
-//                 Err(err) => {
-//                     acc = f(acc, Err(err));
-//                     break;
-//                 }
-//             };
-//         }
-//         acc
-//     }
-// }
-
-// impl<'de, F, T, const SIZE_BYTES: usize> ExactSizeIterator for DeIter<'de, F, T, SIZE_BYTES>
-// where
-//     F: Formula + ?Sized,
-//     T: Deserialize<'de, F>,
-// {
-//     #[inline]
-//     fn len(&self) -> usize {
-//         self.len
-//     }
-// }
-
-// impl<'de, E, T, const SIZE_BYTES: usize> FusedIterator for DeIter<'de, E, T, SIZE_BYTES>
-// where
-//     E: Element + ?Sized,
-//     T: Deserialize<'de, E::Formula>,
-// {
-// }
 
 /// Deserializer from raw bytes.
 /// Provides methods for deserialization of values.
@@ -767,7 +553,7 @@ pub(crate) struct TrivialDeserializer<'de, const SIZE_BYTES: usize> {
 
 impl<'de, const SIZE_BYTES: usize> TrivialDeserializer<'de, SIZE_BYTES> {
     /// Creates new deserializer from input buffer.
-    #[inline]
+    #[inline(always)]
     pub const fn new(input: &'de [u8]) -> Self {
         TrivialDeserializer { input }
     }
@@ -780,7 +566,7 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for TrivialDeserializer<'de
     /// Reads specified number of bytes from the input buffer.
     /// Returns slice of bytes.
     /// Advances the input buffer.
-    #[inline]
+    #[inline(always)]
     fn read_bytes(&mut self, len: usize) -> Result<&'de [u8], DeserializeError> {
         let (head, tail) = self.input.split_at(len);
         self.input = tail;
@@ -790,7 +576,7 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for TrivialDeserializer<'de
     /// Reads specified number of bytes from the input buffer.
     /// Returns slice of bytes.
     /// Advances the input buffer.
-    #[inline]
+    #[inline(always)]
     fn read_byte(&mut self) -> Result<u8, DeserializeError> {
         let first = self.input[0];
         self.input = &self.input[1..];
@@ -800,7 +586,7 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for TrivialDeserializer<'de
     /// Reads specified number of bytes from the input buffer.
     /// Returns slice of bytes.
     /// Advances the input buffer.
-    #[inline]
+    #[inline(always)]
     fn read_byte_array<const N: usize>(&mut self) -> Result<&'de [u8; N], DeserializeError> {
         let (head, tail) = self.input.split_at(N);
         self.input = tail;
@@ -813,7 +599,7 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for TrivialDeserializer<'de
     /// # Errors
     ///
     /// Returns `DeserializeError` if deserialization fails.
-    #[inline]
+    #[inline(always)]
     fn read_usize(&mut self) -> Result<usize, DeserializeError> {
         let input = simple_try!(self.read_byte_array::<SIZE_BYTES>());
         read_usize::<SIZE_BYTES>(input)
@@ -825,27 +611,56 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for TrivialDeserializer<'de
     /// # Errors
     ///
     /// Returns `DeserializeError` if deserialization fails.
-    #[inline]
+    #[inline(always)]
     fn read_value<F, T>(&mut self) -> Result<T, DeserializeError>
     where
         F: Formula + ?Sized,
         T: Deserialize<'de, F>,
     {
-        match const { (stack_size::<F, SIZE_BYTES>(), heap_size::<F, SIZE_BYTES>()) } {
-            (SizeBound::Bounded(size) | SizeBound::Exact(size), SizeBound::Exact(0)) => {
-                // Switch to trivial layout serialization.
-                let (head, tail) = self.input.split_at(size);
-                self.input = tail;
+        if let Some(trivial_size) = const { trivial_padded_size::<F, SIZE_BYTES>() } {
+            // Switch to trivial layout serialization.
+            let (head, tail) = self.input.split_at(trivial_size);
+            self.input = tail;
 
-                let de = TrivialDeserializer::<SIZE_BYTES>::new(head);
-                let value = simple_try!(<T as Deserialize<F>>::deserialize(de));
+            let de = TrivialDeserializer::<SIZE_BYTES>::new(head);
+            let value = simple_try!(<T as Deserialize<F>>::deserialize(de));
 
-                Ok(value)
-            }
-            _ => {
-                unreachable!()
-            }
+            return Ok(value);
         }
+
+        unreachable!()
+    }
+
+    fn read_slice<F, T>(
+        &mut self,
+        len: usize,
+        mut push: impl FnMut(T),
+    ) -> Result<(), DeserializeError>
+    where
+        F: Formula + ?Sized,
+        T: Deserialize<'de, F>,
+    {
+        if let Some(trivial_size) = const { trivial_padded_size::<F, SIZE_BYTES>() } {
+            let slice_size = trivial_size * len;
+
+            let at = self.input.len() - slice_size;
+            let slice_input = &self.input[at..];
+
+            for chunk in slice_input.chunks_exact(trivial_size).rev() {
+                let de = TrivialDeserializer::<SIZE_BYTES>::new(chunk);
+                let item = simple_try!(<T as Deserialize<'de, F>>::deserialize(de));
+                push(item);
+            }
+
+            return Ok(());
+        }
+
+        for _ in 0..len {
+            let value = simple_try!(self.read_value::<F, T>());
+            push(value);
+        }
+
+        Ok(())
     }
 
     /// Reads and deserializes field from the input buffer in-place.
@@ -853,42 +668,42 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for TrivialDeserializer<'de
     /// # Errors
     ///
     /// Returns `DeserializeError` if deserialization fails.
-    #[inline]
+    #[inline(always)]
     fn read_value_in_place<F, T>(&mut self, place: &mut T) -> Result<(), DeserializeError>
     where
         F: Formula + ?Sized,
         T: Deserialize<'de, F> + ?Sized,
     {
-        match const { (stack_size::<F, SIZE_BYTES>(), heap_size::<F, SIZE_BYTES>()) } {
-            (SizeBound::Bounded(size) | SizeBound::Exact(size), SizeBound::Exact(0)) => {
-                // Switch to trivial layout serialization.
-                let (head, tail) = self.input.split_at(size);
-                self.input = tail;
+        if let Some(trivial_size) = const { trivial_padded_size::<F, SIZE_BYTES>() } {
+            // Switch to trivial layout serialization.
+            let (head, tail) = self.input.split_at(trivial_size);
+            self.input = tail;
 
-                let de = TrivialDeserializer::<SIZE_BYTES>::new(head);
-                simple_try!(<T as Deserialize<F>>::deserialize_in_place(place, de));
+            let de = TrivialDeserializer::<SIZE_BYTES>::new(head);
+            simple_try!(<T as Deserialize<F>>::deserialize_in_place(place, de));
 
-                Ok(())
-            }
-            _ => {
-                unreachable!()
-            }
+            return Ok(());
         }
-    }
 
-    #[allow(refining_impl_trait)]
-    fn at(&self, _address: usize) -> Result<ComplexDeserializer<'de, SIZE_BYTES>, DeserializeError> {
         unreachable!()
     }
 
     #[allow(refining_impl_trait)]
-    #[inline]
+    fn at(
+        &self,
+        _address: usize,
+    ) -> Result<ComplexDeserializer<'de, SIZE_BYTES>, DeserializeError> {
+        unreachable!()
+    }
+
+    #[allow(refining_impl_trait)]
+    #[inline(always)]
     fn input(&self) -> &'de [u8] {
         self.input
     }
 
     #[doc(hidden)]
-    #[inline]
+    #[inline(always)]
     fn size_bytes(&self) -> usize {
         SIZE_BYTES
     }
@@ -906,7 +721,7 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for TrivialDeserializer<'de
 ///
 /// [`pack`]: crate::pack
 /// [`unpack`]: crate::unpack
-#[inline]
+#[inline(always)]
 pub fn deserialize<'de, F, T, const SIZE_BYTES: usize>(
     input: &'de [u8],
 ) -> Result<T, DeserializeError>
@@ -914,19 +729,16 @@ where
     F: Formula + ?Sized,
     T: Deserialize<'de, F>,
 {
-    match const { trivial_size::<F, SIZE_BYTES>() } {
-        Some(trivial_size) => {
-            if input.len() < trivial_size {
-                return cold_err(DeserializeError::WrongLength);
-            }
-            let de = TrivialDeserializer::<SIZE_BYTES>::new(&input[..trivial_size]);
-            <T as Deserialize<F>>::deserialize(de)
+    if let Some(trivial_size) = const { trivial_size::<F, SIZE_BYTES>() } {
+        if input.len() < trivial_size {
+            return cold_err(DeserializeError::WrongLength);
         }
-        None => {
-            let de = ComplexDeserializer::<SIZE_BYTES>::new(input);
-            <T as Deserialize<F>>::deserialize(de)
-        }
+        let de = TrivialDeserializer::<SIZE_BYTES>::new(&input[..trivial_size]);
+        return <T as Deserialize<F>>::deserialize(de);
     }
+
+    let de = ComplexDeserializer::<SIZE_BYTES>::new(input);
+    <T as Deserialize<F>>::deserialize(de)
 }
 
 /// Deserializes value from the input.
@@ -941,7 +753,7 @@ where
 ///
 /// [`pack`]: crate::pack
 /// [`unpack`]: crate::unpack
-#[inline]
+#[inline(always)]
 pub fn deserialize_in_place<'de, F, T, const SIZE_BYTES: usize>(
     place: &mut T,
     input: &'de [u8],
@@ -950,21 +762,18 @@ where
     F: Formula + ?Sized,
     T: Deserialize<'de, F> + ?Sized,
 {
-    match const { trivial_size::<F, SIZE_BYTES>() } {
-        Some(trivial_size) => {
-            if input.len() < trivial_size {
-                return cold_err(DeserializeError::WrongLength);
-            }
-            let de = TrivialDeserializer::<SIZE_BYTES>::new(&input[..trivial_size]);
-            simple_try!(<T as Deserialize<F>>::deserialize_in_place(place, de));
-            Ok(())
+    if let Some(trivial_size) = const { trivial_size::<F, SIZE_BYTES>() } {
+        if input.len() < trivial_size {
+            return cold_err(DeserializeError::WrongLength);
         }
-        None => {
-            let de = ComplexDeserializer::<SIZE_BYTES>::new(input);
-            simple_try!(<T as Deserialize<F>>::deserialize_in_place(place, de));
-            Ok(())
-        }
+        let de = TrivialDeserializer::<SIZE_BYTES>::new(&input[..trivial_size]);
+        simple_try!(<T as Deserialize<F>>::deserialize_in_place(place, de));
+        return Ok(());
     }
+
+    let de = ComplexDeserializer::<SIZE_BYTES>::new(input);
+    simple_try!(<T as Deserialize<F>>::deserialize_in_place(place, de));
+    Ok(())
 }
 
 #[cold]

@@ -308,11 +308,11 @@ where
     let total = total::<F, SIZE_BYTES>();
 
     match total {
+        Some(total) => Ok(total),
         None => match input.first_chunk::<SIZE_BYTES>() {
             None => Err(DeserializeError::OutOfBounds(SIZE_BYTES)),
             Some(bytes) => read_usize::<SIZE_BYTES>(bytes),
         },
-        Some(total) => Ok(total),
     }
 }
 

@@ -37,12 +37,29 @@ pub trait Element: 'static {
         T: Serialize<Self::Formula> + ?Sized,
         S: Serializer;
 
+    /// Serializes value using this element.
+    ///
+    /// Value must implement `Serialize` for this element's formula.
+    fn serialize_slice<T, S>(slice: &[T], serializer: &mut S) -> Result<(), S::Error>
+    where
+        T: Serialize<Self::Formula>,
+        S: Serializer;
+
     /// Gets size hint for serializing value using this element.
     fn size_hint<T, const SIZE_BYTES: usize>(value: &T) -> Option<Sizes>
     where
         T: Serialize<Self::Formula> + ?Sized;
 
     fn deserialize<'de, T, D>(deserializer: &mut D) -> Result<T, DeserializeError>
+    where
+        T: Deserialize<'de, Self::Formula>,
+        D: Deserializer<'de>;
+
+    fn deserialize_slice<'de, T, D>(
+        deserializer: &mut D,
+        len: usize,
+        push: impl FnMut(T),
+    ) -> Result<(), DeserializeError>
     where
         T: Deserialize<'de, Self::Formula>,
         D: Deserializer<'de>;
@@ -77,6 +94,15 @@ where
     }
 
     #[inline(always)]
+    fn serialize_slice<T, S>(slice: &[T], serializer: &mut S) -> Result<(), S::Error>
+    where
+        T: Serialize<Self::Formula>,
+        S: Serializer,
+    {
+        serializer.write_slice::<F, T>(slice)
+    }
+
+    #[inline(always)]
     fn size_hint<T, const SIZE_BYTES: usize>(value: &T) -> Option<Sizes>
     where
         T: Serialize<F> + ?Sized,
@@ -91,6 +117,19 @@ where
         D: Deserializer<'de>,
     {
         deserializer.read_value::<F, T>()
+    }
+
+    #[inline(always)]
+    fn deserialize_slice<'de, T, D>(
+        deserializer: &mut D,
+        len: usize,
+        push: impl FnMut(T),
+    ) -> Result<(), DeserializeError>
+    where
+        T: Deserialize<'de, Self::Formula>,
+        D: Deserializer<'de>,
+    {
+        deserializer.read_slice::<F, T>(len, push)
     }
 
     #[inline(always)]
@@ -147,6 +186,19 @@ where
     }
 
     #[inline(always)]
+    fn serialize_slice<T, S>(slice: &[T], serializer: &mut S) -> Result<(), S::Error>
+    where
+        T: Serialize<Self::Formula>,
+        S: Serializer,
+    {
+        for item in slice {
+            simple_try!(serializer.write_indirect::<F, T>(item));
+        }
+
+        Ok(())
+    }
+
+    #[inline(always)]
     fn size_hint<T, const SIZE_BYTES: usize>(value: &T) -> Option<Sizes>
     where
         T: Serialize<F> + ?Sized,
@@ -176,6 +228,32 @@ where
         let address = simple_try!(deserializer.read_usize());
         let heap = deserializer.at(address)?;
         <T as Deserialize<F>>::deserialize(heap)
+    }
+
+    #[inline(always)]
+    fn deserialize_slice<'de, T, D>(
+        deserializer: &mut D,
+        len: usize,
+        mut push: impl FnMut(T),
+    ) -> Result<(), DeserializeError>
+    where
+        T: Deserialize<'de, Self::Formula>,
+        D: Deserializer<'de>,
+    {
+        for _ in 0..len {
+            if const { zero_sized::<F>() } {
+                let value = simple_try!(deserializer.read_value::<F, T>());
+                push(value);
+                continue;
+            }
+
+            let address = simple_try!(deserializer.read_usize());
+            let heap = simple_try!(deserializer.at(address));
+            let value = simple_try!(<T as Deserialize<F>>::deserialize(heap));
+            push(value);
+        }
+
+        return Ok(());
     }
 
     #[inline(always)]

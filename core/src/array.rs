@@ -29,11 +29,7 @@ where
             simple_try!(serializer.write_usize(N));
         }
 
-        for item in self {
-            simple_try!(E::serialize(item, &mut serializer));
-        }
-
-        Ok(())
+        E::serialize_slice::<T, S>(self, &mut serializer)
     }
 
     #[inline]
@@ -99,10 +95,16 @@ where
 
         let mut options = [const { None::<T> }; N];
 
-        for i in 0..N {
-            let value = simple_try!(E::deserialize::<T, D>(&mut deserializer));
-            options[i] = Some(value);
-        }
+        // for i in 0..N {
+        //     let value = simple_try!(E::deserialize::<T, D>(&mut deserializer));
+        //     options[i] = Some(value);
+        // }
+
+        let mut i = 0;
+        simple_try!(E::deserialize_slice(&mut deserializer, N, |item| {
+            options[i] = Some(item);
+            i += 1;
+        }));
 
         // Unwrap is safe here because if loop above completed, all elements are `Some`.
         let array = options.map(|opt| opt.unwrap());
@@ -122,12 +124,18 @@ where
             return Ok(());
         }
 
-        for i in 0..N {
-            simple_try!(E::deserialize_in_place::<T, D>(
-                &mut self[i],
-                &mut deserializer
-            ));
-        }
+        // for i in 0..N {
+        //     simple_try!(E::deserialize_in_place::<T, D>(
+        //         &mut self[i],
+        //         &mut deserializer
+        //     ));
+        // }
+
+        let mut i = 0;
+        simple_try!(E::deserialize_slice(&mut deserializer, N, |item| {
+            self[i] = item;
+            i += 1;
+        }));
 
         Ok(())
     }

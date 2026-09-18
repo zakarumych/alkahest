@@ -1,5 +1,5 @@
 #![cfg_attr(not(feature = "std"), no_std)]
-// #![forbid(unsafe_code)]
+#![forbid(unsafe_code)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
@@ -73,6 +73,15 @@ macro_rules! element_alias {
         }
 
         #[inline(always)]
+        fn serialize_slice<T, S>(slice: &[T], serializer: &mut S) -> Result<(), S::Error>
+        where
+            T: $crate::Serialize<<$element as $crate::Element>::Formula>,
+            S: $crate::Serializer,
+        {
+            <$element as $crate::Element>::serialize_slice::<T, S>(slice, serializer)
+        }
+
+        #[inline(always)]
         fn size_hint<T, const SIZE_BYTES: usize>(value: &T) -> Option<$crate::Sizes>
         where
             T: $crate::serialize::Serialize<<$element as $crate::Element>::Formula> + ?Sized,
@@ -87,6 +96,15 @@ macro_rules! element_alias {
             D: $crate::Deserializer<'de>,
         {
             <$element as $crate::Element>::deserialize::<T, D>(deserializer)
+        }
+
+        #[inline(always)]
+        fn deserialize_slice<'de, T, D>(deserializer: &mut D, len: usize, push: impl FnMut(T)) -> Result<(), $crate::DeserializeError>
+        where
+            T: $crate::Deserialize<'de, <$element as $crate::Element>::Formula>,
+            D: $crate::Deserializer<'de>,
+        {
+            <$element as $crate::Element>::deserialize_slice::<T, D>(deserializer, len, push)
         }
 
         #[inline(always)]

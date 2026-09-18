@@ -38,8 +38,7 @@ macro_rules! impl_primitive {
 
             #[inline(always)]
             fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
-                unreachable!()
-                // Some(Sizes{ heap: 0, stack: size_of::<$ty>()})
+                Some(Sizes{ heap: 0, stack: size_of::<$ty>()})
             }
         }
 
@@ -55,8 +54,7 @@ macro_rules! impl_primitive {
 
                 #[inline(always)]
                 fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
-                    unreachable!()
-                    // Some(Sizes{ heap: 0, stack: size_of::<$ty>()})
+                    Some(Sizes{ heap: 0, stack: size_of::<$ty>()})
                 }
             }
         )*
@@ -64,7 +62,7 @@ macro_rules! impl_primitive {
 
         impl<'de> Deserialize<'de, $ty> for $ty
         {
-            #[inline]
+            #[inline(always)]
             fn deserialize<D>(mut de: D) -> Result<Self, DeserializeError>
             where
                 D: Deserializer<'de>,
@@ -74,7 +72,7 @@ macro_rules! impl_primitive {
                 return Ok(value);
             }
 
-            #[inline]
+            #[inline(always)]
             fn deserialize_in_place<D>(&mut self, mut de: D) -> Result<(), DeserializeError>
             where
                 D: Deserializer<'de>,
@@ -138,15 +136,15 @@ impl Serialize<bool> for bool {
 
     #[inline(always)]
     fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
-        unreachable!()
-        // Some(Sizes {
-        //     heap: 0,
-        //     stack: size_of::<u8>(),
-        // })
+        Some(Sizes {
+            heap: 0,
+            stack: size_of::<u8>(),
+        })
     }
 }
 
 impl<'de> Deserialize<'de, bool> for bool {
+    #[inline(always)]
     fn deserialize<D>(mut de: D) -> Result<Self, DeserializeError>
     where
         D: Deserializer<'de>,

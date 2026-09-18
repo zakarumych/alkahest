@@ -209,6 +209,17 @@ pub trait Serializer {
         F: Formula + ?Sized,
         T: Serialize<F> + ?Sized;
 
+    /// Serializes a whole slice of elements.
+    ///
+    /// This should be prefered over calling `write_direct` for each element.
+    fn write_slice<F, T>(&mut self, slice: &[T]) -> Result<(), Self::Error>
+    where
+        F: Formula + ?Sized,
+        T: Serialize<F>;
+
+    /// Write padding accumulated from last write.
+    fn write_padding(&mut self) -> Result<(), Self::Error>;
+
     /// Reserve space for one `usize` and return its address.
     fn reserve_usize(&mut self) -> Result<usize, Self::Error>;
 
@@ -325,51 +336,34 @@ where
         F: Formula + ?Sized,
         T: Serialize<F> + ?Sized,
     {
-        let _is_zero = is_zero::<F, SIZE_BYTES>();
-
-        #[cfg(not(debug_assertions))]
-        if _is_zero {
-            simple_try!(
-                self.buffer
-                    .reserve(self.sizes.heap, self.sizes.stack, self.pad_next)
-            );
-
-            self.sizes.stack += self.pad_next;
-            self.pad_next = 0;
-
-            // No need to serialize zero-sized value.
-            // In release builds we simply skip serialization.
-            return Ok(());
+        if is_zero::<F, SIZE_BYTES>() {
+            return self.write_padding();
         }
 
-        match const { trivial_size::<F, SIZE_BYTES>() } {
-            Some(size) => {
-                // Switch to trivial layout serialization.
+        if let Some(trivial_size) = const { trivial_size::<F, SIZE_BYTES>() } {
+            // Switch to trivial layout serialization.
 
-                let reserved = simple_try!(self.buffer.reserved(
-                    self.sizes.heap,
-                    self.sizes.stack,
-                    size + self.pad_next,
-                ));
+            let reserved = simple_try!(self.buffer.reserved(
+                self.sizes.heap,
+                self.sizes.stack,
+                trivial_size + self.pad_next,
+            ));
 
-                if let Some(reserved) = reserved {
-                    let at = reserved.len() - self.sizes.stack - size - self.pad_next;
-                    let tail = &mut reserved[at..][..size];
+            if let Some(reserved) = reserved {
+                let at = reserved.len() - self.sizes.stack - trivial_size - self.pad_next;
+                let tail = &mut reserved[at..][..trivial_size];
 
-                    if let Err(err) = <T as Serialize<F>>::serialize(
-                        value,
-                        TrivialSerializer::<SIZE_BYTES>::new(tail),
-                    ) {
-                        match err {}
-                    }
+                let ser = TrivialSerializer::<SIZE_BYTES>::new(tail);
+
+                if let Err(err) = <T as Serialize<F>>::serialize(value, ser) {
+                    match err {}
                 }
-
-                self.sizes.stack += size + self.pad_next;
-                self.pad_next = 0;
-
-                return Ok(());
             }
-            _ => {}
+
+            self.sizes.stack += trivial_size + self.pad_next;
+            self.pad_next = 0;
+
+            return Ok(());
         }
 
         let old_sizes;
@@ -391,30 +385,20 @@ where
             old_sizes = *self.sizes;
 
             if let Some(reserved) = reserved {
-                let serializer = ComplexSerializer::<_, SIZE_BYTES>::new(&mut self.sizes, reserved);
-                if let Err(err) = <T as Serialize<F>>::serialize(value, serializer) {
+                let ser = ComplexSerializer::<_, SIZE_BYTES>::new(&mut self.sizes, reserved);
+                if let Err(err) = <T as Serialize<F>>::serialize(value, ser) {
                     match err {}
                 }
             } else {
-                let serializer = ComplexSerializer::<_, SIZE_BYTES>::new(self.sizes, DryBuffer);
-                if let Err(err) = <T as Serialize<F>>::serialize(value, serializer) {
-                    match err {}
-                }
+                *self.sizes += sizes;
             }
         } else {
-            simple_try!(
-                self.buffer
-                    .reserve(self.sizes.heap, self.sizes.stack, self.pad_next)
-            );
-            self.sizes.stack += self.pad_next;
-            self.pad_next = 0;
+            simple_try!(self.write_padding());
 
             old_sizes = *self.sizes;
 
-            simple_try!(<T as Serialize<F>>::serialize(
-                value,
-                ComplexSerializer::<_, SIZE_BYTES>::new(self.sizes, self.buffer.reborrow())
-            ));
+            let ser = ComplexSerializer::<_, SIZE_BYTES>::new(self.sizes, self.buffer.reborrow());
+            simple_try!(<T as Serialize<F>>::serialize(value, ser));
         }
 
         let actual_sizes = *self.sizes - old_sizes;
@@ -465,28 +449,45 @@ where
     ///
     /// Returns error if buffer write fails.
     #[inline]
-    fn write_indirect<E, T>(&mut self, value: &T) -> Result<(), B::Error>
+    fn write_indirect<F, T>(&mut self, value: &T) -> Result<(), B::Error>
     where
-        E: Element + ?Sized,
-        T: Serialize<E::Formula> + ?Sized,
+        F: Formula + ?Sized,
+        T: Serialize<F> + ?Sized,
     {
-        assert!(E::INHABITED);
+        assert!(F::INHABITED);
 
-        if const { zero_sized::<E>() } {
-            simple_try!(
-                self.buffer
-                    .reserve(self.sizes.heap, self.sizes.stack, self.pad_next)
-            );
-            self.sizes.stack += self.pad_next;
+        if const { zero_sized::<F>() } {
+            return self.write_padding();
+        }
+
+        if let Some(trivial_size) = const { trivial_size::<F, SIZE_BYTES>() } {
+            // Switch to trivial layout serialization.
+
+            let reserved = simple_try!(self.buffer.reserved_heap(
+                self.sizes.heap,
+                self.sizes.stack,
+                trivial_size,
+            ));
+
+            if let Some(reserved) = reserved {
+                let ser = TrivialSerializer::<SIZE_BYTES>::new(reserved);
+
+                if let Err(err) = <T as Serialize<F>>::serialize(value, ser) {
+                    match err {}
+                }
+            }
+
+            self.sizes.stack += trivial_size;
             self.pad_next = 0;
+
             return Ok(());
         }
 
         // Can we get size hint for the value?
-        match size_hint::<E, T, SIZE_BYTES>(&value) {
+        match size_hint::<F, T, SIZE_BYTES>(&value) {
             None => {
                 // Size hint is unobtainable, serialize to heap through stack and move to heap.
-                simple_try!(self.write_to_heap::<E, T>(value));
+                simple_try!(self.write_to_heap::<F, T>(value));
             }
             Some(promised) => {
                 // Reserive heap space to avoid serializing to stack and moving to heap.
@@ -502,28 +503,23 @@ where
                 };
 
                 if let Some(reserved) = reserved {
-                    let mut serializer =
-                        ComplexSerializer::<_, SIZE_BYTES>::new(&mut sizes, reserved);
-                    if let Err(err) = E::serialize(value, &mut serializer) {
+                    let ser = ComplexSerializer::<_, SIZE_BYTES>::new(&mut sizes, reserved);
+                    if let Err(err) = <T as Serialize<F>>::serialize(value, ser) {
                         match err {}
                     }
-                } else {
-                    let mut serializer =
-                        ComplexSerializer::<_, SIZE_BYTES>::new(&mut sizes, DryBuffer);
-                    if let Err(err) = E::serialize(value, &mut serializer) {
-                        match err {}
-                    }
-                }
 
-                debug_assert_eq!(
-                    sizes.heap,
-                    self.sizes.heap + promised.heap,
-                    "Serialization used more heap than promised by `Serialize::size_hint`"
-                );
-                debug_assert_eq!(
-                    sizes.stack, promised.stack,
-                    "Serialization used more stack than promised by `Serialize::size_hint`"
-                );
+                    debug_assert_eq!(
+                        sizes.heap,
+                        self.sizes.heap + promised.heap,
+                        "Serialization used more heap than promised by `Serialize::size_hint`"
+                    );
+                    debug_assert_eq!(
+                        sizes.stack, promised.stack,
+                        "Serialization used more stack than promised by `Serialize::size_hint`"
+                    );
+                } else {
+                    sizes += promised;
+                }
 
                 // Flush reserved memory to heap.
                 self.sizes.heap = sizes.total();
@@ -532,6 +528,65 @@ where
 
         let address = self.sizes.heap;
         self.write_usize(address)
+    }
+
+    #[inline]
+    fn write_slice<F, T>(&mut self, slice: &[T]) -> Result<(), Self::Error>
+    where
+        F: Formula + ?Sized,
+        T: Serialize<F>,
+    {
+        if is_zero::<F, SIZE_BYTES>() {
+            return self.write_padding();
+        }
+
+        if let Some(trivial_size) = const { trivial_padded_size::<F, SIZE_BYTES>() } {
+            // Switch to trivial layout serialization.
+            let slice_size = trivial_size * slice.len();
+
+            let reserved = simple_try!(self.buffer.reserved(
+                self.sizes.heap,
+                self.sizes.stack,
+                slice_size + self.pad_next,
+            ));
+
+            if let Some(reserved) = reserved {
+                let at = reserved.len() - self.sizes.stack - slice_size - self.pad_next;
+                let tail = &mut reserved[at..][..slice_size];
+
+                for (chunk, item) in
+                    Iterator::zip(tail.chunks_exact_mut(trivial_size), slice.iter().rev())
+                {
+                    let ser = TrivialSerializer::<SIZE_BYTES>::new(chunk);
+
+                    if let Err(err) = <T as Serialize<F>>::serialize(item, ser) {
+                        match err {}
+                    }
+                }
+            }
+
+            self.sizes.stack += slice_size + self.pad_next;
+            self.pad_next = 0;
+
+            return Ok(());
+        }
+
+        for item in slice {
+            simple_try!(self.write_direct::<F, T>(item));
+        }
+
+        self.write_padding()
+    }
+
+    #[inline(always)]
+    fn write_padding(&mut self) -> Result<(), Self::Error> {
+        simple_try!(
+            self.buffer
+                .reserve(self.sizes.heap, self.sizes.stack, self.pad_next)
+        );
+        self.sizes.stack += self.pad_next;
+        self.pad_next = 0;
+        Ok(())
     }
 
     #[inline(always)]
@@ -603,35 +658,28 @@ impl<'a, const SIZE_BYTES: usize> Serializer for TrivialSerializer<'a, SIZE_BYTE
     /// # Errors
     ///
     /// Returns error if buffer write fails.
-    #[inline]
+    #[inline(always)]
     fn write_direct<F, T>(&mut self, value: &T) -> Result<(), Infallible>
     where
         F: Formula + ?Sized,
         T: Serialize<F> + ?Sized,
     {
         assert!(F::INHABITED);
-        let _is_zero = is_zero::<F, SIZE_BYTES>();
 
-        #[cfg(not(debug_assertions))]
-        if _is_zero {
-            // No need to serialize zero-sized value.
-            // In release builds we simply skip serialization.
+        if is_zero::<F, SIZE_BYTES>() {
             return Ok(());
         }
 
-        match const { trivial_size::<F, SIZE_BYTES>() } {
-            Some(size) => {
-                // Switch to trivial layout serialization.
-                let (head, tail) = core::mem::take(&mut self.bytes).split_at_mut(size);
-                self.bytes = tail;
+        if let Some(trivial_size) = const { trivial_padded_size::<F, SIZE_BYTES>() } {
+            // Switch to trivial layout serialization.
+            let (head, tail) = core::mem::take(&mut self.bytes).split_at_mut(trivial_size);
+            self.bytes = tail;
 
-                let serializer = TrivialSerializer::<SIZE_BYTES>::new(head);
-                <T as Serialize<F>>::serialize(value, serializer)
-            }
-            _ => {
-                unreachable!()
-            }
+            let serializer = TrivialSerializer::<SIZE_BYTES>::new(head);
+            return <T as Serialize<F>>::serialize(value, serializer);
         }
+
+        unreachable!()
     }
 
     /// Write value to the buffer as a reference,
@@ -642,7 +690,7 @@ impl<'a, const SIZE_BYTES: usize> Serializer for TrivialSerializer<'a, SIZE_BYTE
     /// # Errors
     ///
     /// Returns error if buffer write fails.
-    #[inline]
+    #[inline(always)]
     fn write_indirect<F, T>(&mut self, _value: &T) -> Result<(), Infallible>
     where
         F: Formula + ?Sized,
@@ -654,6 +702,44 @@ impl<'a, const SIZE_BYTES: usize> Serializer for TrivialSerializer<'a, SIZE_BYTE
         } else {
             unreachable!()
         }
+    }
+
+    #[inline(always)]
+    fn write_slice<F, T>(&mut self, slice: &[T]) -> Result<(), Self::Error>
+    where
+        F: Formula + ?Sized,
+        T: Serialize<F>,
+    {
+        if is_zero::<F, SIZE_BYTES>() {
+            return Ok(());
+        }
+
+        if let Some(trivial_size) = const { trivial_padded_size::<F, SIZE_BYTES>() } {
+            // Switch to trivial layout serialization.
+
+            let slice_size = trivial_size * slice.len();
+            let (head, tail) = core::mem::take(&mut self.bytes).split_at_mut(slice_size);
+            self.bytes = tail;
+
+            for (chunk, item) in
+                Iterator::zip(head.chunks_exact_mut(trivial_size), slice.iter().rev())
+            {
+                let ser = TrivialSerializer::<SIZE_BYTES>::new(chunk);
+
+                if let Err(err) = <T as Serialize<F>>::serialize(item, ser) {
+                    match err {}
+                }
+            }
+
+            return Ok(());
+        }
+
+        unreachable!()
+    }
+
+    #[inline(always)]
+    fn write_padding(&mut self) -> Result<(), Self::Error> {
+        Ok(())
     }
 
     #[inline(always)]
@@ -788,6 +874,14 @@ pub(crate) const fn is_zero<E: Element + ?Sized, const SIZE_BYTES: usize>() -> b
 pub(crate) const fn trivial_size<E: Element + ?Sized, const SIZE_BYTES: usize>() -> Option<usize> {
     match (stack_size::<E, SIZE_BYTES>(), heap_size::<E, SIZE_BYTES>()) {
         (SizeBound::Exact(size), SizeBound::Exact(0)) => Some(size),
+        _ => None,
+    }
+}
+
+pub(crate) const fn trivial_padded_size<E: Element + ?Sized, const SIZE_BYTES: usize>()
+-> Option<usize> {
+    match (stack_size::<E, SIZE_BYTES>(), heap_size::<E, SIZE_BYTES>()) {
+        (SizeBound::Exact(size) | SizeBound::Bounded(size), SizeBound::Exact(0)) => Some(size),
         _ => None,
     }
 }

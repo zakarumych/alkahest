@@ -18,13 +18,18 @@ where
     {
         debug_assert!(self.is_empty() || E::INHABITED);
 
-        if E::INHABITED {
-            simple_try!(serializer.write_usize(self.len()));
-            for item in self {
-                simple_try!(E::serialize(item, &mut serializer));
-            }
+        if !E::INHABITED {
+            return Ok(());
         }
-        Ok(())
+
+        simple_try!(serializer.write_usize(self.len()));
+        // for item in self {
+        //     simple_try!(E::serialize(item, &mut serializer));
+        // }
+
+        // Ok(())
+
+        E::serialize_slice(self, &mut serializer)
     }
 
     #[inline]

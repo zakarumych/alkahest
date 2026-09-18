@@ -37,10 +37,11 @@ where
 
         if MIN == MAX {
             // No need to store length if min == max
-            stack_size::<E, SIZE_BYTES>().mul(MAX)
+            stack_size::<E, SIZE_BYTES>().padded().mul(MAX)
         } else {
             // Need to store length and size can't be exact
             stack_size::<E, SIZE_BYTES>()
+                .padded()
                 .mul(MAX)
                 .add(SizeBound::Exact(SIZE_BYTES))
                 .not_exact()

@@ -9,6 +9,7 @@ use crate::{
     element::{Element, stack_size},
     formula::{Formula, SizeBound},
     list::List,
+    serialize::trivial_padded_size,
 };
 
 pub struct Lazy<'de, F: ?Sized> {
@@ -100,8 +101,20 @@ where
         let mut me = self.clone();
         let len = simple_try!(me.read_usize());
 
+        let input = with_size_bytes!(SIZE_BYTES = self.size_bytes => {{
+            match const { trivial_padded_size::<E, SIZE_BYTES>() } {
+                Some(trivial_size) => {
+                    let at = me.input.len() - trivial_size * len;
+                    &me.input[at..]
+                }
+                None => me.input,
+            }
+        }} else {
+            return cold_err(DeserializeError::Incompatible);
+        });
+
         Ok(LazyDeIter::<'_, E, T> {
-            input: me.input,
+            input,
             len,
             size_bytes: me.size_bytes,
             marker: PhantomData,
@@ -120,6 +133,7 @@ where
     {
         let input = deserializer.input();
         let size_bytes = deserializer.size_bytes();
+
         let stack = with_size_bytes!(SIZE_BYTES = size_bytes => {
             match const { stack_size::<F, SIZE_BYTES>() } {
                 SizeBound::Exact(size) => size,
@@ -129,7 +143,9 @@ where
         } else {
             return cold_err(DeserializeError::Incompatible);
         });
+
         simple_try!(deserializer.read_bytes(stack));
+
         Ok(Lazy {
             input,
             size_bytes,
@@ -168,11 +184,22 @@ where
                 return None;
             }
 
-            let mut de = ComplexDeserializer::<SIZE_BYTES>::new(self.input);
-            match E::deserialize::<T, _>(&mut de) {
+            let (result, input) = match const { trivial_padded_size::<E, SIZE_BYTES>() } {
+                Some(trivial_size) => {
+                    let at = self.input.len() - trivial_size;
+                    let mut de = TrivialDeserializer::<SIZE_BYTES>::new(&self.input[at..]);
+                    (E::deserialize::<T, _>(&mut de), &self.input[..at])
+                }
+                None => {
+                    let mut de = ComplexDeserializer::<SIZE_BYTES>::new(self.input);
+                    (E::deserialize::<T, _>(&mut de), de.input())
+                }
+            };
+
+            match result {
                 Ok(item) => {
                     self.len -= 1;
-                    self.input = de.input();
+                    self.input = input;
                     Some(Ok(item))
                 }
                 Err(err) => {
