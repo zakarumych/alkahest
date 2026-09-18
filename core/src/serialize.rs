@@ -230,7 +230,7 @@ where
     B: Buffer,
 {
     #[inline(always)]
-    fn new(sizes: &'a mut Sizes, buffer: B) -> Self {
+    pub fn new(sizes: &'a mut Sizes, buffer: B) -> Self {
         ComplexSerializer {
             sizes,
             buffer,
@@ -563,7 +563,8 @@ pub(crate) struct TrivialSerializer<'a, const SIZE_BYTES: usize> {
 }
 
 impl<'a, const SIZE_BYTES: usize> TrivialSerializer<'a, SIZE_BYTES> {
-    fn new(bytes: &'a mut [u8]) -> Self {
+    #[inline(always)]
+    pub fn new(bytes: &'a mut [u8]) -> Self {
         TrivialSerializer { bytes }
     }
 }
@@ -791,24 +792,6 @@ pub(crate) const fn trivial_size<E: Element + ?Sized, const SIZE_BYTES: usize>()
     }
 }
 
-#[inline(always)]
-pub fn make_serializer<'a, B, const SIZE_BYTES: usize>(
-    buffer: B,
-    sizes: &'a mut Sizes,
-) -> impl Serializer<Error = B::Error> + use<'a, B, SIZE_BYTES>
-where
-    B: Buffer,
-{
-    ComplexSerializer::<B, SIZE_BYTES>::new(sizes, buffer)
-}
-
-#[inline(always)]
-pub fn make_trivial_serializer<'a, const SIZE_BYTES: usize>(
-    bytes: &'a mut [u8],
-) -> impl Serializer<Error = Infallible> + use<'a, SIZE_BYTES> {
-    TrivialSerializer::<SIZE_BYTES>::new(bytes)
-}
-
 /// Serializes value into buffer.
 /// Returns total number of bytes written and size of the root value.
 /// The buffer type controls bytes writing and failing strategy.
@@ -831,7 +814,7 @@ where
         if let Some(reserved) = reserved {
             if let Err(err) = <T as Serialize<F>>::serialize(
                 value,
-                make_trivial_serializer::<SIZE_BYTES>(&mut reserved[..trivial_size]),
+                TrivialSerializer::<SIZE_BYTES>::new(&mut reserved[..trivial_size]),
             ) {
                 match err {}
             }
@@ -844,7 +827,8 @@ where
         None => {
             let mut sizes = Sizes { heap: 0, stack: 0 };
             {
-                let serializer = make_serializer::<_, SIZE_BYTES>(buffer.reborrow(), &mut sizes);
+                let serializer =
+                    ComplexSerializer::<_, SIZE_BYTES>::new(&mut sizes, buffer.reborrow());
                 simple_try!(<T as Serialize<F>>::serialize(value, serializer));
             }
 
@@ -859,25 +843,22 @@ where
             let mut sizes = Sizes { heap: 0, stack: 0 };
 
             if let Some(reserved) = reserved {
-                let serializer = make_serializer::<_, SIZE_BYTES>(reserved, &mut sizes);
+                let serializer = ComplexSerializer::<_, SIZE_BYTES>::new(&mut sizes, reserved);
                 if let Err(err) = <T as Serialize<F>>::serialize(value, serializer) {
                     match err {}
                 }
-            } else {
-                let serializer = make_serializer::<_, SIZE_BYTES>(DryBuffer, &mut sizes);
-                if let Err(err) = <T as Serialize<F>>::serialize(value, serializer) {
-                    match err {}
-                }
-            }
 
-            debug_assert_eq!(
-                sizes.stack, promised.stack,
-                "Serialization used different amount of stack than promised by `Serialize::size_hint`"
-            );
-            debug_assert_eq!(
-                sizes.heap, promised.heap,
-                "Serialization used different amount of heap than promised by `Serialize::size_hint`"
-            );
+                debug_assert_eq!(
+                    sizes.stack, promised.stack,
+                    "Serialization used different amount of stack than promised by `Serialize::size_hint`"
+                );
+                debug_assert_eq!(
+                    sizes.heap, promised.heap,
+                    "Serialization used different amount of heap than promised by `Serialize::size_hint`"
+                );
+            } else {
+                sizes = promised;
+            }
 
             // No need to move to heap, as exact size was reserved,
             // so no gap between stack and heap is possible.

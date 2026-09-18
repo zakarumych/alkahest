@@ -1,10 +1,12 @@
 use crate::{
     Deserialize, DeserializeError, Element, Formula, Serialize, SizeBound, Sizes,
-    advanced::{make_serializer, size_hint},
     buffer::{Buffer, BufferExhausted, CheckedFixedBuffer, DryBuffer, MaybeFixedBuffer},
     deserialize::{deserialize, deserialize_in_place, read_usize},
     element::{heap_size, stack_size},
-    serialize::{BufferSizeRequired, make_trivial_serializer, trivial_size, write_usize},
+    serialize::{
+        BufferSizeRequired, ComplexSerializer, TrivialSerializer, size_hint, trivial_size,
+        write_usize,
+    },
 };
 
 #[inline]
@@ -51,7 +53,7 @@ where
         if let Some(reserved) = reserved {
             if let Err(err) = <T as Serialize<F>>::serialize(
                 value,
-                make_trivial_serializer::<SIZE_BYTES>(&mut reserved[..trivial_size]),
+                TrivialSerializer::<SIZE_BYTES>::new(&mut reserved[..trivial_size]),
             ) {
                 match err {}
             }
@@ -77,7 +79,8 @@ where
     match size_hint::<F, T, SIZE_BYTES>(&value) {
         None => {
             {
-                let serializer = make_serializer::<_, SIZE_BYTES>(buffer.reborrow(), &mut sizes);
+                let serializer =
+                    ComplexSerializer::<_, SIZE_BYTES>::new(&mut sizes, buffer.reborrow());
 
                 simple_try!(<T as Serialize<F>>::serialize(value, serializer));
             }
@@ -90,25 +93,28 @@ where
             let reserved = simple_try!(buffer.reserved_heap(old_heap, 0, promised.total()));
 
             if let Some(reserved) = reserved {
-                let serializer = make_serializer::<_, SIZE_BYTES>(reserved, &mut sizes);
+                debug_assert_eq!(
+                    sizes.stack, promised.stack,
+                    "Serialization used different amount of stack than promised by `Serialize::size_hint`"
+                );
+                debug_assert_eq!(
+                    sizes.heap,
+                    old_heap + promised.heap,
+                    "Serialization used different amount of heap than promised by `Serialize::size_hint`"
+                );
+
+                let serializer = ComplexSerializer::<_, SIZE_BYTES>::new(&mut sizes, reserved);
                 if let Err(err) = <T as Serialize<F>>::serialize(value, serializer) {
                     match err {}
                 }
             } else {
-                let serializer = make_serializer::<_, SIZE_BYTES>(DryBuffer, &mut sizes);
+                sizes += promised;
+
+                let serializer = ComplexSerializer::<_, SIZE_BYTES>::new(&mut sizes, DryBuffer);
                 if let Err(err) = <T as Serialize<F>>::serialize(value, serializer) {
                     match err {}
                 }
             }
-
-            debug_assert_eq!(
-                sizes.stack, promised.stack,
-                "Serialization used different amount of stack than promised by `Serialize::size_hint`"
-            );
-            debug_assert_eq!(
-                sizes.heap, old_heap + promised.heap,
-                "Serialization used different amount of heap than promised by `Serialize::size_hint`"
-            );
 
             // No need to move to heap, as exact size was reserved,
             // so no gap between stack and heap is possible.

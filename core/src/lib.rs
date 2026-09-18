@@ -252,7 +252,7 @@ pub mod advanced {
             Buffer, BufferExhausted, CheckedFixedBuffer, DryBuffer, MaybeFixedBuffer, VecBuffer,
         },
         packet::pack_into,
-        serialize::{make_serializer, serialize_into, size_hint, size_hint_padded, write_usize},
+        serialize::{serialize_into, size_hint, size_hint_padded, write_usize},
     };
 }
 
