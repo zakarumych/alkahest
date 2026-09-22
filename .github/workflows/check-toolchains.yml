@@ -17,14 +17,10 @@ jobs:
       matrix:
         rust-toolchain: [stable, nightly]
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - name: Install ${{ matrix.rust-toolchain }} toolchain
-      uses: actions-rs/toolchain@v1
+      uses: dtolnay/rust-toolchain@master
       with:
-        profile: minimal
         toolchain: ${{ matrix.rust-toolchain }}
     - name: Run cargo check
-      uses: actions-rs/cargo@v1
-      with:
-        command: check
-        args: --all --features=bincoded,derive
+      run: cargo check --all --features=bincoded,derive
