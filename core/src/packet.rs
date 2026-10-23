@@ -1,6 +1,8 @@
 use crate::{
     Deserialize, DeserializeError, Element, Formula, Serialize, SizeBound, Sizes,
-    buffer::{Buffer, BufferExhausted, CheckedFixedBuffer, DryBuffer, MaybeFixedBuffer},
+    buffer::{
+        Buffer, BufferExhausted, CheckedFixedBuffer, DryBuffer, MaybeFixedBuffer, OptimisticBuffer,
+    },
     deserialize::{deserialize, deserialize_in_place, read_usize},
     element::{heap_size, stack_size},
     serialize::{
@@ -53,7 +55,7 @@ where
         if let Some(reserved) = reserved {
             if let Err(err) = <T as Serialize<F>>::serialize(
                 value,
-                TrivialSerializer::<SIZE_BYTES>::new(&mut reserved[..trivial_size]),
+                TrivialSerializer::<SIZE_BYTES>::new(reserved),
             ) {
                 match err {}
             }
@@ -194,7 +196,7 @@ where
     F: Formula + ?Sized,
     T: Serialize<F>,
 {
-    match pack_into::<F, T, _, SIZE_BYTES>(value, output) {
+    match pack_into::<F, T, _, SIZE_BYTES>(value, OptimisticBuffer::new(output)) {
         Ok(size) => size,
         Err(never) => match never {},
     }

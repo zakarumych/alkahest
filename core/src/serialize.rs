@@ -2,7 +2,9 @@ use core::{convert::Infallible, fmt, ops};
 
 use crate::{
     Element,
-    buffer::{Buffer, BufferExhausted, CheckedFixedBuffer, DryBuffer, MaybeFixedBuffer},
+    buffer::{
+        Buffer, BufferExhausted, CheckedFixedBuffer, DryBuffer, MaybeFixedBuffer, OptimisticBuffer,
+    },
     element::{heap_size, stack_size, zero_sized},
     formula::{Formula, SizeBound},
 };
@@ -349,9 +351,9 @@ where
                 trivial_size + self.pad_next,
             ));
 
-            if let Some(reserved) = reserved {
+            if let Some(mut reserved) = reserved {
                 let at = reserved.len() - self.sizes.stack - trivial_size - self.pad_next;
-                let tail = &mut reserved[at..][..trivial_size];
+                let tail = reserved.get_range(at, trivial_size);
 
                 let ser = TrivialSerializer::<SIZE_BYTES>::new(tail);
 
@@ -550,14 +552,15 @@ where
                 slice_size + self.pad_next,
             ));
 
-            if let Some(reserved) = reserved {
+            if let Some(mut reserved) = reserved {
                 let at = reserved.len() - self.sizes.stack - slice_size - self.pad_next;
-                let tail = &mut reserved[at..][..slice_size];
+                let tail = reserved.get_range(at, slice_size);
 
-                for (chunk, item) in
-                    Iterator::zip(tail.chunks_exact_mut(trivial_size), slice.iter().rev())
-                {
-                    let ser = TrivialSerializer::<SIZE_BYTES>::new(chunk);
+                for (chunk, item) in Iterator::zip(
+                    tail.buf().chunks_exact_mut(trivial_size),
+                    slice.iter().rev(),
+                ) {
+                    let ser = TrivialSerializer::<SIZE_BYTES>::new(OptimisticBuffer::new(chunk));
 
                     if let Err(err) = <T as Serialize<F>>::serialize(item, ser) {
                         match err {}
@@ -614,13 +617,13 @@ where
 }
 
 pub(crate) struct TrivialSerializer<'a, const SIZE_BYTES: usize> {
-    bytes: &'a mut [u8],
+    buf: OptimisticBuffer<'a>,
 }
 
 impl<'a, const SIZE_BYTES: usize> TrivialSerializer<'a, SIZE_BYTES> {
     #[inline(always)]
-    pub fn new(bytes: &'a mut [u8]) -> Self {
-        TrivialSerializer { bytes }
+    pub fn new(buf: OptimisticBuffer<'a>) -> Self {
+        TrivialSerializer { buf }
     }
 }
 
@@ -636,18 +639,18 @@ impl<'a, const SIZE_BYTES: usize> Serializer for TrivialSerializer<'a, SIZE_BYTE
     /// Returns error if buffer write fails.
     #[inline(always)]
     fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), Infallible> {
-        let (head, tail) = core::mem::take(&mut self.bytes).split_at_mut(bytes.len());
-        self.bytes = tail;
-        head.copy_from_slice(bytes);
+        if let Some(mut head) = self.buf.take_head(bytes.len()) {
+            head.copy_from_slice(bytes);
+        }
         Ok(())
     }
 
     /// Specialized method to write usize value in `SIZE_BYTES` bytes.
     #[inline(always)]
     fn write_usize(&mut self, value: usize) -> Result<(), Infallible> {
-        let (head, tail) = core::mem::take(&mut self.bytes).split_at_mut(SIZE_BYTES);
-        self.bytes = tail;
-        write_usize_trivial::<SIZE_BYTES>(value, head);
+        if let Some(head) = self.buf.take_head(SIZE_BYTES) {
+            write_usize_trivial::<SIZE_BYTES>(value, head);
+        }
         Ok(())
     }
 
@@ -672,11 +675,13 @@ impl<'a, const SIZE_BYTES: usize> Serializer for TrivialSerializer<'a, SIZE_BYTE
 
         if let Some(trivial_size) = const { trivial_padded_size::<F, SIZE_BYTES>() } {
             // Switch to trivial layout serialization.
-            let (head, tail) = core::mem::take(&mut self.bytes).split_at_mut(trivial_size);
-            self.bytes = tail;
-
-            let serializer = TrivialSerializer::<SIZE_BYTES>::new(head);
-            return <T as Serialize<F>>::serialize(value, serializer);
+            if let Some(head) = self.buf.take_head(trivial_size) {
+                let serializer = TrivialSerializer::<SIZE_BYTES>::new(head);
+                if let Err(err) = <T as Serialize<F>>::serialize(value, serializer) {
+                    match err {}
+                }
+            }
+            return Ok(());
         }
 
         unreachable!()
@@ -718,16 +723,16 @@ impl<'a, const SIZE_BYTES: usize> Serializer for TrivialSerializer<'a, SIZE_BYTE
             // Switch to trivial layout serialization.
 
             let slice_size = trivial_size * slice.len();
-            let (head, tail) = core::mem::take(&mut self.bytes).split_at_mut(slice_size);
-            self.bytes = tail;
+            if let Some(head) = self.buf.take_head(slice_size) {
+                for (chunk, item) in Iterator::zip(
+                    head.buf().chunks_exact_mut(trivial_size),
+                    slice.iter().rev(),
+                ) {
+                    let ser = TrivialSerializer::<SIZE_BYTES>::new(OptimisticBuffer::new(chunk));
 
-            for (chunk, item) in
-                Iterator::zip(head.chunks_exact_mut(trivial_size), slice.iter().rev())
-            {
-                let ser = TrivialSerializer::<SIZE_BYTES>::new(chunk);
-
-                if let Err(err) = <T as Serialize<F>>::serialize(item, ser) {
-                    match err {}
+                    if let Err(err) = <T as Serialize<F>>::serialize(item, ser) {
+                        match err {}
+                    }
                 }
             }
 
@@ -789,7 +794,7 @@ where
 
 /// Specialized method to write usize value in `SIZE_BYTES` bytes.
 #[inline(always)]
-pub fn write_usize_trivial<const SIZE_BYTES: usize>(value: usize, bytes: &mut [u8]) {
+pub fn write_usize_trivial<const SIZE_BYTES: usize>(value: usize, mut bytes: OptimisticBuffer<'_>) {
     const {
         assert!(SIZE_BYTES > 0 && SIZE_BYTES <= 16);
     }
@@ -806,8 +811,10 @@ pub fn write_usize_trivial<const SIZE_BYTES: usize>(value: usize, bytes: &mut [u
             bytes.copy_from_slice(&value.to_le_bytes()[..SIZE_BYTES]);
         }
         () if SIZE_BYTES > LEN => {
-            bytes[..LEN].copy_from_slice(&value.to_le_bytes());
-            bytes[LEN..SIZE_BYTES].fill(0);
+            bytes
+                .get_range(0, LEN)
+                .copy_from_slice(&value.to_le_bytes());
+            bytes.get_range(LEN, SIZE_BYTES - LEN).fill(0);
         }
         () => {
             // SIZE_BYTES == LEN
@@ -906,10 +913,8 @@ where
         let reserved = simple_try!(buffer.reserved_heap(0, 0, trivial_size));
 
         if let Some(reserved) = reserved {
-            if let Err(err) = <T as Serialize<F>>::serialize(
-                value,
-                TrivialSerializer::<SIZE_BYTES>::new(&mut reserved[..trivial_size]),
-            ) {
+            let ser = TrivialSerializer::<SIZE_BYTES>::new(reserved);
+            if let Err(err) = <T as Serialize<F>>::serialize(value, ser) {
                 match err {}
             }
         }
@@ -994,7 +999,7 @@ where
     F: Formula + ?Sized,
     T: Serialize<F>,
 {
-    match serialize_into::<F, T, _, SIZE_BYTES>(value, output) {
+    match serialize_into::<F, T, _, SIZE_BYTES>(value, OptimisticBuffer::new(output)) {
         Ok(sizes) => sizes,
         Err(never) => match never {},
     }
