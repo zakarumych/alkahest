@@ -21,13 +21,22 @@ macro_rules! impl_primitive {
     };
 
     (! $($from:ident)* < $ty:ident < $($to:ident)*) => {
-        impl Formula for $ty {
+        impl<const VERSION: u32> Formula<VERSION> for $ty {
+            const SCHEMA: crate::version::Schema = crate::version::Schema::new::<Self, VERSION>(
+                crate::version::SchemaKind::Primitive(if stringify!($ty).as_bytes()[0] == b'u' {
+                    crate::version::Primitive::Unsigned(size_of::<$ty>() as u8)
+                } else if stringify!($ty).as_bytes()[0] == b'i' {
+                    crate::version::Primitive::Signed(size_of::<$ty>() as u8)
+                } else {
+                    crate::version::Primitive::Float(size_of::<$ty>() as u8)
+                }),
+            );
             type StackSize<const SIZE_BYTES: usize> = ExactSize<{size_of::<$ty>()}>;
             type HeapSize<const SIZE_BYTES: usize> = ExactSize<0>;
             const INHABITED: bool = true;
         }
 
-        impl Serialize<$ty> for $ty {
+        impl<const VERSION: u32> Serialize<$ty, VERSION> for $ty {
             #[inline(always)]
             fn serialize<S>(&self, mut serializer: S) -> Result<(), S::Error>
             where
@@ -43,7 +52,7 @@ macro_rules! impl_primitive {
         }
 
         $(
-            impl Serialize<$ty> for $from {
+            impl<const VERSION: u32> Serialize<$ty, VERSION> for $from {
             #[inline(always)]
                 fn serialize<S>(&self, mut serializer: S) -> Result<(), S::Error>
                 where
@@ -60,7 +69,7 @@ macro_rules! impl_primitive {
         )*
 
 
-        impl<'de> Deserialize<'de, $ty> for $ty
+        impl<'de, const VERSION: u32> Deserialize<'de, $ty, VERSION> for $ty
         {
             #[inline(always)]
             fn deserialize<D>(mut de: D) -> Result<Self, DeserializeError>
@@ -85,7 +94,7 @@ macro_rules! impl_primitive {
         }
 
         $(
-            impl<'de> Deserialize<'de, $from> for $ty
+            impl<'de, const VERSION: u32> Deserialize<'de, $from, VERSION> for $ty
             {
                 #[inline]
                 fn deserialize<D>(mut de: D) -> Result<Self, DeserializeError>
@@ -118,13 +127,16 @@ impl_primitive! {
     [f32 f64]
 }
 
-impl Formula for bool {
+impl<const VERSION: u32> Formula<VERSION> for bool {
+    const SCHEMA: crate::version::Schema = crate::version::Schema::new::<Self, VERSION>(
+        crate::version::SchemaKind::Primitive(crate::version::Primitive::Bool),
+    );
     type StackSize<const SIZE_BYTES: usize> = ExactSize<1>;
     type HeapSize<const SIZE_BYTES: usize> = ExactSize<0>;
     const INHABITED: bool = true;
 }
 
-impl Serialize<bool> for bool {
+impl<const VERSION: u32> Serialize<bool, VERSION> for bool {
     #[inline(always)]
     fn serialize<S>(&self, mut serializer: S) -> Result<(), S::Error>
     where
@@ -143,7 +155,7 @@ impl Serialize<bool> for bool {
     }
 }
 
-impl<'de> Deserialize<'de, bool> for bool {
+impl<'de, const VERSION: u32> Deserialize<'de, bool, VERSION> for bool {
     #[inline(always)]
     fn deserialize<D>(mut de: D) -> Result<Self, DeserializeError>
     where

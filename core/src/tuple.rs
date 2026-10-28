@@ -1,17 +1,19 @@
 use crate::{
     deserialize::{Deserialize, DeserializeError, Deserializer},
-    element::{Element, heap_size, stack_size},
+    element::{Element, heap_size_versioned, stack_size_versioned},
     formula::{ExactSize, Formula, SizeBound, SizeType},
-    serialize::{Serialize, Serializer, Sizes, size_hint},
+    serialize::{Serialize, Serializer, Sizes, size_hint_versioned},
 };
 
-impl Formula for () {
+impl<const VERSION: u32> Formula<VERSION> for () {
+    const SCHEMA: crate::version::Schema =
+        crate::version::Schema::new::<Self, VERSION>(crate::version::SchemaKind::Record(&[]));
     type StackSize<const SIZE_BYTES: usize> = ExactSize<0>;
     type HeapSize<const SIZE_BYTES: usize> = ExactSize<0>;
     const INHABITED: bool = true;
 }
 
-impl Serialize<()> for () {
+impl<const VERSION: u32> Serialize<(), VERSION> for () {
     #[inline(always)]
     fn serialize<S>(&self, _serializer: S) -> Result<(), S::Error>
     where
@@ -26,7 +28,7 @@ impl Serialize<()> for () {
     }
 }
 
-impl<'de> Deserialize<'de, ()> for () {
+impl<'de, const VERSION: u32> Deserialize<'de, (), VERSION> for () {
     #[inline]
     fn deserialize<D>(_de: D) -> Result<(), DeserializeError>
     where
@@ -52,28 +54,28 @@ impl<'de> Deserialize<'de, ()> for () {
 /// use alkahest_core::{List, SizeBound, stack_size};
 /// const INVALID: SizeBound = stack_size::<(List<u8>, u8), 1>();
 /// ```
-pub struct TupleStackSize<T: ?Sized, const SIZE_BYTES: usize>(T);
-pub struct TupleHeapSize<T: ?Sized, const SIZE_BYTES: usize>(T);
+pub struct TupleStackSize<T: ?Sized, const SIZE_BYTES: usize, const VERSION: u32 = 0>(T);
+pub struct TupleHeapSize<T: ?Sized, const SIZE_BYTES: usize, const VERSION: u32 = 0>(T);
 
 macro_rules! formula_serialize_deserialize {
     (,) => {};
     ($at:ident $($a:ident)* , $bt:ident $($b:ident)*) => {
-        impl<$($a,)* $at, const SIZE_BYTES: usize> SizeType for TupleStackSize<($($a,)* $at,), SIZE_BYTES>
+        impl<$($a,)* $at, const SIZE_BYTES: usize, const VERSION: u32> SizeType for TupleStackSize<($($a,)* $at,), SIZE_BYTES, VERSION>
         where
-            $($a: Element,)*
-            $at: Element + ?Sized,
+            $($a: Element<VERSION>,)*
+            $at: Element<VERSION> + ?Sized,
         {
             const VALUE: SizeBound = {
                 #[allow(unused_mut)]
                 let mut total = SizeBound::Exact(0);
                 $(
-                    let next = stack_size::<$a, SIZE_BYTES>();
+                    let next = stack_size_versioned::<$a, SIZE_BYTES, VERSION>();
                     if total.is_unbounded() && !next.is_zero() {
                         panic!("Tuple contains stack-unbounded element that is not the last one");
                     }
                     total = total.padded().add(next);
                 )*
-                let next = stack_size::<$at, SIZE_BYTES>();
+                let next = stack_size_versioned::<$at, SIZE_BYTES, VERSION>();
                 if total.is_unbounded() && !next.is_zero() {
                     panic!("Tuple contains stack-unbounded element that is not the last one");
                 }
@@ -81,39 +83,45 @@ macro_rules! formula_serialize_deserialize {
             };
         }
 
-        impl<$($a,)* $at, const SIZE_BYTES: usize> SizeType for TupleHeapSize<($($a,)* $at,), SIZE_BYTES>
+        impl<$($a,)* $at, const SIZE_BYTES: usize, const VERSION: u32> SizeType for TupleHeapSize<($($a,)* $at,), SIZE_BYTES, VERSION>
         where
-            $($a: Element,)*
-            $at: Element + ?Sized,
+            $($a: Element<VERSION>,)*
+            $at: Element<VERSION> + ?Sized,
         {
             const VALUE: SizeBound = {
                 #[allow(unused_mut)]
-                let mut total = heap_size::<$at, SIZE_BYTES>();
+                let mut total = heap_size_versioned::<$at, SIZE_BYTES, VERSION>();
                 $(
-                    total = total.add(heap_size::<$a, SIZE_BYTES>());
+                    total = total.add(heap_size_versioned::<$a, SIZE_BYTES, VERSION>());
                 )*
                 total
             };
         }
 
-        impl<$($a,)* $at> Formula for ($($a,)* $at,)
+        impl<$($a,)* $at, const VERSION: u32> Formula<VERSION> for ($($a,)* $at,)
         where
-            $($a: Element,)*
-            $at: Element + ?Sized,
+            $($a: Element<VERSION>,)*
+            $at: Element<VERSION> + ?Sized,
         {
-            type StackSize<const SIZE_BYTES: usize> = TupleStackSize<($($a,)* $at,), SIZE_BYTES>;
-            type HeapSize<const SIZE_BYTES: usize> = TupleHeapSize<($($a,)* $at,), SIZE_BYTES>;
+            const SCHEMA: crate::version::Schema = crate::version::Schema::new::<Self, VERSION>(
+                crate::version::SchemaKind::Record(&[
+                    $(crate::version::Field { name: "", element: $a::SCHEMA },)*
+                    crate::version::Field { name: "", element: $at::SCHEMA },
+                ]),
+            );
+            type StackSize<const SIZE_BYTES: usize> = TupleStackSize<($($a,)* $at,), SIZE_BYTES, VERSION>;
+            type HeapSize<const SIZE_BYTES: usize> = TupleHeapSize<($($a,)* $at,), SIZE_BYTES, VERSION>;
             const INHABITED: bool = ( $($a::INHABITED &&)* $at::INHABITED );
         }
 
-        impl<$($a,)* $at, $($b,)* $bt> Serialize<($($a,)* $at,)> for ($($b,)* $bt,)
+        impl<$($a,)* $at, $($b,)* $bt, const VERSION: u32> Serialize<($($a,)* $at,), VERSION> for ($($b,)* $bt,)
         where
             $(
-                $a: Element,
-                $b: Serialize<$a::Formula>,
+                $a: Element<VERSION>,
+                $b: Serialize<$a::Formula, VERSION>,
             )*
-            $at: Element + ?Sized,
-            $bt: Serialize<$at::Formula>,
+            $at: Element<VERSION> + ?Sized,
+            $bt: Serialize<$at::Formula, VERSION>,
         {
             #[inline]
             fn serialize<S>(&self, mut serializer: S) -> Result<(), S::Error>
@@ -135,11 +143,11 @@ macro_rules! formula_serialize_deserialize {
 
                 let ($($b,)* $bt,) = self;
 
-                let mut sizes = simple_some!(size_hint::<$at, _, SIZE_BYTES>($bt));
+                let mut sizes = simple_some!(size_hint_versioned::<$at, _, SIZE_BYTES, VERSION>($bt));
 
                 $(
-                    let mut next = simple_some!(size_hint::<$a, _, SIZE_BYTES>($b));
-                    if let SizeBound::Bounded(max_stack) = stack_size::<$a, SIZE_BYTES>() {
+                    let mut next = simple_some!(size_hint_versioned::<$a, _, SIZE_BYTES, VERSION>($b));
+                    if let SizeBound::Bounded(max_stack) = stack_size_versioned::<$a, SIZE_BYTES, VERSION>() {
                         next.stack = max_stack;
                     }
                     sizes += next;
@@ -149,14 +157,14 @@ macro_rules! formula_serialize_deserialize {
             }
         }
 
-        impl<'de, $($a,)* $at, $($b,)* $bt> Deserialize<'de, ($($a,)* $at,)> for ($($b,)* $bt,)
+        impl<'de, $($a,)* $at, $($b,)* $bt, const VERSION: u32> Deserialize<'de, ($($a,)* $at,), VERSION> for ($($b,)* $bt,)
         where
             $(
-                $a: Element,
-                $b: Deserialize<'de, $a::Formula>,
+                $a: Element<VERSION>,
+                $b: Deserialize<'de, $a::Formula, VERSION>,
             )*
-            $at: Element + ?Sized,
-            $bt: Deserialize<'de, $at::Formula>,
+            $at: Element<VERSION> + ?Sized,
+            $bt: Deserialize<'de, $at::Formula, VERSION>,
         {
             #[inline]
             fn deserialize<D>(mut de: D) -> Result<($($b,)* $bt,), DeserializeError>

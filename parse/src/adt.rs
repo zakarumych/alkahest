@@ -510,7 +510,7 @@ impl Parser for Path {
             let _dot = stream.parse::<Token![.]>()?;
             let next_ident = stream.parse::<Ident>()?;
             full_name.push('.');
-            full_name.push_str(&next_ident.as_str());
+            full_name.push_str(next_ident.as_str());
         }
 
         Ok(Path(Rc::from(full_name)))
@@ -882,7 +882,7 @@ impl Parser for ImportTree {
 
             if stream.peek::<Brace>() {
                 let branches = parse_braced!(stream => {
-                    Ok(parse_terminated!(ImportTree by Comma in stream).collect::<Result<_, ParseError>>()?)
+                    parse_terminated!(ImportTree by Comma in stream).collect::<Result<_, ParseError>>()
                 });
                 return Ok(ImportTree {
                     path: Path(Rc::from(full_path)),
@@ -892,7 +892,7 @@ impl Parser for ImportTree {
 
             let next_ident = stream.parse::<Ident>()?;
             full_path.push('.');
-            full_path.push_str(&next_ident.as_str());
+            full_path.push_str(next_ident.as_str());
         }
 
         Ok(ImportTree {
@@ -1099,7 +1099,7 @@ mod tests {
             }) => {
                 assert_eq!(min_len, 0);
                 assert_eq!(max_len, u32::MAX);
-                assert_eq!(element.indirect, false);
+                assert!(!element.indirect);
                 match &element.kind {
                     ElementKind::Symbol(sym) => assert_eq!(sym.name(), "u32"),
                     _ => panic!("Expected Symbol"),
@@ -1120,7 +1120,7 @@ mod tests {
             }) => {
                 assert_eq!(min_len, 10);
                 assert_eq!(max_len, 10);
-                assert_eq!(element.indirect, false);
+                assert!(!element.indirect);
                 match &element.kind {
                     ElementKind::Symbol(sym) => assert_eq!(sym.name(), "u32"),
                     _ => panic!("Expected Symbol"),
@@ -1141,7 +1141,7 @@ mod tests {
             }) => {
                 assert_eq!(min_len, 5);
                 assert_eq!(max_len, 10);
-                assert_eq!(element.indirect, false);
+                assert!(!element.indirect);
                 match &element.kind {
                     ElementKind::Symbol(sym) => assert_eq!(sym.name(), "u32"),
                     _ => panic!("Expected Symbol"),
@@ -1162,7 +1162,7 @@ mod tests {
             }) => {
                 assert_eq!(min_len, 1);
                 assert_eq!(max_len, 100);
-                assert_eq!(element.indirect, true);
+                assert!(element.indirect);
                 match &element.kind {
                     ElementKind::Symbol(sym) => assert_eq!(sym.name(), "Data"),
                     _ => panic!("Expected Symbol"),
@@ -1204,7 +1204,7 @@ mod tests {
         match element.kind {
             ElementKind::Tuple(Tuple { elements }) => {
                 assert_eq!(elements.len(), 1);
-                assert_eq!(elements[0].indirect, false);
+                assert!(!elements[0].indirect);
                 match &elements[0].kind {
                     ElementKind::Symbol(sym) => assert_eq!(sym.name(), "u32"),
                     _ => panic!("Expected Symbol"),
@@ -1220,9 +1220,9 @@ mod tests {
         match element.kind {
             ElementKind::Tuple(Tuple { elements }) => {
                 assert_eq!(elements.len(), 3);
-                assert_eq!(elements[0].indirect, false);
-                assert_eq!(elements[1].indirect, true);
-                assert_eq!(elements[2].indirect, false);
+                assert!(!elements[0].indirect);
+                assert!(elements[1].indirect);
+                assert!(!elements[2].indirect);
                 match &elements[0].kind {
                     ElementKind::Symbol(sym) => assert_eq!(sym.name(), "u32"),
                     _ => panic!("Expected Symbol"),
@@ -1247,7 +1247,7 @@ mod tests {
             ElementKind::Tuple(Tuple { elements }) => {
                 assert_eq!(elements.len(), 2);
 
-                assert_eq!(elements[0].indirect, false);
+                assert!(!elements[0].indirect);
                 match &elements[0].kind {
                     ElementKind::List(List {
                         min_len, max_len, ..
@@ -1258,7 +1258,7 @@ mod tests {
                     _ => panic!("Expected List"),
                 }
 
-                assert_eq!(elements[1].indirect, true);
+                assert!(elements[1].indirect);
                 match &elements[1].kind {
                     ElementKind::Symbol(sym) => assert_eq!(sym.name(), "Data"),
                     _ => panic!("Expected Reference"),
@@ -1275,7 +1275,7 @@ mod tests {
             Formula::Record(Record { fields }) => {
                 assert_eq!(fields.len(), 1);
                 assert_eq!(fields[0].name.as_str(), "x");
-                assert_eq!(fields[0].element.indirect, false);
+                assert!(!fields[0].element.indirect);
                 match &fields[0].element.kind {
                     ElementKind::Symbol(sym) => assert_eq!(sym.name(), "u32"),
                     _ => panic!("Expected Symbol"),
@@ -1316,7 +1316,7 @@ mod tests {
                     _ => panic!("Expected List"),
                 }
                 assert_eq!(fields[1].name.as_str(), "ptr");
-                assert_eq!(fields[1].element.indirect, true);
+                assert!(fields[1].element.indirect);
                 match &fields[1].element.kind {
                     ElementKind::Symbol(sym) => assert_eq!(sym.name(), "Data"),
                     _ => panic!("Expected Symbol"),
@@ -1336,7 +1336,7 @@ mod tests {
                 match &variants[0].variant {
                     Variant::Tuple(Tuple { elements }) => {
                         assert_eq!(elements.len(), 1);
-                        assert_eq!(elements[0].indirect, false);
+                        assert!(!elements[0].indirect);
                         match &elements[0].kind {
                             ElementKind::Symbol(sym) => assert_eq!(sym.name(), "u32"),
                             _ => panic!("Expected Symbol"),
@@ -1373,7 +1373,7 @@ mod tests {
                     Variant::Record(Record { fields }) => {
                         assert_eq!(fields.len(), 1);
                         assert_eq!(fields[0].name.as_str(), "value");
-                        assert_eq!(fields[0].element.indirect, false);
+                        assert!(!fields[0].element.indirect);
                         match &fields[0].element.kind {
                             ElementKind::Symbol(sym) => assert_eq!(sym.name(), "u32"),
                             _ => panic!("Expected Symbol"),
@@ -1385,7 +1385,7 @@ mod tests {
                 match &variants[1].variant {
                     Variant::Tuple(Tuple { elements }) => {
                         assert_eq!(elements.len(), 1);
-                        assert_eq!(elements[0].indirect, true);
+                        assert!(elements[0].indirect);
                         match &elements[0].kind {
                             ElementKind::Symbol(sym) => assert_eq!(sym.name(), "string"),
                             _ => panic!("Expected Symbol"),
@@ -1406,7 +1406,7 @@ mod tests {
         match &module.definitions[0].formula {
             Formula::Tuple(Tuple { elements }) => {
                 assert_eq!(elements.len(), 1);
-                assert_eq!(elements[0].indirect, false);
+                assert!(!elements[0].indirect);
                 match &elements[0].kind {
                     ElementKind::Symbol(sym) => assert_eq!(sym.name(), "u32"),
                     _ => panic!("Expected Symbol"),

@@ -1,0 +1,30 @@
+name: Schema checker
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Rust nightly
+        run: rustup toolchain install nightly --profile minimal
+      - name: Test checker
+        run: cargo +nightly test -p alkahest-schema
+      - name: Build checker
+        run: cargo +nightly build -p alkahest-schema --bin alkahest-schema
+      - name: Export baseline example
+        run: cargo +nightly run -p alkahest-schema --example export -- target/schema-baseline.json
+      - name: Export current example
+        run: cargo +nightly run -p alkahest-schema --example export -- target/schema-current.json
+      - name: Smoke-test composite action
+        uses: ./.github/actions/schema-check
+        with:
+          baseline: target/schema-baseline.json
+          current: target/schema-current.json
+          command: ./target/debug/alkahest-schema${{ runner.os == 'Windows' && '.exe' || '' }}

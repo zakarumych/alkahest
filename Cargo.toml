@@ -1,5 +1,5 @@
 [workspace]
-members = ["core", "proc", "alkahest", "benchmark"]
+members = ["core", "proc", "alkahest", "benchmark", "schema"]
 resolver = "3"
 
 [workspace.package]

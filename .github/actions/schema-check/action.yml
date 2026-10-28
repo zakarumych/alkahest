@@ -1,0 +1,23 @@
+name: Check Alkahest schema versions
+description: Compare exported schema snapshots using a preinstalled alkahest-schema executable.
+inputs:
+  baseline:
+    description: Path to the trusted baseline snapshot.
+    required: true
+  current:
+    description: Path to the snapshot exported from current application formulas.
+    required: true
+  command:
+    description: Executable name or path; shell arguments are not supported.
+    required: false
+    default: alkahest-schema
+runs:
+  using: composite
+  steps:
+    - name: Check formula versions
+      shell: bash
+      env:
+        ALKAHEST_SCHEMA_COMMAND: ${{ inputs.command }}
+        ALKAHEST_SCHEMA_BASELINE: ${{ inputs.baseline }}
+        ALKAHEST_SCHEMA_CURRENT: ${{ inputs.current }}
+      run: '"$ALKAHEST_SCHEMA_COMMAND" check --format github -- "$ALKAHEST_SCHEMA_BASELINE" "$ALKAHEST_SCHEMA_CURRENT"'

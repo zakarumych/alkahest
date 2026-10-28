@@ -112,7 +112,24 @@ impl<const SIZE: usize> SizeType for BoundedSize<SIZE> {
     const VALUE: SizeBound = SizeBound::Bounded(SIZE);
 }
 
-pub trait Formula: AsFormula + 'static {
+/// A wire layout selected by an explicit version.
+///
+/// Implementations may provide different layouts and child formula versions for
+/// each version. [`Formula::SCHEMA`] exposes that selection as static metadata.
+/// Builtin leaves have the same layout at every version; builtin containers pass
+/// their selected version to each element. Version zero is the default.
+pub trait Formula<const VERSION: u32 = 0>: AsFormula<VERSION> + 'static {
+    /// Static description of this formula version and its element versions.
+    /// Unknown schemas cannot establish compatibility.
+    const SCHEMA: crate::version::Schema = crate::version::Schema::unknown::<Self, VERSION>();
+
+    /// Formula versions available for checked runtime version selection.
+    ///
+    /// Every entry must describe this formula family at the returned version.
+    /// Handwritten formulas can list additional implementations explicitly;
+    /// the default registers only this implementation's version.
+    const VERSIONS: &'static [fn() -> &'static crate::Schema] = &[crate::schema::<Self, VERSION>];
+
     /// Stack size required for serializing this type.
     type StackSize<const SIZE_BYTES: usize>: SizeType + ?Sized;
 
@@ -126,13 +143,13 @@ pub trait Formula: AsFormula + 'static {
 
 /// Type that points at the formula type.
 /// Formula types point to themselves.
-pub trait AsFormula {
-    type Formula: Formula + ?Sized;
+pub trait AsFormula<const VERSION: u32 = 0> {
+    type Formula: Formula<VERSION> + ?Sized;
 }
 
-impl<F> AsFormula for F
+impl<F, const VERSION: u32> AsFormula<VERSION> for F
 where
-    F: Formula + ?Sized,
+    F: Formula<VERSION> + ?Sized,
 {
     type Formula = F;
 }

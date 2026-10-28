@@ -7,7 +7,9 @@ use crate::{
 /// A type that can never be constructed, used to represent a formula that is never inhabited.
 pub type Never = core::convert::Infallible;
 
-impl Formula for Never {
+impl<const VERSION: u32> Formula<VERSION> for Never {
+    const SCHEMA: crate::version::Schema =
+        crate::version::Schema::new::<Self, VERSION>(crate::version::SchemaKind::Never);
     type StackSize<const SIZE_BYTES: usize> = ExactSize<0>;
     type HeapSize<const SIZE_BYTES: usize> = ExactSize<0>;
 
@@ -33,7 +35,7 @@ impl Formula for Never {
 /// ```
 ///
 /// Since `S::B` may never be constructed, the `A` variant is the only one to be serialized.
-impl<F: Formula + ?Sized> Serialize<F> for Never {
+impl<F: Formula<VERSION> + ?Sized, const VERSION: u32> Serialize<F, VERSION> for Never {
     #[inline]
     fn serialize<S>(&self, _serializer: S) -> Result<(), S::Error>
     where
@@ -50,7 +52,7 @@ impl<F: Formula + ?Sized> Serialize<F> for Never {
 
 /// Anything can be deserialized from `Never` formula,
 /// because it is never exists in data, so deserialization of it never happens.
-impl<'de> Deserialize<'de, Never> for Never {
+impl<'de, const VERSION: u32> Deserialize<'de, Never, VERSION> for Never {
     #[inline]
     fn deserialize<D>(_deserializer: D) -> Result<Self, DeserializeError>
     where

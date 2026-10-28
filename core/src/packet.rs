@@ -3,20 +3,23 @@ use crate::{
     buffer::{
         Buffer, BufferExhausted, CheckedFixedBuffer, DryBuffer, MaybeFixedBuffer, OptimisticBuffer,
     },
-    deserialize::{deserialize, deserialize_in_place, read_usize},
-    element::{heap_size, stack_size},
+    deserialize::{deserialize_at_version, deserialize_in_place_at_version, read_usize},
+    element::{heap_size_versioned, stack_size_versioned},
     serialize::{
-        BufferSizeRequired, ComplexSerializer, TrivialSerializer, size_hint, trivial_size,
-        write_usize,
+        BufferSizeRequired, ComplexSerializer, TrivialSerializer, size_hint_versioned,
+        trivial_size, write_usize,
     },
 };
 
 #[inline]
-const fn total<E, const SIZE_BYTES: usize>() -> Option<usize>
+const fn total<E, const SIZE_BYTES: usize, const VERSION: u32>() -> Option<usize>
 where
-    E: Element + ?Sized,
+    E: Element<VERSION> + ?Sized,
 {
-    match (stack_size::<E, SIZE_BYTES>(), heap_size::<E, SIZE_BYTES>()) {
+    match (
+        stack_size_versioned::<E, SIZE_BYTES, VERSION>(),
+        heap_size_versioned::<E, SIZE_BYTES, VERSION>(),
+    ) {
         (SizeBound::Exact(stack), SizeBound::Exact(heap)) => Some(stack + heap),
         (SizeBound::Exact(stack), SizeBound::Bounded(0)) => Some(stack),
         (SizeBound::Bounded(0), SizeBound::Exact(heap)) => Some(heap),
@@ -36,24 +39,36 @@ where
 /// This allows more convenient use with byte streams where end of input is not known in advance.
 ///
 /// [`serialize_into`]: crate::serialize::serialize_into
-pub fn pack_into<F, T, B, const SIZE_BYTES: usize>(
+
+#[inline(always)]
+pub fn pack_into<F, T, B, const SIZE_BYTES: usize>(value: &T, buffer: B) -> Result<usize, B::Error>
+where
+    F: Formula + ?Sized,
+    T: Serialize<F>,
+    B: Buffer,
+{
+    pack_into_at_version::<F, T, B, SIZE_BYTES, 0>(value, buffer)
+}
+/// Version-selecting form of [`pack_into`]. Uses `VERSION` without compatibility checks or a version tag.
+#[inline(always)]
+pub fn pack_into_at_version<F, T, B, const SIZE_BYTES: usize, const VERSION: u32>(
     value: &T,
     mut buffer: B,
 ) -> Result<usize, B::Error>
 where
-    F: Formula + ?Sized,
-    T: Serialize<F>,
+    F: Formula<VERSION> + ?Sized,
+    T: Serialize<F, VERSION>,
     B: Buffer,
 {
     const {
         assert!(F::INHABITED);
     }
 
-    if let Some(trivial_size) = const { trivial_size::<F, SIZE_BYTES>() } {
+    if let Some(trivial_size) = const { trivial_size::<F, SIZE_BYTES, VERSION>() } {
         let reserved = simple_try!(buffer.reserved_heap(0, 0, trivial_size));
 
         if let Some(reserved) = reserved {
-            if let Err(err) = <T as Serialize<F>>::serialize(
+            if let Err(err) = <T as Serialize<F, VERSION>>::serialize(
                 value,
                 TrivialSerializer::<SIZE_BYTES>::new(reserved),
             ) {
@@ -64,7 +79,7 @@ where
         return Ok(trivial_size);
     }
 
-    let total = const { total::<F, SIZE_BYTES>() };
+    let total = const { total::<F, SIZE_BYTES, VERSION>() };
 
     if total.is_none() {
         // Pre-reserve space for length prefix if total size is not known in advance.
@@ -78,13 +93,13 @@ where
         stack: 0,
     };
 
-    match size_hint::<F, T, SIZE_BYTES>(&value) {
+    match size_hint_versioned::<F, T, SIZE_BYTES, VERSION>(&value) {
         None => {
             {
                 let serializer =
                     ComplexSerializer::<_, SIZE_BYTES>::new(&mut sizes, buffer.reborrow());
 
-                simple_try!(<T as Serialize<F>>::serialize(value, serializer));
+                simple_try!(<T as Serialize<F, VERSION>>::serialize(value, serializer));
             }
 
             buffer.move_to_heap(sizes.heap, sizes.stack, sizes.stack);
@@ -95,6 +110,11 @@ where
             let reserved = simple_try!(buffer.reserved_heap(old_heap, 0, promised.total()));
 
             if let Some(reserved) = reserved {
+                let serializer = ComplexSerializer::<_, SIZE_BYTES>::new(&mut sizes, reserved);
+                if let Err(err) = <T as Serialize<F, VERSION>>::serialize(value, serializer) {
+                    match err {}
+                }
+
                 debug_assert_eq!(
                     sizes.stack, promised.stack,
                     "Serialization used different amount of stack than promised by `Serialize::size_hint`"
@@ -104,18 +124,8 @@ where
                     old_heap + promised.heap,
                     "Serialization used different amount of heap than promised by `Serialize::size_hint`"
                 );
-
-                let serializer = ComplexSerializer::<_, SIZE_BYTES>::new(&mut sizes, reserved);
-                if let Err(err) = <T as Serialize<F>>::serialize(value, serializer) {
-                    match err {}
-                }
             } else {
                 sizes += promised;
-
-                let serializer = ComplexSerializer::<_, SIZE_BYTES>::new(&mut sizes, DryBuffer);
-                if let Err(err) = <T as Serialize<F>>::serialize(value, serializer) {
-                    match err {}
-                }
             }
 
             // No need to move to heap, as exact size was reserved,
@@ -167,7 +177,7 @@ where
 /// Returns [`BufferExhausted`] if the buffer is too small.
 ///
 /// [`serialize`]: crate::serialize::serialize
-#[inline]
+#[inline(always)]
 pub fn pack<F, T, const SIZE_BYTES: usize>(
     value: &T,
     output: &mut [u8],
@@ -176,7 +186,19 @@ where
     F: Formula + ?Sized,
     T: Serialize<F>,
 {
-    pack_into::<F, T, _, SIZE_BYTES>(value, CheckedFixedBuffer::new(output))
+    pack_at_version::<F, T, SIZE_BYTES, 0>(value, output)
+}
+/// Version-selecting form of [`pack`]. Uses `VERSION` without compatibility checks or a version tag.
+#[inline(always)]
+pub fn pack_at_version<F, T, const SIZE_BYTES: usize, const VERSION: u32>(
+    value: &T,
+    output: &mut [u8],
+) -> Result<usize, BufferExhausted>
+where
+    F: Formula<VERSION> + ?Sized,
+    T: Serialize<F, VERSION>,
+{
+    pack_into_at_version::<F, T, _, SIZE_BYTES, VERSION>(value, CheckedFixedBuffer::new(output))
 }
 
 /// Slightly faster version of [`pack`].
@@ -190,13 +212,26 @@ where
 /// This allows more convenient use with byte streams where end of input is not known in advance.
 ///
 /// [`serialize_unchecked`]: crate::serialize::serialize_unchecked
-#[inline]
+#[inline(always)]
 pub fn pack_unchecked<F, T, const SIZE_BYTES: usize>(value: &T, output: &mut [u8]) -> usize
 where
     F: Formula + ?Sized,
     T: Serialize<F>,
 {
-    match pack_into::<F, T, _, SIZE_BYTES>(value, OptimisticBuffer::new(output)) {
+    pack_unchecked_at_version::<F, T, SIZE_BYTES, 0>(value, output)
+}
+/// Version-selecting form of [`pack_unchecked`]. Uses `VERSION` without compatibility checks or a version tag.
+#[inline(always)]
+pub fn pack_unchecked_at_version<F, T, const SIZE_BYTES: usize, const VERSION: u32>(
+    value: &T,
+    output: &mut [u8],
+) -> usize
+where
+    F: Formula<VERSION> + ?Sized,
+    T: Serialize<F, VERSION>,
+{
+    match pack_into_at_version::<F, T, _, SIZE_BYTES, VERSION>(value, OptimisticBuffer::new(output))
+    {
         Ok(size) => size,
         Err(never) => match never {},
     }
@@ -215,13 +250,22 @@ where
 /// This allows more convenient use with byte streams where end of input is not known in advance.
 ///
 /// [`serialized_size`]: crate::serialize::serialized_size
-#[inline]
+#[inline(always)]
 pub fn pack_size<F, T, const SIZE_BYTES: usize>(value: &T) -> usize
 where
     F: Formula + ?Sized,
     T: Serialize<F>,
 {
-    match pack_into::<F, T, _, SIZE_BYTES>(value, DryBuffer) {
+    pack_size_at_version::<F, T, SIZE_BYTES, 0>(value)
+}
+/// Version-selecting form of [`pack_size`]. Uses `VERSION` without compatibility checks or a version tag.
+#[inline(always)]
+pub fn pack_size_at_version<F, T, const SIZE_BYTES: usize, const VERSION: u32>(value: &T) -> usize
+where
+    F: Formula<VERSION> + ?Sized,
+    T: Serialize<F, VERSION>,
+{
+    match pack_into_at_version::<F, T, _, SIZE_BYTES, VERSION>(value, DryBuffer) {
         Ok(size) => size,
         Err(never) => match never {},
     }
@@ -246,7 +290,7 @@ where
 /// This allows more convenient use with byte streams where end of input is not known in advance.
 ///
 /// [`serialize_or_size`]: crate::serialize::serialize_or_size
-#[inline]
+#[inline(always)]
 pub fn pack_or_size<F, T, const SIZE_BYTES: usize>(
     value: &T,
     output: &mut [u8],
@@ -255,9 +299,23 @@ where
     F: Formula + ?Sized,
     T: Serialize<F>,
 {
+    pack_or_size_at_version::<F, T, SIZE_BYTES, 0>(value, output)
+}
+/// Version-selecting form of [`pack_or_size`]. Uses `VERSION` without compatibility checks or a version tag.
+#[inline(always)]
+pub fn pack_or_size_at_version<F, T, const SIZE_BYTES: usize, const VERSION: u32>(
+    value: &T,
+    output: &mut [u8],
+) -> Result<usize, BufferSizeRequired>
+where
+    F: Formula<VERSION> + ?Sized,
+    T: Serialize<F, VERSION>,
+{
     let mut exhausted = false;
-    let result =
-        pack_into::<F, T, _, SIZE_BYTES>(value, MaybeFixedBuffer::new(output, &mut exhausted));
+    let result = pack_into_at_version::<F, T, _, SIZE_BYTES, VERSION>(
+        value,
+        MaybeFixedBuffer::new(output, &mut exhausted),
+    );
     let size = match result {
         Ok(size) => size,
         Err(never) => match never {},
@@ -284,7 +342,7 @@ where
 ///
 /// [`serialize_to_vec`]: crate::serialize::serialize_to_vec
 #[cfg(feature = "alloc")]
-#[inline]
+#[inline(always)]
 pub fn pack_to_vec<F, T, const SIZE_BYTES: usize>(
     value: &T,
     output: &mut alloc::vec::Vec<u8>,
@@ -293,21 +351,44 @@ where
     F: Formula + ?Sized,
     T: Serialize<F>,
 {
+    pack_to_vec_at_version::<F, T, SIZE_BYTES, 0>(value, output)
+}
+/// Version-selecting form of [`pack_to_vec`]. Uses `VERSION` without compatibility checks or a version tag.
+#[cfg(feature = "alloc")]
+#[inline(always)]
+pub fn pack_to_vec_at_version<F, T, const SIZE_BYTES: usize, const VERSION: u32>(
+    value: &T,
+    output: &mut alloc::vec::Vec<u8>,
+) -> usize
+where
+    F: Formula<VERSION> + ?Sized,
+    T: Serialize<F, VERSION>,
+{
     use crate::buffer::VecBuffer;
 
-    match pack_into::<F, T, _, SIZE_BYTES>(value, VecBuffer::new(output)) {
+    match pack_into_at_version::<F, T, _, SIZE_BYTES, VERSION>(value, VecBuffer::new(output)) {
         Ok(size) => size,
         Err(never) => match never {},
     }
 }
 
 /// Returns the number of bytes of the packed value in the input.
-#[inline]
+#[inline(always)]
 pub fn read_pack_size<F, const SIZE_BYTES: usize>(input: &[u8]) -> Result<usize, DeserializeError>
 where
     F: Formula + ?Sized,
 {
-    let total = total::<F, SIZE_BYTES>();
+    read_pack_size_at_version::<F, SIZE_BYTES, 0>(input)
+}
+/// Version-selecting form of [`read_pack_size`]. Uses `VERSION` without compatibility checks or a version tag.
+#[inline(always)]
+pub fn read_pack_size_at_version<F, const SIZE_BYTES: usize, const VERSION: u32>(
+    input: &[u8],
+) -> Result<usize, DeserializeError>
+where
+    F: Formula<VERSION> + ?Sized,
+{
+    let total = total::<F, SIZE_BYTES, VERSION>();
 
     match total {
         Some(total) => Ok(total),
@@ -329,6 +410,8 @@ where
 /// # Errors
 ///
 /// Returns [`DeserializeError`] if deserialization fails.
+
+#[inline(always)]
 pub fn unpack<'de, F, T, const SIZE_BYTES: usize>(
     input: &'de [u8],
 ) -> Result<(T, usize), DeserializeError>
@@ -336,11 +419,24 @@ where
     F: Formula + ?Sized,
     T: Deserialize<'de, F>,
 {
-    let total = simple_try!(read_pack_size::<F, SIZE_BYTES>(input));
+    unpack_at_version::<F, T, SIZE_BYTES, 0>(input)
+}
+/// Version-selecting form of [`unpack`]. Uses `VERSION` without compatibility checks or a version tag.
+#[inline(always)]
+pub fn unpack_at_version<'de, F, T, const SIZE_BYTES: usize, const VERSION: u32>(
+    input: &'de [u8],
+) -> Result<(T, usize), DeserializeError>
+where
+    F: Formula<VERSION> + ?Sized,
+    T: Deserialize<'de, F, VERSION>,
+{
+    let total = simple_try!(read_pack_size_at_version::<F, SIZE_BYTES, VERSION>(input));
     if input.len() < total {
         return Err(DeserializeError::OutOfBounds(total));
     }
-    let value = simple_try!(deserialize::<F, T, SIZE_BYTES>(&input[..total]));
+    let value = simple_try!(deserialize_at_version::<F, T, SIZE_BYTES, VERSION>(
+        &input[..total]
+    ));
     Ok((value, total))
 }
 
@@ -355,7 +451,7 @@ where
 /// # Errors
 ///
 /// Returns [`DeserializeError`] if deserialization fails.
-#[inline]
+#[inline(always)]
 pub fn unpack_in_place<'de, F, T, const SIZE_BYTES: usize>(
     place: &mut T,
     input: &'de [u8],
@@ -364,14 +460,25 @@ where
     F: Formula + ?Sized,
     T: Deserialize<'de, F> + ?Sized,
 {
-    let total = simple_try!(read_pack_size::<F, SIZE_BYTES>(input));
+    unpack_in_place_at_version::<F, T, SIZE_BYTES, 0>(place, input)
+}
+/// Version-selecting form of [`unpack_in_place`]. Uses `VERSION` without compatibility checks or a version tag.
+#[inline(always)]
+pub fn unpack_in_place_at_version<'de, F, T, const SIZE_BYTES: usize, const VERSION: u32>(
+    place: &mut T,
+    input: &'de [u8],
+) -> Result<usize, DeserializeError>
+where
+    F: Formula<VERSION> + ?Sized,
+    T: Deserialize<'de, F, VERSION> + ?Sized,
+{
+    let total = simple_try!(read_pack_size_at_version::<F, SIZE_BYTES, VERSION>(input));
     if input.len() < total {
         return Err(DeserializeError::OutOfBounds(total));
     }
-    simple_try!(deserialize_in_place::<F, T, SIZE_BYTES>(
-        place,
-        &input[..total]
-    ));
+    simple_try!(
+        deserialize_in_place_at_version::<F, T, SIZE_BYTES, VERSION>(place, &input[..total])
+    );
     Ok(total)
 }
 
@@ -398,8 +505,8 @@ macro_rules! fixed_size_module {
             /// Returns [`BufferExhausted`] if the buffer is too small.
             ///
             /// [`serialize`]: crate::serialize::serialize
-            #[inline]
-            pub fn pack<F, T>(
+            #[inline(always)]
+pub fn pack<F, T>(
                 value: &T,
                 output: &mut [u8],
             ) -> Result<usize, BufferExhausted>
@@ -407,7 +514,19 @@ macro_rules! fixed_size_module {
                 F: Formula + ?Sized,
                 T: Serialize<F>,
             {
-                super::pack::<F, T, $size_bytes>(value, output)
+    pack_at_version::<F, T, 0>(value, output)
+}
+            /// Version-selecting form of [`pack`]. Uses `VERSION` without compatibility checks or a version tag.
+            #[inline(always)]
+            pub fn pack_at_version<F, T, const VERSION: u32>(
+                value: &T,
+                output: &mut [u8],
+            ) -> Result<usize, BufferExhausted>
+            where
+                F: Formula<VERSION> + ?Sized,
+                T: Serialize<F, VERSION>,
+            {
+                super::pack_at_version::<F, T, $size_bytes, VERSION>(value, output)
             }
 
             /// Slightly faster version of [`pack`].
@@ -421,13 +540,22 @@ macro_rules! fixed_size_module {
             /// This allows more convenient use with byte streams where end of input is not known in advance.
             ///
             /// [`serialize_unchecked`]: crate::serialize::serialize_unchecked
-            #[inline]
-            pub fn pack_unchecked<F, T>(value: &T, output: &mut [u8]) -> usize
+            #[inline(always)]
+pub fn pack_unchecked<F, T>(value: &T, output: &mut [u8]) -> usize
             where
                 F: Formula + ?Sized,
                 T: Serialize<F>,
             {
-                super::pack_unchecked::<F, T, $size_bytes>(value, output)
+    pack_unchecked_at_version::<F, T, 0>(value, output)
+}
+            /// Version-selecting form of [`pack_unchecked`]. Uses `VERSION` without compatibility checks or a version tag.
+            #[inline(always)]
+            pub fn pack_unchecked_at_version<F, T, const VERSION: u32>(value: &T, output: &mut [u8]) -> usize
+            where
+                F: Formula<VERSION> + ?Sized,
+                T: Serialize<F, VERSION>,
+            {
+                super::pack_unchecked_at_version::<F, T, $size_bytes, VERSION>(value, output)
             }
 
             /// Returns the number of bytes required to pack the value.
@@ -443,13 +571,22 @@ macro_rules! fixed_size_module {
             /// This allows more convenient use with byte streams where end of input is not known in advance.
             ///
             /// [`serialized_size`]: crate::serialize::serialized_size
-            #[inline]
-            pub fn pack_size<F, T>(value: &T) -> usize
+            #[inline(always)]
+pub fn pack_size<F, T>(value: &T) -> usize
             where
                 F: Formula + ?Sized,
                 T: Serialize<F>,
             {
-                super::pack_size::<F, T, $size_bytes>(value)
+    pack_size_at_version::<F, T, 0>(value)
+}
+            /// Version-selecting form of [`pack_size`]. Uses `VERSION` without compatibility checks or a version tag.
+            #[inline(always)]
+            pub fn pack_size_at_version<F, T, const VERSION: u32>(value: &T) -> usize
+            where
+                F: Formula<VERSION> + ?Sized,
+                T: Serialize<F, VERSION>,
+            {
+                super::pack_size_at_version::<F, T, $size_bytes, VERSION>(value)
             }
 
             /// Packs value into bytes slice.
@@ -471,8 +608,8 @@ macro_rules! fixed_size_module {
             /// This allows more convenient use with byte streams where end of input is not known in advance.
             ///
             /// [`serialize_or_size`]: crate::serialize::serialize_or_size
-            #[inline]
-            pub fn pack_or_size<F, T>(
+            #[inline(always)]
+pub fn pack_or_size<F, T>(
                 value: &T,
                 output: &mut [u8],
             ) -> Result<usize, BufferSizeRequired>
@@ -480,7 +617,19 @@ macro_rules! fixed_size_module {
                 F: Formula + ?Sized,
                 T: Serialize<F>,
             {
-                super::pack_or_size::<F, T, $size_bytes>(value, output)
+    pack_or_size_at_version::<F, T, 0>(value, output)
+}
+            /// Version-selecting form of [`pack_or_size`]. Uses `VERSION` without compatibility checks or a version tag.
+            #[inline(always)]
+            pub fn pack_or_size_at_version<F, T, const VERSION: u32>(
+                value: &T,
+                output: &mut [u8],
+            ) -> Result<usize, BufferSizeRequired>
+            where
+                F: Formula<VERSION> + ?Sized,
+                T: Serialize<F, VERSION>,
+            {
+                super::pack_or_size_at_version::<F, T, $size_bytes, VERSION>(value, output)
             }
 
             /// Packs value into byte vector.
@@ -498,8 +647,8 @@ macro_rules! fixed_size_module {
             ///
             /// [`serialize_to_vec`]: crate::serialize::serialize_to_vec
             #[cfg(feature = "alloc")]
-            #[inline]
-            pub fn pack_to_vec<F, T>(
+#[inline(always)]
+pub fn pack_to_vec<F, T>(
                 value: &T,
                 output: &mut alloc::vec::Vec<u8>,
             ) -> usize
@@ -507,18 +656,41 @@ macro_rules! fixed_size_module {
                 F: Formula + ?Sized,
                 T: Serialize<F>,
             {
-                super::pack_to_vec::<F, T, $size_bytes>(value, output)
+    pack_to_vec_at_version::<F, T, 0>(value, output)
+}
+            /// Version-selecting form of [`pack_to_vec`]. Uses `VERSION` without compatibility checks or a version tag.
+            #[cfg(feature = "alloc")]
+            #[inline(always)]
+            pub fn pack_to_vec_at_version<F, T, const VERSION: u32>(
+                value: &T,
+                output: &mut alloc::vec::Vec<u8>,
+            ) -> usize
+            where
+                F: Formula<VERSION> + ?Sized,
+                T: Serialize<F, VERSION>,
+            {
+                super::pack_to_vec_at_version::<F, T, $size_bytes, VERSION>(value, output)
             }
 
             /// Returns the number of bytes of the packed value in the input.
-            #[inline]
-            pub fn read_pack_size<'de, F>(
+            #[inline(always)]
+pub fn read_pack_size<'de, F>(
                 input: &[u8],
             ) -> Result<usize, DeserializeError>
             where
                 F: Formula + ?Sized,
             {
-                super::read_pack_size::<F, $size_bytes>(input)
+    read_pack_size_at_version::<F, 0>(input)
+}
+            /// Version-selecting form of [`read_pack_size`]. Uses `VERSION` without compatibility checks or a version tag.
+            #[inline(always)]
+            pub fn read_pack_size_at_version<'de, F, const VERSION: u32>(
+                input: &[u8],
+            ) -> Result<usize, DeserializeError>
+            where
+                F: Formula<VERSION> + ?Sized,
+            {
+                super::read_pack_size_at_version::<F, $size_bytes, VERSION>(input)
             }
 
             /// Deserializes value from the input.
@@ -532,13 +704,22 @@ macro_rules! fixed_size_module {
             /// # Errors
             ///
             /// Returns [`DeserializeError`] if deserialization fails.
-            #[inline]
-            pub fn unpack<'de, F, T>(input: &'de [u8]) -> Result<(T, usize), DeserializeError>
+            #[inline(always)]
+pub fn unpack<'de, F, T>(input: &'de [u8]) -> Result<(T, usize), DeserializeError>
             where
                 F: Formula + ?Sized,
                 T: Deserialize<'de, F>,
             {
-                super::unpack::<F, T, $size_bytes>(input)
+    unpack_at_version::<F, T, 0>(input)
+}
+            /// Version-selecting form of [`unpack`]. Uses `VERSION` without compatibility checks or a version tag.
+            #[inline(always)]
+            pub fn unpack_at_version<'de, F, T, const VERSION: u32>(input: &'de [u8]) -> Result<(T, usize), DeserializeError>
+            where
+                F: Formula<VERSION> + ?Sized,
+                T: Deserialize<'de, F, VERSION>,
+            {
+                super::unpack_at_version::<F, T, $size_bytes, VERSION>(input)
             }
 
             /// Deserializes value from the input.
@@ -552,8 +733,8 @@ macro_rules! fixed_size_module {
             /// # Errors
             ///
             /// Returns [`DeserializeError`] if deserialization fails.
-            #[inline]
-            pub fn unpack_in_place<'de, F, T>(
+            #[inline(always)]
+pub fn unpack_in_place<'de, F, T>(
                 place: &mut T,
                 input: &'de [u8],
             ) -> Result<usize, DeserializeError>
@@ -561,7 +742,19 @@ macro_rules! fixed_size_module {
                 F: Formula + ?Sized,
                 T: Deserialize<'de, F> + ?Sized,
             {
-                super::unpack_in_place::<F, T, $size_bytes>(place, input)
+    unpack_in_place_at_version::<F, T, 0>(place, input)
+}
+            /// Version-selecting form of [`unpack_in_place`]. Uses `VERSION` without compatibility checks or a version tag.
+            #[inline(always)]
+            pub fn unpack_in_place_at_version<'de, F, T, const VERSION: u32>(
+                place: &mut T,
+                input: &'de [u8],
+            ) -> Result<usize, DeserializeError>
+            where
+                F: Formula<VERSION> + ?Sized,
+                T: Deserialize<'de, F, VERSION> + ?Sized,
+            {
+                super::unpack_in_place_at_version::<F, T, $size_bytes, VERSION>(place, input)
             }
         }
     };

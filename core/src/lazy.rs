@@ -6,20 +6,21 @@ use crate::{
         ComplexDeserializer, Deserialize, DeserializeError, Deserializer, TrivialDeserializer,
         read_usize,
     },
-    element::{Element, stack_size},
+    element::{Element, stack_size_versioned},
     formula::{Formula, SizeBound},
     list::List,
     serialize::trivial_padded_size,
 };
 
-pub struct Lazy<'de, F: ?Sized> {
+/// A deferred read retaining both formula `F` and its selected version.
+pub struct Lazy<'de, F: ?Sized, const VERSION: u32 = 0> {
     input: &'de [u8],
     size_bytes: usize,
     is_trivial: bool,
     marker: core::marker::PhantomData<F>,
 }
 
-impl<F: ?Sized> Clone for Lazy<'_, F> {
+impl<F: ?Sized, const VERSION: u32> Clone for Lazy<'_, F, VERSION> {
     #[inline]
     fn clone(&self) -> Self {
         Lazy {
@@ -31,15 +32,15 @@ impl<F: ?Sized> Clone for Lazy<'_, F> {
     }
 }
 
-impl<'de, F> Lazy<'de, F>
+impl<'de, F, const VERSION: u32> Lazy<'de, F, VERSION>
 where
     F: ?Sized,
 {
     #[inline]
     pub fn read<T>(&self) -> Result<T, DeserializeError>
     where
-        F: Formula,
-        T: Deserialize<'de, F>,
+        F: Formula<VERSION>,
+        T: Deserialize<'de, F, VERSION>,
     {
         with_size_bytes!(SIZE_BYTES = self.size_bytes => {
             if self.is_trivial {
@@ -55,8 +56,8 @@ where
     #[inline]
     pub fn read_in_place<T>(&self, place: &mut T) -> Result<(), DeserializeError>
     where
-        F: Formula,
-        T: Deserialize<'de, F> + ?Sized,
+        F: Formula<VERSION>,
+        T: Deserialize<'de, F, VERSION> + ?Sized,
     {
         with_size_bytes!(SIZE_BYTES = self.size_bytes => {
             if self.is_trivial {
@@ -86,7 +87,7 @@ where
     }
 }
 
-impl<'de, E> Lazy<'de, List<E>>
+impl<'de, E, const VERSION: u32> Lazy<'de, List<E>, VERSION>
 where
     E: ?Sized,
 {
@@ -95,14 +96,14 @@ where
         &self,
     ) -> Result<impl Iterator<Item = Result<T, DeserializeError>>, DeserializeError>
     where
-        E: Element,
-        T: Deserialize<'de, E::Formula>,
+        E: Element<VERSION>,
+        T: Deserialize<'de, E::Formula, VERSION>,
     {
         let mut me = self.clone();
         let len = simple_try!(me.read_usize());
 
         let input = with_size_bytes!(SIZE_BYTES = self.size_bytes => {{
-            match const { trivial_padded_size::<E, SIZE_BYTES>() } {
+            match const { trivial_padded_size::<E, SIZE_BYTES, VERSION>() } {
                 Some(trivial_size) => {
                     let at = me.input.len() - trivial_size * len;
                     &me.input[at..]
@@ -113,7 +114,7 @@ where
             return cold_err(DeserializeError::Incompatible);
         });
 
-        Ok(LazyDeIter::<'_, E, T> {
+        Ok(LazyDeIter::<'_, E, T, VERSION> {
             input,
             len,
             size_bytes: me.size_bytes,
@@ -122,9 +123,9 @@ where
     }
 }
 
-impl<'de, F> Deserialize<'de, F> for Lazy<'de, F>
+impl<'de, F, const VERSION: u32> Deserialize<'de, F, VERSION> for Lazy<'de, F, VERSION>
 where
-    F: Formula + ?Sized,
+    F: Formula<VERSION> + ?Sized,
 {
     #[inline]
     fn deserialize<D>(mut deserializer: D) -> Result<Self, DeserializeError>
@@ -135,7 +136,7 @@ where
         let size_bytes = deserializer.size_bytes();
 
         let stack = with_size_bytes!(SIZE_BYTES = size_bytes => {
-            match const { stack_size::<F, SIZE_BYTES>() } {
+            match const { stack_size_versioned::<F, SIZE_BYTES, VERSION>() } {
                 SizeBound::Exact(size) => size,
                 SizeBound::Bounded(size) => size.min(input.len()),
                 SizeBound::Unbounded => input.len(),
@@ -159,22 +160,24 @@ where
     where
         D: Deserializer<'de>,
     {
-        *self = simple_try!(<Self as Deserialize<'de, F>>::deserialize(deserializer));
+        *self = simple_try!(<Self as Deserialize<'de, F, VERSION>>::deserialize(
+            deserializer
+        ));
         Ok(())
     }
 }
 
-struct LazyDeIter<'de, E: ?Sized, T> {
+struct LazyDeIter<'de, E: ?Sized, T, const VERSION: u32 = 0> {
     input: &'de [u8],
     len: usize,
     size_bytes: usize,
     marker: PhantomData<fn(E) -> T>,
 }
 
-impl<'de, E, T> Iterator for LazyDeIter<'de, E, T>
+impl<'de, E, T, const VERSION: u32> Iterator for LazyDeIter<'de, E, T, VERSION>
 where
-    E: Element + ?Sized,
-    T: Deserialize<'de, E::Formula>,
+    E: Element<VERSION> + ?Sized,
+    T: Deserialize<'de, E::Formula, VERSION>,
 {
     type Item = Result<T, DeserializeError>;
 
@@ -184,7 +187,7 @@ where
                 return None;
             }
 
-            let (result, input) = match const { trivial_padded_size::<E, SIZE_BYTES>() } {
+            let (result, input) = match const { trivial_padded_size::<E, SIZE_BYTES, VERSION>() } {
                 Some(trivial_size) => {
                     let at = self.input.len() - trivial_size;
                     let mut de = TrivialDeserializer::<SIZE_BYTES>::new(&self.input[at..]);

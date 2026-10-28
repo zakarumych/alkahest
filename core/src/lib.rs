@@ -46,65 +46,72 @@ macro_rules! for_tuple_2 {
 
 #[macro_export]
 macro_rules! element_alias {
+    (for[const $version:ident; $($generic:tt)*] $alias:ty as $element:ty) => {
+        impl<const $version: u32, $($generic)*> $crate::Element<$version> for $alias {
+            $crate::element_alias!(@impl [$version] $alias as $element);
+        }
+    };
     (for[$($generic:tt)*] $alias:ty as $element:ty) => {
         impl < $($generic)* > $crate::Element for $alias {
-            $crate::element_alias!(@impl $alias as $element);
+            $crate::element_alias!(@impl [0] $alias as $element);
         }
     };
     ($alias:ty as $element:ty) => {
         impl $crate::Element for $alias {
-            $crate::element_alias!(@impl $alias as $element);
+            $crate::element_alias!(@impl [0] $alias as $element);
         }
     };
-    (@impl $alias:ty as $element:ty) => {
-        type Formula = <$element as $crate::Element>::Formula;
+    (@impl [$version:expr] $alias:ty as $element:ty) => {
+        type Formula = <$element as $crate::Element<$version>>::Formula;
 
-        type StackSize<const SIZE_BYTES: usize> = <$element as $crate::Element>::StackSize<SIZE_BYTES>;
-        type HeapSize<const SIZE_BYTES: usize> = <$element as $crate::Element>::HeapSize<SIZE_BYTES>;
-        const INHABITED: bool = <$element as $crate::Element>::INHABITED;
+        type StackSize<const SIZE_BYTES: usize> = <$element as $crate::Element<$version>>::StackSize<SIZE_BYTES>;
+        type HeapSize<const SIZE_BYTES: usize> = <$element as $crate::Element<$version>>::HeapSize<SIZE_BYTES>;
+        const SCHEMA: $crate::ElementSchema = <$element as $crate::Element<$version>>::SCHEMA;
+
+        const INHABITED: bool = <$element as $crate::Element<$version>>::INHABITED;
 
         #[inline(always)]
         fn serialize<T, S>(value: &T, serializer: &mut S) -> Result<(), S::Error>
         where
-            T: $crate::Serialize<<$element as $crate::Element>::Formula> + ?Sized,
+            T: $crate::Serialize<<$element as $crate::Element<$version>>::Formula, $version> + ?Sized,
             S: $crate::Serializer,
         {
-            <$element as $crate::Element>::serialize::<T, S>(value, serializer)
+            <$element as $crate::Element<$version>>::serialize::<T, S>(value, serializer)
         }
 
         #[inline(always)]
         fn serialize_slice<T, S>(slice: &[T], serializer: &mut S) -> Result<(), S::Error>
         where
-            T: $crate::Serialize<<$element as $crate::Element>::Formula>,
+            T: $crate::Serialize<<$element as $crate::Element<$version>>::Formula, $version>,
             S: $crate::Serializer,
         {
-            <$element as $crate::Element>::serialize_slice::<T, S>(slice, serializer)
+            <$element as $crate::Element<$version>>::serialize_slice::<T, S>(slice, serializer)
         }
 
         #[inline(always)]
         fn size_hint<T, const SIZE_BYTES: usize>(value: &T) -> Option<$crate::Sizes>
         where
-            T: $crate::serialize::Serialize<<$element as $crate::Element>::Formula> + ?Sized,
+            T: $crate::Serialize<<$element as $crate::Element<$version>>::Formula, $version> + ?Sized,
         {
-            <$element as $crate::Element>::size_hint::<T, SIZE_BYTES>(value)
+            <$element as $crate::Element<$version>>::size_hint::<T, SIZE_BYTES>(value)
         }
 
         #[inline(always)]
         fn deserialize<'de, T, D>(deserializer: &mut D) -> Result<T, $crate::DeserializeError>
         where
-            T: $crate::Deserialize<'de, <$element as $crate::Element>::Formula>,
+            T: $crate::Deserialize<'de, <$element as $crate::Element<$version>>::Formula, $version>,
             D: $crate::Deserializer<'de>,
         {
-            <$element as $crate::Element>::deserialize::<T, D>(deserializer)
+            <$element as $crate::Element<$version>>::deserialize::<T, D>(deserializer)
         }
 
         #[inline(always)]
         fn deserialize_slice<'de, T, D>(deserializer: &mut D, len: usize, push: impl FnMut(T)) -> Result<(), $crate::DeserializeError>
         where
-            T: $crate::Deserialize<'de, <$element as $crate::Element>::Formula>,
+            T: $crate::Deserialize<'de, <$element as $crate::Element<$version>>::Formula, $version>,
             D: $crate::Deserializer<'de>,
         {
-            <$element as $crate::Element>::deserialize_slice::<T, D>(deserializer, len, push)
+            <$element as $crate::Element<$version>>::deserialize_slice::<T, D>(deserializer, len, push)
         }
 
         #[inline(always)]
@@ -113,10 +120,10 @@ macro_rules! element_alias {
             deserializer: &mut D,
         ) -> Result<(), $crate::DeserializeError>
         where
-            T: $crate::Deserialize<'de, <$element as $crate::Element>::Formula> + ?Sized,
+            T: $crate::Deserialize<'de, <$element as $crate::Element<$version>>::Formula, $version> + ?Sized,
             D: $crate::Deserializer<'de>,
         {
-            <$element as $crate::Element>::deserialize_in_place::<T, D>(place, deserializer)
+            <$element as $crate::Element<$version>>::deserialize_in_place::<T, D>(place, deserializer)
         }
     };
 }
@@ -238,6 +245,8 @@ mod serialize;
 mod slice;
 mod str;
 mod tuple;
+pub mod version;
+pub mod versioned;
 
 #[cfg(feature = "alloc")]
 mod string;
@@ -247,7 +256,10 @@ mod vec;
 
 pub use self::{
     deserialize::{Deserialize, DeserializeError, Deserializer},
-    element::{Element, Indirect, heap_size, inhabited, stack_size},
+    element::{
+        Element, Indirect, heap_size, heap_size_versioned, inhabited, inhabited_versioned,
+        stack_size, stack_size_versioned,
+    },
     formula::{AsFormula, BoundedSize, ExactSize, Formula, SizeBound, SizeType, UnboundedSize},
     iter::MakeIter,
     lazy::Lazy,
@@ -255,6 +267,8 @@ pub use self::{
     never::Never,
     serialize::{Serialize, Serializer, Sizes},
     str::Str,
+    version::*,
+    versioned::VersionError,
 };
 
 /// Module containing advanced facilities.
@@ -265,45 +279,73 @@ pub use self::{
 /// [`Serializer`]: crate::serialize::Serializer
 /// [`make_serializer`]: crate::serialize::make_serializer
 pub mod advanced {
+    #[cfg(feature = "alloc")]
+    pub use crate::buffer::VecBuffer;
     pub use crate::{
-        buffer::{
-            Buffer, BufferExhausted, CheckedFixedBuffer, DryBuffer, MaybeFixedBuffer, VecBuffer,
+        buffer::{Buffer, BufferExhausted, CheckedFixedBuffer, DryBuffer, MaybeFixedBuffer},
+        packet::{pack_into, pack_into_at_version},
+        serialize::{
+            exact_sizes, exact_sizes_versioned, serialize_into, serialize_into_at_version,
+            size_hint, size_hint_padded, size_hint_padded_versioned, size_hint_versioned,
+            write_usize,
         },
-        packet::pack_into,
-        serialize::{serialize_into, size_hint, size_hint_padded, write_usize},
     };
 }
 
 /// A trait that combines Formula, Serialize<Self> and Deserialize<Self>.
 /// Automatically implemented for all types that implement the required traits.
-pub trait Mixture: Formula + Serialize<Self> + for<'de> Deserialize<'de, Self> {}
-impl<T> Mixture for T where T: Formula + Serialize<Self> + for<'de> Deserialize<'de, Self> {}
-
-/// A trait that combines Element, Serialize<Self> and Deserialize<Self>.
-/// Automatically implemented for all types that implement the required traits.
-pub trait Component:
-    Element + Serialize<Self::Formula> + for<'de> Deserialize<'de, Self::Formula>
+pub trait Mixture<const VERSION: u32 = 0>:
+    Formula<VERSION> + Serialize<Self, VERSION> + for<'de> Deserialize<'de, Self, VERSION>
+{
+}
+impl<T, const VERSION: u32> Mixture<VERSION> for T where
+    T: Formula<VERSION> + Serialize<Self, VERSION> + for<'de> Deserialize<'de, Self, VERSION>
 {
 }
 
-impl<T> Component for T where
-    T: Element + Serialize<Self::Formula> + for<'de> Deserialize<'de, Self::Formula>
+/// A trait combining an element with its version's serialization traits.
+pub trait Component<const VERSION: u32 = 0>:
+    Element<VERSION>
+    + Serialize<Self::Formula, VERSION>
+    + for<'de> Deserialize<'de, Self::Formula, VERSION>
+{
+}
+impl<T, const VERSION: u32> Component<VERSION> for T where
+    T: Element<VERSION>
+        + Serialize<Self::Formula, VERSION>
+        + for<'de> Deserialize<'de, Self::Formula, VERSION>
 {
 }
 
 /// Module containing functions for serialization/deserialization with manually specified size in bytes for length and address fields.
 pub mod manual_size {
+    #[cfg(feature = "alloc")]
+    pub use crate::packet::{pack_to_vec, pack_to_vec_at_version};
+    pub use crate::versioned::{
+        deserialize_in_place_versioned, deserialize_versioned, pack_size_versioned, pack_versioned,
+        serialize_versioned, serialized_size_versioned, unpack_in_place_versioned,
+        unpack_versioned,
+    };
     pub use crate::{
-        deserialize::{deserialize, deserialize_in_place},
-        packet::{
-            pack, pack_or_size, pack_size, pack_to_vec, pack_unchecked, read_pack_size, unpack,
-            unpack_in_place,
+        deserialize::{
+            deserialize, deserialize_at_version, deserialize_in_place,
+            deserialize_in_place_at_version,
         },
-        serialize::{serialize, serialize_or_size, serialize_unchecked, serialized_size},
+        packet::{
+            pack, pack_at_version, pack_or_size, pack_or_size_at_version, pack_size,
+            pack_size_at_version, pack_unchecked, pack_unchecked_at_version, read_pack_size,
+            read_pack_size_at_version, unpack, unpack_at_version, unpack_in_place,
+            unpack_in_place_at_version,
+        },
+        serialize::{
+            serialize, serialize_at_version, serialize_or_size, serialize_or_size_at_version,
+            serialize_unchecked, serialize_unchecked_at_version, serialized_size,
+            serialized_size_at_version,
+        },
     };
 
     #[cfg(feature = "alloc")]
-    pub use crate::serialize::serialize_to_vec;
+    pub use crate::serialize::{serialize_to_vec, serialize_to_vec_at_version};
 }
 
 /// Module containing functions for serialization/deserialization that use
@@ -311,17 +353,33 @@ pub mod manual_size {
 ///
 /// Common use case - short messages with bounded small footprint such as commands transmitted over network.
 pub mod small {
+    #[cfg(feature = "alloc")]
+    pub use crate::packet::small::{pack_to_vec, pack_to_vec_at_version};
+    pub use crate::versioned::small::{
+        deserialize_in_place_versioned, deserialize_versioned, pack_size_versioned, pack_versioned,
+        serialize_versioned, serialized_size_versioned, unpack_in_place_versioned,
+        unpack_versioned,
+    };
     pub use crate::{
-        deserialize::small::{deserialize, deserialize_in_place},
-        packet::small::{
-            pack, pack_or_size, pack_size, pack_to_vec, pack_unchecked, read_pack_size, unpack,
-            unpack_in_place,
+        deserialize::small::{
+            deserialize, deserialize_at_version, deserialize_in_place,
+            deserialize_in_place_at_version,
         },
-        serialize::small::{serialize, serialize_or_size, serialize_unchecked, serialized_size},
+        packet::small::{
+            pack, pack_at_version, pack_or_size, pack_or_size_at_version, pack_size,
+            pack_size_at_version, pack_unchecked, pack_unchecked_at_version, read_pack_size,
+            read_pack_size_at_version, unpack, unpack_at_version, unpack_in_place,
+            unpack_in_place_at_version,
+        },
+        serialize::small::{
+            serialize, serialize_at_version, serialize_or_size, serialize_or_size_at_version,
+            serialize_unchecked, serialize_unchecked_at_version, serialized_size,
+            serialized_size_at_version,
+        },
     };
 
     #[cfg(feature = "alloc")]
-    pub use crate::serialize::small::serialize_to_vec;
+    pub use crate::serialize::small::{serialize_to_vec, serialize_to_vec_at_version};
 }
 
 /// Module containing functions for serialization/deserialization that use
@@ -329,17 +387,33 @@ pub mod small {
 ///
 /// Common use case - normal-sized packets transmitted over network.
 pub mod medium {
+    #[cfg(feature = "alloc")]
+    pub use crate::packet::medium::{pack_to_vec, pack_to_vec_at_version};
+    pub use crate::versioned::medium::{
+        deserialize_in_place_versioned, deserialize_versioned, pack_size_versioned, pack_versioned,
+        serialize_versioned, serialized_size_versioned, unpack_in_place_versioned,
+        unpack_versioned,
+    };
     pub use crate::{
-        deserialize::medium::{deserialize, deserialize_in_place},
-        packet::medium::{
-            pack, pack_or_size, pack_size, pack_to_vec, pack_unchecked, read_pack_size, unpack,
-            unpack_in_place,
+        deserialize::medium::{
+            deserialize, deserialize_at_version, deserialize_in_place,
+            deserialize_in_place_at_version,
         },
-        serialize::medium::{serialize, serialize_or_size, serialize_unchecked, serialized_size},
+        packet::medium::{
+            pack, pack_at_version, pack_or_size, pack_or_size_at_version, pack_size,
+            pack_size_at_version, pack_unchecked, pack_unchecked_at_version, read_pack_size,
+            read_pack_size_at_version, unpack, unpack_at_version, unpack_in_place,
+            unpack_in_place_at_version,
+        },
+        serialize::medium::{
+            serialize, serialize_at_version, serialize_or_size, serialize_or_size_at_version,
+            serialize_unchecked, serialize_unchecked_at_version, serialized_size,
+            serialized_size_at_version,
+        },
     };
 
     #[cfg(feature = "alloc")]
-    pub use crate::serialize::medium::serialize_to_vec;
+    pub use crate::serialize::medium::{serialize_to_vec, serialize_to_vec_at_version};
 }
 
 /// Module containing functions for serialization/deserialization that use
@@ -347,17 +421,33 @@ pub mod medium {
 ///
 /// Common use case - data stored in files.
 pub mod large {
+    #[cfg(feature = "alloc")]
+    pub use crate::packet::large::{pack_to_vec, pack_to_vec_at_version};
+    pub use crate::versioned::large::{
+        deserialize_in_place_versioned, deserialize_versioned, pack_size_versioned, pack_versioned,
+        serialize_versioned, serialized_size_versioned, unpack_in_place_versioned,
+        unpack_versioned,
+    };
     pub use crate::{
-        deserialize::large::{deserialize, deserialize_in_place},
-        packet::large::{
-            pack, pack_or_size, pack_size, pack_to_vec, pack_unchecked, read_pack_size, unpack,
-            unpack_in_place,
+        deserialize::large::{
+            deserialize, deserialize_at_version, deserialize_in_place,
+            deserialize_in_place_at_version,
         },
-        serialize::large::{serialize, serialize_or_size, serialize_unchecked, serialized_size},
+        packet::large::{
+            pack, pack_at_version, pack_or_size, pack_or_size_at_version, pack_size,
+            pack_size_at_version, pack_unchecked, pack_unchecked_at_version, read_pack_size,
+            read_pack_size_at_version, unpack, unpack_at_version, unpack_in_place,
+            unpack_in_place_at_version,
+        },
+        serialize::large::{
+            serialize, serialize_at_version, serialize_or_size, serialize_or_size_at_version,
+            serialize_unchecked, serialize_unchecked_at_version, serialized_size,
+            serialized_size_at_version,
+        },
     };
 
     #[cfg(feature = "alloc")]
-    pub use crate::serialize::large::serialize_to_vec;
+    pub use crate::serialize::large::{serialize_to_vec, serialize_to_vec_at_version};
 }
 
 /// Module containing functions for serialization/deserialization that use
@@ -365,17 +455,33 @@ pub mod large {
 ///
 /// Common use case - data stored in large files exceeding 4GB.
 pub mod huge {
+    #[cfg(feature = "alloc")]
+    pub use crate::packet::huge::{pack_to_vec, pack_to_vec_at_version};
+    pub use crate::versioned::huge::{
+        deserialize_in_place_versioned, deserialize_versioned, pack_size_versioned, pack_versioned,
+        serialize_versioned, serialized_size_versioned, unpack_in_place_versioned,
+        unpack_versioned,
+    };
     pub use crate::{
-        deserialize::huge::{deserialize, deserialize_in_place},
-        packet::huge::{
-            pack, pack_or_size, pack_size, pack_to_vec, pack_unchecked, read_pack_size, unpack,
-            unpack_in_place,
+        deserialize::huge::{
+            deserialize, deserialize_at_version, deserialize_in_place,
+            deserialize_in_place_at_version,
         },
-        serialize::huge::{serialize, serialize_or_size, serialize_unchecked, serialized_size},
+        packet::huge::{
+            pack, pack_at_version, pack_or_size, pack_or_size_at_version, pack_size,
+            pack_size_at_version, pack_unchecked, pack_unchecked_at_version, read_pack_size,
+            read_pack_size_at_version, unpack, unpack_at_version, unpack_in_place,
+            unpack_in_place_at_version,
+        },
+        serialize::huge::{
+            serialize, serialize_at_version, serialize_or_size, serialize_or_size_at_version,
+            serialize_unchecked, serialize_unchecked_at_version, serialized_size,
+            serialized_size_at_version,
+        },
     };
 
     #[cfg(feature = "alloc")]
-    pub use crate::serialize::huge::serialize_to_vec;
+    pub use crate::serialize::huge::{serialize_to_vec, serialize_to_vec_at_version};
 }
 
 /// Module containing functions for serialization/deserialization that use
@@ -384,19 +490,33 @@ pub mod huge {
 /// Common use case - on today data scale no single message would overflow 16EB of [`huge`] category,
 /// but why not prepare for the future when 17EB of data may be transmitted in a single message, or stored in a single file?
 pub mod humongous {
+    #[cfg(feature = "alloc")]
+    pub use crate::packet::humongous::{pack_to_vec, pack_to_vec_at_version};
+    pub use crate::versioned::humongous::{
+        deserialize_in_place_versioned, deserialize_versioned, pack_size_versioned, pack_versioned,
+        serialize_versioned, serialized_size_versioned, unpack_in_place_versioned,
+        unpack_versioned,
+    };
     pub use crate::{
-        deserialize::humongous::{deserialize, deserialize_in_place},
+        deserialize::humongous::{
+            deserialize, deserialize_at_version, deserialize_in_place,
+            deserialize_in_place_at_version,
+        },
         packet::humongous::{
-            pack, pack_or_size, pack_size, pack_to_vec, pack_unchecked, read_pack_size, unpack,
-            unpack_in_place,
+            pack, pack_at_version, pack_or_size, pack_or_size_at_version, pack_size,
+            pack_size_at_version, pack_unchecked, pack_unchecked_at_version, read_pack_size,
+            read_pack_size_at_version, unpack, unpack_at_version, unpack_in_place,
+            unpack_in_place_at_version,
         },
         serialize::humongous::{
-            serialize, serialize_or_size, serialize_unchecked, serialized_size,
+            serialize, serialize_at_version, serialize_or_size, serialize_or_size_at_version,
+            serialize_unchecked, serialize_unchecked_at_version, serialized_size,
+            serialized_size_at_version,
         },
     };
 
     #[cfg(feature = "alloc")]
-    pub use crate::serialize::humongous::serialize_to_vec;
+    pub use crate::serialize::humongous::{serialize_to_vec, serialize_to_vec_at_version};
 }
 
 // Re-exports large size functions as default for convenience.
@@ -411,9 +531,8 @@ pub use self::large::*;
 pub mod private {
     use crate::{
         Deserialize, Deserializer,
-        advanced::size_hint,
         deserialize::DeserializeError,
-        element::{Element, stack_size},
+        element::Element,
         formula::{Formula, SizeBound},
         serialize::{Serialize, Serializer, Sizes},
     };
@@ -438,20 +557,31 @@ pub mod private {
         }
     }
 
-    pub struct WithElement<E: ?Sized> {
+    /// Select a field's element and explicit version for generated codecs.
+    #[inline(always)]
+    pub fn with_element_versioned<F: ?Sized, E: Element<VERSION> + ?Sized, const VERSION: u32>(
+        f: impl FnOnce(&F) -> &E,
+    ) -> WithElement<E, VERSION> {
+        let _ = f;
+        WithElement {
+            _marker: core::marker::PhantomData,
+        }
+    }
+
+    pub struct WithElement<E: ?Sized, const VERSION: u32 = 0> {
         _marker: core::marker::PhantomData<E>,
     }
 
-    impl<E> WithElement<E>
+    impl<E, const VERSION: u32> WithElement<E, VERSION>
     where
-        E: Element + ?Sized,
+        E: Element<VERSION> + ?Sized,
     {
         /// Helper function to take element formula from a composite formula.
         /// And then use it to serialize element either directly.
         #[inline(always)]
         pub fn serialize<T, S>(self, value: &T, serializer: &mut S) -> Result<(), S::Error>
         where
-            T: Serialize<E::Formula> + ?Sized,
+            T: Serialize<E::Formula, VERSION> + ?Sized,
             S: Serializer,
         {
             E::serialize(value, serializer)
@@ -462,19 +592,26 @@ pub mod private {
         #[inline(always)]
         pub fn size_hint<T, const SIZE_BYTES: usize>(self, value: &T) -> Option<Sizes>
         where
-            T: Serialize<E::Formula> + ?Sized,
+            T: Serialize<E::Formula, VERSION> + ?Sized,
         {
-            size_hint::<E, T, SIZE_BYTES>(value)
+            crate::advanced::size_hint_versioned::<E, T, SIZE_BYTES, VERSION>(value)
         }
 
         /// Size hint including stack padding before the next field.
         #[inline(always)]
         pub fn size_hint_padded<T, const SIZE_BYTES: usize>(self, value: &T) -> Option<Sizes>
         where
-            T: Serialize<E::Formula> + ?Sized,
+            T: Serialize<E::Formula, VERSION> + ?Sized,
         {
-            let mut sizes = simple_some!(size_hint::<E, T, SIZE_BYTES>(value));
-            if let SizeBound::Bounded(max_stack) = const { stack_size::<E, SIZE_BYTES>() } {
+            let mut sizes = simple_some!(crate::advanced::size_hint_versioned::<
+                E,
+                T,
+                SIZE_BYTES,
+                VERSION,
+            >(value));
+            if let SizeBound::Bounded(max_stack) =
+                const { crate::stack_size_versioned::<E, SIZE_BYTES, VERSION>() }
+            {
                 sizes.stack = max_stack;
             }
             Some(sizes)
@@ -483,7 +620,7 @@ pub mod private {
         #[inline(always)]
         pub fn deserialize<'de, T, D>(self, deserializer: &mut D) -> Result<T, DeserializeError>
         where
-            T: Deserialize<'de, E::Formula>,
+            T: Deserialize<'de, E::Formula, VERSION>,
             D: Deserializer<'de>,
         {
             E::deserialize(deserializer)
@@ -496,7 +633,7 @@ pub mod private {
             deserializer: &mut D,
         ) -> Result<(), DeserializeError>
         where
-            T: Deserialize<'de, E::Formula> + ?Sized,
+            T: Deserialize<'de, E::Formula, VERSION> + ?Sized,
             D: Deserializer<'de>,
         {
             E::deserialize_in_place(place, deserializer)
@@ -553,7 +690,7 @@ pub mod private {
         }
     }
 
-    pub trait DeserializeEnumVariant<'de, F: Formula + ?Sized> {
+    pub trait DeserializeEnumVariant<'de, F: Formula<VERSION> + ?Sized, const VERSION: u32 = 0> {
         fn deserialize_enum_variant<D>(
             discriminant: usize,
             deserializer: D,

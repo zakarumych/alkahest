@@ -5,7 +5,7 @@ use crate::{
     buffer::{
         Buffer, BufferExhausted, CheckedFixedBuffer, DryBuffer, MaybeFixedBuffer, OptimisticBuffer,
     },
-    element::{heap_size, stack_size, zero_sized},
+    element::{heap_size_versioned, stack_size_versioned, zero_sized},
     formula::{Formula, SizeBound},
 };
 
@@ -97,40 +97,42 @@ impl ops::Sub for Sizes {
     }
 }
 
-/// Trait for types that can be serialized with specified `F: `[`Formula`].
+/// Serializes values using formula `F` at the selected `VERSION`.
+///
+/// Version zero is the default. Versions select implementations and layouts;
+/// they are not automatically written into the byte stream.
 ///
 /// Implementations *must* ensure that serialized data conforms to formula layout.
 ///
 /// # Examples
 ///
 /// ```
-/// # use alkahest::{*, advanced::*};
+/// # use alkahest_core::*;
 ///
 /// struct ThreeBytes;
 ///
 /// impl Formula for ThreeBytes {
-///     const EXACT_SIZE: bool = true;
-///     const HEAPLESS: bool = true;
-///     fn max_stack_size(_size_bytes: u8) -> Option<usize> { Some(3) }
+///     type StackSize<const SIZE_BYTES: usize> = ExactSize<3>;
+///     type HeapSize<const SIZE_BYTES: usize> = ExactSize<0>;
+///     const INHABITED: bool = true;
 /// }
 ///
 /// struct Qwe;
 ///
 /// impl Serialize<ThreeBytes> for Qwe {
-///     fn serialize<B>(self, sizes: &mut Sizes, buffer: B) -> Result<(), B::Error>
+///     fn serialize<S>(&self, mut serializer: S) -> Result<(), S::Error>
 ///     where
-///         Self: Sized,
-///         B: Buffer,
+///         S: Serializer,
 ///     {
-///         write_bytes(b"qwe", sizes, buffer)
+///         serializer.write_bytes(b"qwe")
 ///     }
 ///
-///     fn size_hint(&self) -> Option<Sizes> {
+///     fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
 ///         Some(Sizes::with_stack(3))
 ///     }
 /// }
 /// ```
-pub trait Serialize<F: Formula + ?Sized> {
+pub trait Serialize<F: Formula<VERSION> + ?Sized, const VERSION: u32 = 0> {
     /// Serializes `self` into the given buffer.
     ///
     /// # Errors
@@ -154,22 +156,22 @@ pub trait Serialize<F: Formula + ?Sized> {
     }
 }
 
-impl<'a, F, T> Serialize<F> for &'a T
+impl<'a, F, T, const VERSION: u32> Serialize<F, VERSION> for &'a T
 where
-    F: Formula + ?Sized,
-    T: Serialize<F> + ?Sized,
+    F: Formula<VERSION> + ?Sized,
+    T: Serialize<F, VERSION> + ?Sized,
 {
     #[inline(always)]
     fn serialize<S>(&self, serializer: S) -> Result<(), S::Error>
     where
         S: Serializer,
     {
-        <T as Serialize<F>>::serialize(&**self, serializer)
+        <T as Serialize<F, VERSION>>::serialize(&**self, serializer)
     }
 
     #[inline(always)]
     fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
-        <T as Serialize<F>>::size_hint::<SIZE_BYTES>(&**self)
+        <T as Serialize<F, VERSION>>::size_hint::<SIZE_BYTES>(&**self)
     }
 }
 
@@ -195,10 +197,23 @@ pub trait Serializer {
     /// It is used when serializing fields of records, tuples, or elements of slices.
     ///
     /// Unlike `write_indirect`, this method serializes the value directly into the "stack" space.
+
+    #[inline(always)]
     fn write_direct<F, T>(&mut self, value: &T) -> Result<(), Self::Error>
     where
         F: Formula + ?Sized,
-        T: Serialize<F> + ?Sized;
+        T: Serialize<F> + ?Sized,
+    {
+        self.write_direct_versioned::<F, T, 0>(value)
+    }
+    /// Uses the explicit formula version for this value or slice.
+    fn write_direct_versioned<F, T, const VERSION: u32>(
+        &mut self,
+        value: &T,
+    ) -> Result<(), Self::Error>
+    where
+        F: Formula<VERSION> + ?Sized,
+        T: Serialize<F, VERSION> + ?Sized;
 
     /// Serializes an element.
     ///
@@ -206,18 +221,44 @@ pub trait Serializer {
     /// It is used when serializing fields of records, tuples, or elements of slices.
     ///
     /// Unlike `write_direct`, this method serializes the value into "heap" and writes only an address to the "stack" space.
+
+    #[inline(always)]
     fn write_indirect<F, T>(&mut self, value: &T) -> Result<(), Self::Error>
     where
         F: Formula + ?Sized,
-        T: Serialize<F> + ?Sized;
+        T: Serialize<F> + ?Sized,
+    {
+        self.write_indirect_versioned::<F, T, 0>(value)
+    }
+    /// Uses the explicit formula version for this value or slice.
+    fn write_indirect_versioned<F, T, const VERSION: u32>(
+        &mut self,
+        value: &T,
+    ) -> Result<(), Self::Error>
+    where
+        F: Formula<VERSION> + ?Sized,
+        T: Serialize<F, VERSION> + ?Sized;
 
     /// Serializes a whole slice of elements.
     ///
     /// This should be prefered over calling `write_direct` for each element.
+
+    #[inline(always)]
     fn write_slice<F, T>(&mut self, slice: &[T]) -> Result<(), Self::Error>
     where
         F: Formula + ?Sized,
-        T: Serialize<F>;
+        T: Serialize<F>,
+    {
+        self.write_slice_versioned::<F, T, 0>(slice)
+    }
+    /// Uses the explicit formula version for this value or slice.
+    fn write_slice_versioned<F, T, const VERSION: u32>(
+        &mut self,
+        slice: &[T],
+    ) -> Result<(), Self::Error>
+    where
+        F: Formula<VERSION> + ?Sized,
+        T: Serialize<F, VERSION>;
 
     /// Write padding accumulated from last write.
     fn write_padding(&mut self) -> Result<(), Self::Error>;
@@ -252,10 +293,10 @@ where
     }
 
     #[inline(never)] // This is sad-path, so we put it on separate function to avoid bloating the main serialization logic.
-    fn write_to_heap<E, T>(&mut self, value: &T) -> Result<(), B::Error>
+    fn write_to_heap<E, T, const VERSION: u32>(&mut self, value: &T) -> Result<(), B::Error>
     where
-        E: Element + ?Sized,
-        T: Serialize<E::Formula> + ?Sized,
+        E: Element<VERSION> + ?Sized,
+        T: Serialize<E::Formula, VERSION> + ?Sized,
     {
         let old_stack = self.sizes.stack;
         debug_assert_eq!(self.pad_next, 0);
@@ -333,16 +374,19 @@ where
     ///
     /// Returns error if buffer write fails.
     #[inline]
-    fn write_direct<F, T>(&mut self, value: &T) -> Result<(), Self::Error>
+    fn write_direct_versioned<F, T, const VERSION: u32>(
+        &mut self,
+        value: &T,
+    ) -> Result<(), Self::Error>
     where
-        F: Formula + ?Sized,
-        T: Serialize<F> + ?Sized,
+        F: Formula<VERSION> + ?Sized,
+        T: Serialize<F, VERSION> + ?Sized,
     {
-        if is_zero::<F, SIZE_BYTES>() {
+        if is_zero::<F, SIZE_BYTES, VERSION>() {
             return self.write_padding();
         }
 
-        if let Some(trivial_size) = const { trivial_size::<F, SIZE_BYTES>() } {
+        if let Some(trivial_size) = const { trivial_size::<F, SIZE_BYTES, VERSION>() } {
             // Switch to trivial layout serialization.
 
             let reserved = simple_try!(self.buffer.reserved(
@@ -357,7 +401,7 @@ where
 
                 let ser = TrivialSerializer::<SIZE_BYTES>::new(tail);
 
-                if let Err(err) = <T as Serialize<F>>::serialize(value, ser) {
+                if let Err(err) = <T as Serialize<F, VERSION>>::serialize(value, ser) {
                     match err {}
                 }
             }
@@ -371,7 +415,7 @@ where
         let old_sizes;
 
         if !B::RESERVED_IS_SELF
-            && let Some(sizes) = const { exact_sizes::<F, T, SIZE_BYTES>() }
+            && let Some(sizes) = const { exact_sizes_versioned::<F, T, SIZE_BYTES, VERSION>() }
         {
             // If size is known - serialize with reserved buffer, unless it's the same kind of buffer.
 
@@ -388,7 +432,7 @@ where
 
             if let Some(reserved) = reserved {
                 let ser = ComplexSerializer::<_, SIZE_BYTES>::new(&mut self.sizes, reserved);
-                if let Err(err) = <T as Serialize<F>>::serialize(value, ser) {
+                if let Err(err) = <T as Serialize<F, VERSION>>::serialize(value, ser) {
                     match err {}
                 }
             } else {
@@ -400,12 +444,12 @@ where
             old_sizes = *self.sizes;
 
             let ser = ComplexSerializer::<_, SIZE_BYTES>::new(self.sizes, self.buffer.reborrow());
-            simple_try!(<T as Serialize<F>>::serialize(value, ser));
+            simple_try!(<T as Serialize<F, VERSION>>::serialize(value, ser));
         }
 
         let actual_sizes = *self.sizes - old_sizes;
 
-        match const { stack_size::<F, SIZE_BYTES>() } {
+        match const { stack_size_versioned::<F, SIZE_BYTES, VERSION>() } {
             SizeBound::Unbounded => {
                 // It is impossible to write padding for unbounded element.
                 // Thus we fence it with too large padding that will cause next write to fail.
@@ -427,7 +471,7 @@ where
             }
         }
 
-        match const { heap_size::<F, SIZE_BYTES>() } {
+        match const { heap_size_versioned::<F, SIZE_BYTES, VERSION>() } {
             SizeBound::Unbounded => {}
             SizeBound::Bounded(max_heap) => {
                 debug_assert!(actual_sizes.heap <= max_heap);
@@ -451,18 +495,21 @@ where
     ///
     /// Returns error if buffer write fails.
     #[inline]
-    fn write_indirect<F, T>(&mut self, value: &T) -> Result<(), B::Error>
+    fn write_indirect_versioned<F, T, const VERSION: u32>(
+        &mut self,
+        value: &T,
+    ) -> Result<(), B::Error>
     where
-        F: Formula + ?Sized,
-        T: Serialize<F> + ?Sized,
+        F: Formula<VERSION> + ?Sized,
+        T: Serialize<F, VERSION> + ?Sized,
     {
         assert!(F::INHABITED);
 
-        if const { zero_sized::<F>() } {
+        if const { zero_sized::<F, VERSION>() } {
             return self.write_padding();
         }
 
-        if let Some(trivial_size) = const { trivial_size::<F, SIZE_BYTES>() } {
+        if let Some(trivial_size) = const { trivial_size::<F, SIZE_BYTES, VERSION>() } {
             // Switch to trivial layout serialization.
 
             let reserved = simple_try!(self.buffer.reserved_heap(
@@ -471,25 +518,24 @@ where
                 trivial_size,
             ));
 
-            if let Some(reserved) = reserved {
-                let ser = TrivialSerializer::<SIZE_BYTES>::new(reserved);
+            if let Some(mut reserved) = reserved {
+                let child = reserved.get_range(self.sizes.heap, trivial_size);
+                let ser = TrivialSerializer::<SIZE_BYTES>::new(child);
 
-                if let Err(err) = <T as Serialize<F>>::serialize(value, ser) {
+                if let Err(err) = <T as Serialize<F, VERSION>>::serialize(value, ser) {
                     match err {}
                 }
             }
 
-            self.sizes.stack += trivial_size;
-            self.pad_next = 0;
-
-            return Ok(());
+            self.sizes.heap += trivial_size;
+            return self.write_usize(self.sizes.heap);
         }
 
         // Can we get size hint for the value?
-        match size_hint::<F, T, SIZE_BYTES>(&value) {
+        match size_hint_versioned::<F, T, SIZE_BYTES, VERSION>(&value) {
             None => {
                 // Size hint is unobtainable, serialize to heap through stack and move to heap.
-                simple_try!(self.write_to_heap::<F, T>(value));
+                simple_try!(self.write_to_heap::<F, T, VERSION>(value));
             }
             Some(promised) => {
                 // Reserive heap space to avoid serializing to stack and moving to heap.
@@ -506,7 +552,7 @@ where
 
                 if let Some(reserved) = reserved {
                     let ser = ComplexSerializer::<_, SIZE_BYTES>::new(&mut sizes, reserved);
-                    if let Err(err) = <T as Serialize<F>>::serialize(value, ser) {
+                    if let Err(err) = <T as Serialize<F, VERSION>>::serialize(value, ser) {
                         match err {}
                     }
 
@@ -533,16 +579,19 @@ where
     }
 
     #[inline]
-    fn write_slice<F, T>(&mut self, slice: &[T]) -> Result<(), Self::Error>
+    fn write_slice_versioned<F, T, const VERSION: u32>(
+        &mut self,
+        slice: &[T],
+    ) -> Result<(), Self::Error>
     where
-        F: Formula + ?Sized,
-        T: Serialize<F>,
+        F: Formula<VERSION> + ?Sized,
+        T: Serialize<F, VERSION>,
     {
-        if is_zero::<F, SIZE_BYTES>() {
+        if is_zero::<F, SIZE_BYTES, VERSION>() {
             return self.write_padding();
         }
 
-        if let Some(trivial_size) = const { trivial_padded_size::<F, SIZE_BYTES>() } {
+        if let Some(trivial_size) = const { trivial_padded_size::<F, SIZE_BYTES, VERSION>() } {
             // Switch to trivial layout serialization.
             let slice_size = trivial_size * slice.len();
 
@@ -562,7 +611,7 @@ where
                 ) {
                     let ser = TrivialSerializer::<SIZE_BYTES>::new(OptimisticBuffer::new(chunk));
 
-                    if let Err(err) = <T as Serialize<F>>::serialize(item, ser) {
+                    if let Err(err) = <T as Serialize<F, VERSION>>::serialize(item, ser) {
                         match err {}
                     }
                 }
@@ -575,7 +624,7 @@ where
         }
 
         for item in slice {
-            simple_try!(self.write_direct::<F, T>(item));
+            simple_try!(self.write_direct_versioned::<F, T, VERSION>(item));
         }
 
         self.write_padding()
@@ -661,23 +710,25 @@ impl<'a, const SIZE_BYTES: usize> Serializer for TrivialSerializer<'a, SIZE_BYTE
     /// # Errors
     ///
     /// Returns error if buffer write fails.
-    #[inline(always)]
-    fn write_direct<F, T>(&mut self, value: &T) -> Result<(), Infallible>
+    fn write_direct_versioned<F, T, const VERSION: u32>(
+        &mut self,
+        value: &T,
+    ) -> Result<(), Infallible>
     where
-        F: Formula + ?Sized,
-        T: Serialize<F> + ?Sized,
+        F: Formula<VERSION> + ?Sized,
+        T: Serialize<F, VERSION> + ?Sized,
     {
         assert!(F::INHABITED);
 
-        if is_zero::<F, SIZE_BYTES>() {
+        if is_zero::<F, SIZE_BYTES, VERSION>() {
             return Ok(());
         }
 
-        if let Some(trivial_size) = const { trivial_padded_size::<F, SIZE_BYTES>() } {
+        if let Some(trivial_size) = const { trivial_padded_size::<F, SIZE_BYTES, VERSION>() } {
             // Switch to trivial layout serialization.
             if let Some(head) = self.buf.take_head(trivial_size) {
                 let serializer = TrivialSerializer::<SIZE_BYTES>::new(head);
-                if let Err(err) = <T as Serialize<F>>::serialize(value, serializer) {
+                if let Err(err) = <T as Serialize<F, VERSION>>::serialize(value, serializer) {
                     match err {}
                 }
             }
@@ -695,31 +746,35 @@ impl<'a, const SIZE_BYTES: usize> Serializer for TrivialSerializer<'a, SIZE_BYTE
     /// # Errors
     ///
     /// Returns error if buffer write fails.
-    #[inline(always)]
-    fn write_indirect<F, T>(&mut self, _value: &T) -> Result<(), Infallible>
+    fn write_indirect_versioned<F, T, const VERSION: u32>(
+        &mut self,
+        _value: &T,
+    ) -> Result<(), Infallible>
     where
-        F: Formula + ?Sized,
-        T: Serialize<F> + ?Sized,
+        F: Formula<VERSION> + ?Sized,
+        T: Serialize<F, VERSION> + ?Sized,
     {
         assert!(F::INHABITED);
-        if const { zero_sized::<F>() } {
+        if const { zero_sized::<F, VERSION>() } {
             Ok(())
         } else {
             unreachable!()
         }
     }
 
-    #[inline(always)]
-    fn write_slice<F, T>(&mut self, slice: &[T]) -> Result<(), Self::Error>
+    fn write_slice_versioned<F, T, const VERSION: u32>(
+        &mut self,
+        slice: &[T],
+    ) -> Result<(), Self::Error>
     where
-        F: Formula + ?Sized,
-        T: Serialize<F>,
+        F: Formula<VERSION> + ?Sized,
+        T: Serialize<F, VERSION>,
     {
-        if is_zero::<F, SIZE_BYTES>() {
+        if is_zero::<F, SIZE_BYTES, VERSION>() {
             return Ok(());
         }
 
-        if let Some(trivial_size) = const { trivial_padded_size::<F, SIZE_BYTES>() } {
+        if let Some(trivial_size) = const { trivial_padded_size::<F, SIZE_BYTES, VERSION>() } {
             // Switch to trivial layout serialization.
 
             let slice_size = trivial_size * slice.len();
@@ -730,7 +785,7 @@ impl<'a, const SIZE_BYTES: usize> Serializer for TrivialSerializer<'a, SIZE_BYTE
                 ) {
                     let ser = TrivialSerializer::<SIZE_BYTES>::new(OptimisticBuffer::new(chunk));
 
-                    if let Err(err) = <T as Serialize<F>>::serialize(item, ser) {
+                    if let Err(err) = <T as Serialize<F, VERSION>>::serialize(item, ser) {
                         match err {}
                     }
                 }
@@ -829,7 +884,22 @@ pub const fn exact_sizes<
     T: Serialize<E::Formula> + ?Sized,
     const SIZE_BYTES: usize,
 >() -> Option<Sizes> {
-    match const { (stack_size::<E, SIZE_BYTES>(), heap_size::<E, SIZE_BYTES>()) } {
+    exact_sizes_versioned::<E, T, SIZE_BYTES, 0>()
+}
+/// Version-selecting form of [`exact_sizes`]. Uses `VERSION` without compatibility checks or a version tag.
+#[inline(always)]
+pub const fn exact_sizes_versioned<
+    E: Element<VERSION> + ?Sized,
+    T: Serialize<E::Formula, VERSION> + ?Sized,
+    const SIZE_BYTES: usize,
+    const VERSION: u32,
+>() -> Option<Sizes> {
+    match const {
+        (
+            stack_size_versioned::<E, SIZE_BYTES, VERSION>(),
+            heap_size_versioned::<E, SIZE_BYTES, VERSION>(),
+        )
+    } {
         (SizeBound::Exact(stack), SizeBound::Exact(heap)) => Some(Sizes { stack, heap }),
         _ => None,
     }
@@ -843,7 +913,24 @@ pub fn size_hint<
 >(
     value: &T,
 ) -> Option<Sizes> {
-    match const { (stack_size::<E, SIZE_BYTES>(), heap_size::<E, SIZE_BYTES>()) } {
+    size_hint_versioned::<E, T, SIZE_BYTES, 0>(value)
+}
+/// Version-selecting form of [`size_hint`]. Uses `VERSION` without compatibility checks or a version tag.
+#[inline(always)]
+pub fn size_hint_versioned<
+    E: Element<VERSION> + ?Sized,
+    T: Serialize<E::Formula, VERSION> + ?Sized,
+    const SIZE_BYTES: usize,
+    const VERSION: u32,
+>(
+    value: &T,
+) -> Option<Sizes> {
+    match const {
+        (
+            stack_size_versioned::<E, SIZE_BYTES, VERSION>(),
+            heap_size_versioned::<E, SIZE_BYTES, VERSION>(),
+        )
+    } {
         (SizeBound::Exact(stack), SizeBound::Exact(heap)) => Some(Sizes { stack, heap }),
         _ => E::size_hint::<T, SIZE_BYTES>(value),
     }
@@ -857,7 +944,24 @@ pub fn size_hint_padded<
 >(
     value: &T,
 ) -> Option<Sizes> {
-    match const { (stack_size::<E, SIZE_BYTES>(), heap_size::<E, SIZE_BYTES>()) } {
+    size_hint_padded_versioned::<E, T, SIZE_BYTES, 0>(value)
+}
+/// Version-selecting form of [`size_hint_padded`]. Uses `VERSION` without compatibility checks or a version tag.
+#[inline(always)]
+pub fn size_hint_padded_versioned<
+    E: Element<VERSION> + ?Sized,
+    T: Serialize<E::Formula, VERSION> + ?Sized,
+    const SIZE_BYTES: usize,
+    const VERSION: u32,
+>(
+    value: &T,
+) -> Option<Sizes> {
+    match const {
+        (
+            stack_size_versioned::<E, SIZE_BYTES, VERSION>(),
+            heap_size_versioned::<E, SIZE_BYTES, VERSION>(),
+        )
+    } {
         (SizeBound::Bounded(stack) | SizeBound::Exact(stack), SizeBound::Exact(heap)) => {
             Some(Sizes { stack, heap })
         }
@@ -869,25 +973,45 @@ pub fn size_hint_padded<
     }
 }
 
-pub(crate) const fn is_zero<E: Element + ?Sized, const SIZE_BYTES: usize>() -> bool {
-    if let SizeBound::Exact(0) = stack_size::<E, SIZE_BYTES>() {
-        assert!(matches!(heap_size::<E, SIZE_BYTES>(), SizeBound::Exact(0)));
+pub(crate) const fn is_zero<
+    E: Element<VERSION> + ?Sized,
+    const SIZE_BYTES: usize,
+    const VERSION: u32,
+>() -> bool {
+    if let SizeBound::Exact(0) = stack_size_versioned::<E, SIZE_BYTES, VERSION>() {
+        assert!(matches!(
+            heap_size_versioned::<E, SIZE_BYTES, VERSION>(),
+            SizeBound::Exact(0)
+        ));
         true
     } else {
         false
     }
 }
 
-pub(crate) const fn trivial_size<E: Element + ?Sized, const SIZE_BYTES: usize>() -> Option<usize> {
-    match (stack_size::<E, SIZE_BYTES>(), heap_size::<E, SIZE_BYTES>()) {
+pub(crate) const fn trivial_size<
+    E: Element<VERSION> + ?Sized,
+    const SIZE_BYTES: usize,
+    const VERSION: u32,
+>() -> Option<usize> {
+    match (
+        stack_size_versioned::<E, SIZE_BYTES, VERSION>(),
+        heap_size_versioned::<E, SIZE_BYTES, VERSION>(),
+    ) {
         (SizeBound::Exact(size), SizeBound::Exact(0)) => Some(size),
         _ => None,
     }
 }
 
-pub(crate) const fn trivial_padded_size<E: Element + ?Sized, const SIZE_BYTES: usize>()
--> Option<usize> {
-    match (stack_size::<E, SIZE_BYTES>(), heap_size::<E, SIZE_BYTES>()) {
+pub(crate) const fn trivial_padded_size<
+    E: Element<VERSION> + ?Sized,
+    const SIZE_BYTES: usize,
+    const VERSION: u32,
+>() -> Option<usize> {
+    match (
+        stack_size_versioned::<E, SIZE_BYTES, VERSION>(),
+        heap_size_versioned::<E, SIZE_BYTES, VERSION>(),
+    ) {
         (SizeBound::Exact(size) | SizeBound::Bounded(size), SizeBound::Exact(0)) => Some(size),
         _ => None,
     }
@@ -896,25 +1020,40 @@ pub(crate) const fn trivial_padded_size<E: Element + ?Sized, const SIZE_BYTES: u
 /// Serializes value into buffer.
 /// Returns total number of bytes written and size of the root value.
 /// The buffer type controls bytes writing and failing strategy.
+
+#[inline(always)]
 pub fn serialize_into<F, T, B, const SIZE_BYTES: usize>(
     value: &T,
-    mut buffer: B,
+    buffer: B,
 ) -> Result<usize, B::Error>
 where
     F: Formula + ?Sized,
     T: Serialize<F>,
     B: Buffer,
 {
+    serialize_into_at_version::<F, T, B, SIZE_BYTES, 0>(value, buffer)
+}
+/// Version-selecting form of [`serialize_into`]. Uses `VERSION` without compatibility checks or a version tag.
+#[inline(always)]
+pub fn serialize_into_at_version<F, T, B, const SIZE_BYTES: usize, const VERSION: u32>(
+    value: &T,
+    mut buffer: B,
+) -> Result<usize, B::Error>
+where
+    F: Formula<VERSION> + ?Sized,
+    T: Serialize<F, VERSION>,
+    B: Buffer,
+{
     const {
         assert!(F::INHABITED);
     }
 
-    if let Some(trivial_size) = const { trivial_size::<F, SIZE_BYTES>() } {
+    if let Some(trivial_size) = const { trivial_size::<F, SIZE_BYTES, VERSION>() } {
         let reserved = simple_try!(buffer.reserved_heap(0, 0, trivial_size));
 
         if let Some(reserved) = reserved {
             let ser = TrivialSerializer::<SIZE_BYTES>::new(reserved);
-            if let Err(err) = <T as Serialize<F>>::serialize(value, ser) {
+            if let Err(err) = <T as Serialize<F, VERSION>>::serialize(value, ser) {
                 match err {}
             }
         }
@@ -922,13 +1061,13 @@ where
         return Ok(trivial_size);
     }
 
-    match size_hint::<F, T, SIZE_BYTES>(&value) {
+    match size_hint_versioned::<F, T, SIZE_BYTES, VERSION>(&value) {
         None => {
             let mut sizes = Sizes { heap: 0, stack: 0 };
             {
                 let serializer =
                     ComplexSerializer::<_, SIZE_BYTES>::new(&mut sizes, buffer.reborrow());
-                simple_try!(<T as Serialize<F>>::serialize(value, serializer));
+                simple_try!(<T as Serialize<F, VERSION>>::serialize(value, serializer));
             }
 
             buffer.move_to_heap(sizes.heap, sizes.stack, sizes.stack);
@@ -943,7 +1082,7 @@ where
 
             if let Some(reserved) = reserved {
                 let serializer = ComplexSerializer::<_, SIZE_BYTES>::new(&mut sizes, reserved);
-                if let Err(err) = <T as Serialize<F>>::serialize(value, serializer) {
+                if let Err(err) = <T as Serialize<F, VERSION>>::serialize(value, serializer) {
                     match err {}
                 }
 
@@ -986,7 +1125,22 @@ where
     F: Formula + ?Sized,
     T: Serialize<F>,
 {
-    serialize_into::<F, T, _, SIZE_BYTES>(value, CheckedFixedBuffer::new(output))
+    serialize_at_version::<F, T, SIZE_BYTES, 0>(value, output)
+}
+/// Version-selecting form of [`serialize`]. Uses `VERSION` without compatibility checks or a version tag.
+#[inline(always)]
+pub fn serialize_at_version<F, T, const SIZE_BYTES: usize, const VERSION: u32>(
+    value: &T,
+    output: &mut [u8],
+) -> Result<usize, BufferExhausted>
+where
+    F: Formula<VERSION> + ?Sized,
+    T: Serialize<F, VERSION>,
+{
+    serialize_into_at_version::<F, T, _, SIZE_BYTES, VERSION>(
+        value,
+        CheckedFixedBuffer::new(output),
+    )
 }
 
 /// Slightly faster version of [`serialize`].
@@ -999,7 +1153,22 @@ where
     F: Formula + ?Sized,
     T: Serialize<F>,
 {
-    match serialize_into::<F, T, _, SIZE_BYTES>(value, OptimisticBuffer::new(output)) {
+    serialize_unchecked_at_version::<F, T, SIZE_BYTES, 0>(value, output)
+}
+/// Version-selecting form of [`serialize_unchecked`]. Uses `VERSION` without compatibility checks or a version tag.
+#[inline(always)]
+pub fn serialize_unchecked_at_version<F, T, const SIZE_BYTES: usize, const VERSION: u32>(
+    value: &T,
+    output: &mut [u8],
+) -> usize
+where
+    F: Formula<VERSION> + ?Sized,
+    T: Serialize<F, VERSION>,
+{
+    match serialize_into_at_version::<F, T, _, SIZE_BYTES, VERSION>(
+        value,
+        OptimisticBuffer::new(output),
+    ) {
         Ok(sizes) => sizes,
         Err(never) => match never {},
     }
@@ -1017,7 +1186,18 @@ where
     F: Formula + ?Sized,
     T: Serialize<F>,
 {
-    match serialize_into::<F, T, _, SIZE_BYTES>(value, DryBuffer) {
+    serialized_size_at_version::<F, T, SIZE_BYTES, 0>(value)
+}
+/// Version-selecting form of [`serialized_size`]. Uses `VERSION` without compatibility checks or a version tag.
+#[inline(always)]
+pub fn serialized_size_at_version<F, T, const SIZE_BYTES: usize, const VERSION: u32>(
+    value: &T,
+) -> usize
+where
+    F: Formula<VERSION> + ?Sized,
+    T: Serialize<F, VERSION>,
+{
+    match serialize_into_at_version::<F, T, _, SIZE_BYTES, VERSION>(value, DryBuffer) {
         Ok(size) => size,
         Err(never) => match never {},
     }
@@ -1062,9 +1242,23 @@ where
     F: Formula + ?Sized,
     T: Serialize<F>,
 {
+    serialize_or_size_at_version::<F, T, SIZE_BYTES, 0>(value, output)
+}
+/// Version-selecting form of [`serialize_or_size`]. Uses `VERSION` without compatibility checks or a version tag.
+#[inline(always)]
+pub fn serialize_or_size_at_version<F, T, const SIZE_BYTES: usize, const VERSION: u32>(
+    value: &T,
+    output: &mut [u8],
+) -> Result<usize, BufferSizeRequired>
+where
+    F: Formula<VERSION> + ?Sized,
+    T: Serialize<F, VERSION>,
+{
     let mut exhausted = false;
-    let result =
-        serialize_into::<F, T, _, SIZE_BYTES>(value, MaybeFixedBuffer::new(output, &mut exhausted));
+    let result = serialize_into_at_version::<F, T, _, SIZE_BYTES, VERSION>(
+        value,
+        MaybeFixedBuffer::new(output, &mut exhausted),
+    );
     let size = match result {
         Ok(size) => size,
         Err(never) => match never {},
@@ -1093,9 +1287,22 @@ where
     F: Formula + ?Sized,
     T: Serialize<F>,
 {
+    serialize_to_vec_at_version::<F, T, SIZE_BYTES, 0>(value, output)
+}
+/// Version-selecting form of [`serialize_to_vec`]. Uses `VERSION` without compatibility checks or a version tag.
+#[cfg(feature = "alloc")]
+#[inline(always)]
+pub fn serialize_to_vec_at_version<F, T, const SIZE_BYTES: usize, const VERSION: u32>(
+    value: &T,
+    output: &mut alloc::vec::Vec<u8>,
+) -> usize
+where
+    F: Formula<VERSION> + ?Sized,
+    T: Serialize<F, VERSION>,
+{
     use crate::buffer::VecBuffer;
 
-    match serialize_into::<F, T, _, SIZE_BYTES>(value, VecBuffer::new(output)) {
+    match serialize_into_at_version::<F, T, _, SIZE_BYTES, VERSION>(value, VecBuffer::new(output)) {
         Ok(size) => size,
         Err(never) => match never {},
     }
@@ -1118,12 +1325,21 @@ macro_rules! fixed_size_module {
             ///
             /// Returns [`BufferExhausted`] if the buffer is too small.
             #[inline(always)]
-            pub fn serialize<F, T>(value: &T, output: &mut [u8]) -> Result<usize, BufferExhausted>
+pub fn serialize<F, T>(value: &T, output: &mut [u8]) -> Result<usize, BufferExhausted>
             where
                 F: Formula + ?Sized,
                 T: Serialize<F>,
             {
-                super::serialize::<F, T, $size_bytes>(value, output)
+    serialize_at_version::<F, T, 0>(value, output)
+}
+            /// Version-selecting form of [`serialize`]. Uses `VERSION` without compatibility checks or a version tag.
+            #[inline(always)]
+            pub fn serialize_at_version<F, T, const VERSION: u32>(value: &T, output: &mut [u8]) -> Result<usize, BufferExhausted>
+            where
+                F: Formula<VERSION> + ?Sized,
+                T: Serialize<F, VERSION>,
+            {
+                super::serialize_at_version::<F, T, $size_bytes, VERSION>(value, output)
             }
 
             /// Slightly faster version of [`serialize`].
@@ -1131,12 +1347,21 @@ macro_rules! fixed_size_module {
             ///
             /// Use instead of using [`serialize`] with immediate [`unwrap`](Result::unwrap).
             #[inline(always)]
-            pub fn serialize_unchecked<F, T>(value: &T, output: &mut [u8]) -> usize
+pub fn serialize_unchecked<F, T>(value: &T, output: &mut [u8]) -> usize
             where
                 F: Formula + ?Sized,
                 T: Serialize<F>,
             {
-                super::serialize_unchecked::<F, T, $size_bytes>(value, output)
+    serialize_unchecked_at_version::<F, T, 0>(value, output)
+}
+            /// Version-selecting form of [`serialize_unchecked`]. Uses `VERSION` without compatibility checks or a version tag.
+            #[inline(always)]
+            pub fn serialize_unchecked_at_version<F, T, const VERSION: u32>(value: &T, output: &mut [u8]) -> usize
+            where
+                F: Formula<VERSION> + ?Sized,
+                T: Serialize<F, VERSION>,
+            {
+                super::serialize_unchecked_at_version::<F, T, $size_bytes, VERSION>(value, output)
             }
 
             /// Returns the number of bytes required to serialize the value.
@@ -1146,12 +1371,21 @@ macro_rules! fixed_size_module {
             /// the buffer for serialization in advance.
             /// Or to find out required size after [`serialize`] fails.
             #[inline(always)]
-            pub fn serialized_size<F, T>(value: &T) -> usize
+pub fn serialized_size<F, T>(value: &T) -> usize
             where
                 F: Formula + ?Sized,
                 T: Serialize<F>,
             {
-                super::serialized_size::<F, T, $size_bytes>(value)
+    serialized_size_at_version::<F, T, 0>(value)
+}
+            /// Version-selecting form of [`serialized_size`]. Uses `VERSION` without compatibility checks or a version tag.
+            #[inline(always)]
+            pub fn serialized_size_at_version<F, T, const VERSION: u32>(value: &T) -> usize
+            where
+                F: Formula<VERSION> + ?Sized,
+                T: Serialize<F, VERSION>,
+            {
+                super::serialized_size_at_version::<F, T, $size_bytes, VERSION>(value)
             }
 
             /// Serializes value into bytes slice.
@@ -1167,7 +1401,7 @@ macro_rules! fixed_size_module {
             /// Returns [`BufferSizeRequired`] error if the buffer is too small.
             /// Error contains the exact number of bytes required.
             #[inline(always)]
-            pub fn serialize_or_size<F, T>(
+pub fn serialize_or_size<F, T>(
                 value: &T,
                 output: &mut [u8],
             ) -> Result<usize, BufferSizeRequired>
@@ -1175,7 +1409,19 @@ macro_rules! fixed_size_module {
                 F: Formula + ?Sized,
                 T: Serialize<F>,
             {
-                super::serialize_or_size::<F, T, $size_bytes>(value, output)
+    serialize_or_size_at_version::<F, T, 0>(value, output)
+}
+            /// Version-selecting form of [`serialize_or_size`]. Uses `VERSION` without compatibility checks or a version tag.
+            #[inline(always)]
+            pub fn serialize_or_size_at_version<F, T, const VERSION: u32>(
+                value: &T,
+                output: &mut [u8],
+            ) -> Result<usize, BufferSizeRequired>
+            where
+                F: Formula<VERSION> + ?Sized,
+                T: Serialize<F, VERSION>,
+            {
+                super::serialize_or_size_at_version::<F, T, $size_bytes, VERSION>(value, output)
             }
 
             /// Serializes value into byte vector.
@@ -1186,13 +1432,23 @@ macro_rules! fixed_size_module {
             ///
             /// Use pre-allocated vector when possible to avoid reallocations.
             #[cfg(feature = "alloc")]
-            #[inline(always)]
-            pub fn serialize_to_vec<F, T>(value: &T, output: &mut alloc::vec::Vec<u8>) -> usize
+#[inline(always)]
+pub fn serialize_to_vec<F, T>(value: &T, output: &mut alloc::vec::Vec<u8>) -> usize
             where
                 F: Formula + ?Sized,
                 T: Serialize<F>,
             {
-                super::serialize_to_vec::<F, T, $size_bytes>(value, output)
+    serialize_to_vec_at_version::<F, T, 0>(value, output)
+}
+            /// Version-selecting form of [`serialize_to_vec`]. Uses `VERSION` without compatibility checks or a version tag.
+            #[cfg(feature = "alloc")]
+            #[inline(always)]
+            pub fn serialize_to_vec_at_version<F, T, const VERSION: u32>(value: &T, output: &mut alloc::vec::Vec<u8>) -> usize
+            where
+                F: Formula<VERSION> + ?Sized,
+                T: Serialize<F, VERSION>,
+            {
+                super::serialize_to_vec_at_version::<F, T, $size_bytes, VERSION>(value, output)
             }
         }
     };

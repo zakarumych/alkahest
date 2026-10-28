@@ -8,7 +8,7 @@ use crate::{
     str::Str,
 };
 
-impl Serialize<Str> for String {
+impl<const VERSION: u32> Serialize<Str, VERSION> for String {
     #[inline(always)]
     fn serialize<S>(&self, mut serializer: S) -> Result<(), S::Error>
     where
@@ -20,11 +20,11 @@ impl Serialize<Str> for String {
 
     #[inline(always)]
     fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
-        Serialize::<Str>::size_hint::<SIZE_BYTES>(&self[..])
+        Serialize::<Str, VERSION>::size_hint::<SIZE_BYTES>(&self[..])
     }
 }
 
-impl<'de> Deserialize<'de, Str> for String {
+impl<'de, const VERSION: u32> Deserialize<'de, Str, VERSION> for String {
     #[inline]
     fn deserialize<D>(mut deserializer: D) -> Result<Self, DeserializeError>
     where
@@ -58,4 +58,4 @@ impl<'de> Deserialize<'de, Str> for String {
 
 // String is commonly used in compound types,
 // but `Str`
-element_alias!(String as Indirect<Str>);
+element_alias!(for[const VERSION;] String as Indirect<Str>);

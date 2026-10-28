@@ -17,19 +17,12 @@ pub(crate) fn derive(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
 }
 
 fn get_args(attrs: &[syn::Attribute]) -> syn::Result<MixtureDeriveArgs> {
-    for attr in attrs {
-        if attr.path().is_ident("alkahest") {
-            let args = attr.parse_args::<MixtureDeriveArgs>()?;
-            return Ok(args);
-        }
-    }
-
-    Ok(MixtureDeriveArgs::default())
+    crate::args::derive_args(attrs)
 }
 
 pub fn derive_impl(
     input: syn::DeriveInput,
-    args: MixtureArgs,
+    mut args: MixtureArgs,
 ) -> syn::Result<proc_macro2::TokenStream> {
     let mut tokens = proc_macro2::TokenStream::new();
 
@@ -38,6 +31,26 @@ pub fn derive_impl(
         args.formula_args(&input.generics),
     )?);
 
+    if args.where_clause.is_none() {
+        let fields: Vec<_> = match &input.data {
+            syn::Data::Struct(data) => data.fields.iter().collect(),
+            syn::Data::Enum(data) => data.variants.iter().flat_map(|v| v.fields.iter()).collect(),
+            syn::Data::Union(_) => Vec::new(),
+        };
+        let mut generics = syn::Generics::default();
+        for field in fields {
+            if !crate::formula::needs_field_bound(&field.ty, &input.generics, &input.ident) {
+                continue;
+            }
+            let ty = &field.ty;
+            let version = crate::args::field_version(&field.attrs)?;
+            generics
+                .make_where_clause()
+                .predicates
+                .push(syn::parse_quote!(#ty: ::alkahest::Component<#version>));
+        }
+        args.where_clause = generics.where_clause;
+    }
     let (serialize_args, deserialize_args) = args.serialize_deserialize_args(&input.generics);
 
     tokens.extend(crate::serialize::derive_impl(

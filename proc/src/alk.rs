@@ -315,13 +315,16 @@ pub fn definition_to_tokens(definition: &Definition, tokens: &mut TokenStream) {
 
     match &definition.formula {
         Formula::Unit => {
-            derive_unit(ident, generics, true, tokens);
+            derive_unit(ident, generics, 0, &[], true, tokens);
         }
         Formula::Tuple(tuple) => {
             derive_tuple(
                 ident,
                 generics,
                 tuple.elements.iter().map(|e| element_to_tokens(e)),
+                0,
+                &[],
+                &[],
                 true,
                 tokens,
             );
@@ -336,6 +339,9 @@ pub fn definition_to_tokens(definition: &Definition, tokens: &mut TokenStream) {
                         element_to_tokens(&f.element),
                     )
                 }),
+                0,
+                &[],
+                &[],
                 true,
                 tokens,
             );
@@ -362,6 +368,9 @@ pub fn definition_to_tokens(definition: &Definition, tokens: &mut TokenStream) {
                     };
                     (name, kind)
                 }),
+                0,
+                &[],
+                &[],
                 true,
                 tokens,
             );

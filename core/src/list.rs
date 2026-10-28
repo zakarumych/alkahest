@@ -1,7 +1,7 @@
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 
 use crate::{
-    element::{Element, heap_size, stack_size},
+    element::{Element, heap_size_versioned, stack_size_versioned},
     formula::{Formula, SizeBound, SizeType},
 };
 
@@ -18,16 +18,17 @@ pub type Array<T, const N: usize> = List<T, N, N>;
 
 /// Stack size type for list formula.
 pub struct ListStackSize<
-    E: Element + ?Sized,
+    E: Element<VERSION> + ?Sized,
     const MIN: usize,
     const MAX: usize,
     const SIZE_BYTES: usize,
+    const VERSION: u32 = 0,
 >(E);
 
-impl<E, const MIN: usize, const MAX: usize, const SIZE_BYTES: usize> SizeType
-    for ListStackSize<E, MIN, MAX, SIZE_BYTES>
+impl<E, const MIN: usize, const MAX: usize, const SIZE_BYTES: usize, const VERSION: u32> SizeType
+    for ListStackSize<E, MIN, MAX, SIZE_BYTES, VERSION>
 where
-    E: Element + ?Sized,
+    E: Element<VERSION> + ?Sized,
 {
     const VALUE: SizeBound = if E::INHABITED {
         assert!(
@@ -37,10 +38,12 @@ where
 
         if MIN == MAX {
             // No need to store length if min == max
-            stack_size::<E, SIZE_BYTES>().padded().mul(MAX)
+            stack_size_versioned::<E, SIZE_BYTES, VERSION>()
+                .padded()
+                .mul(MAX)
         } else {
             // Need to store length and size can't be exact
-            stack_size::<E, SIZE_BYTES>()
+            stack_size_versioned::<E, SIZE_BYTES, VERSION>()
                 .padded()
                 .mul(MAX)
                 .add(SizeBound::Exact(SIZE_BYTES))
@@ -57,16 +60,17 @@ where
 }
 
 pub struct ListHeapSize<
-    E: Element + ?Sized,
+    E: Element<VERSION> + ?Sized,
     const MIN: usize,
     const MAX: usize,
     const SIZE_BYTES: usize,
+    const VERSION: u32 = 0,
 >(E);
 
-impl<E, const MIN: usize, const MAX: usize, const SIZE_BYTES: usize> SizeType
-    for ListHeapSize<E, MIN, MAX, SIZE_BYTES>
+impl<E, const MIN: usize, const MAX: usize, const SIZE_BYTES: usize, const VERSION: u32> SizeType
+    for ListHeapSize<E, MIN, MAX, SIZE_BYTES, VERSION>
 where
-    E: Element + ?Sized,
+    E: Element<VERSION> + ?Sized,
 {
     const VALUE: SizeBound = if E::INHABITED {
         assert!(
@@ -75,10 +79,12 @@ where
         );
 
         if MIN == MAX {
-            heap_size::<E, SIZE_BYTES>().mul(MAX)
+            heap_size_versioned::<E, SIZE_BYTES, VERSION>().mul(MAX)
         } else {
             // Size can't be exact
-            heap_size::<E, SIZE_BYTES>().mul(MAX).not_exact()
+            heap_size_versioned::<E, SIZE_BYTES, VERSION>()
+                .mul(MAX)
+                .not_exact()
         }
     } else {
         // if E is uninhabited, list can only be empty
@@ -90,11 +96,18 @@ where
     };
 }
 
-impl<E, const MIN: usize, const MAX: usize> Formula for List<E, MIN, MAX>
+impl<E, const MIN: usize, const MAX: usize, const VERSION: u32> Formula<VERSION>
+    for List<E, MIN, MAX>
 where
-    E: Element + ?Sized,
+    E: Element<VERSION> + ?Sized,
 {
-    type StackSize<const SIZE_BYTES: usize> = ListStackSize<E, MIN, MAX, SIZE_BYTES>;
-    type HeapSize<const SIZE_BYTES: usize> = ListHeapSize<E, MIN, MAX, SIZE_BYTES>;
+    const SCHEMA: crate::version::Schema =
+        crate::version::Schema::new::<Self, VERSION>(crate::version::SchemaKind::List {
+            element: E::SCHEMA,
+            min: MIN,
+            max: MAX,
+        });
+    type StackSize<const SIZE_BYTES: usize> = ListStackSize<E, MIN, MAX, SIZE_BYTES, VERSION>;
+    type HeapSize<const SIZE_BYTES: usize> = ListHeapSize<E, MIN, MAX, SIZE_BYTES, VERSION>;
     const INHABITED: bool = E::INHABITED || MIN == 0;
 }

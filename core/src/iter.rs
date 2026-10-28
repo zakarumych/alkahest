@@ -6,10 +6,10 @@ use crate::{
 
 pub struct MakeIter<F>(pub F);
 
-impl<E, T, F, I> Serialize<List<E>> for MakeIter<F>
+impl<E, T, F, I, const VERSION: u32> Serialize<List<E>, VERSION> for MakeIter<F>
 where
-    E: Element + ?Sized,
-    T: Serialize<E::Formula>,
+    E: Element<VERSION> + ?Sized,
+    T: Serialize<E::Formula, VERSION>,
     F: Fn() -> I,
     I: Iterator<Item = T>,
 {
@@ -63,7 +63,7 @@ where
         //             return Some(sizes);
         //         }
 
-        //         match const { (stack_size::<E, SIZE_BYTES>(), heap_size::<E, SIZE_BYTES>()) } {
+        //         match const { (stack_size_versioned::<E, SIZE_BYTES, VERSION>(), heap_size_versioned::<E, SIZE_BYTES, VERSION>()) } {
         //             (SizeBound::Exact(max_stack), SizeBound::Exact(heap_size)) => {
         //                 sizes.add_stack(len * max_stack);
         //                 sizes.add_heap(len * heap_size);
@@ -81,10 +81,10 @@ where
 
         // for _ in 0..4 {
         //     if let Some(next) = iter.next() {
-        //         sizes += simple_some!(size_hint_padded::<E, T, SIZE_BYTES>(&item));
+        //         sizes += simple_some!(size_hint_padded_versioned::<E, T, SIZE_BYTES, VERSION>(&item));
         //         item = next;
         //     } else {
-        //         sizes += simple_some!(size_hint::<E, T, SIZE_BYTES>(&item));
+        //         sizes += simple_some!(size_hint_versioned::<E, T, SIZE_BYTES, VERSION>(&item));
         //         return Some(sizes);
         //     }
         // }

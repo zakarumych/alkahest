@@ -74,18 +74,172 @@ impl syn::parse::Parse for ForGenerics {
     }
 }
 
+proc_easy::easy_token!(version);
 proc_easy::easy_parse! {
-    #[derive(Default)]
-    pub struct FormulaDeriveArgs {
-        pub where_clause: Option<syn::WhereClause>,
+    #[derive(Clone)]
+    pub struct VersionArg {
+        pub _version: version,
+        pub _eq: syn::Token![=],
+        pub value: syn::LitInt,
+    }
+}
+proc_easy::easy_parse! {
+    #[derive(Clone)]
+    pub struct TrailingVersion {
+        pub _comma: syn::Token![,],
+        pub version: VersionArg,
+    }
+}
+proc_easy::easy_token!(versions);
+
+#[derive(Clone)]
+pub struct VersionLinks {
+    pub entries: syn::punctuated::Punctuated<VersionLink, syn::Token![,]>,
+}
+
+#[derive(Clone)]
+pub struct VersionLink {
+    pub version: syn::LitInt,
+    pub formula: syn::Type,
+}
+
+impl syn::parse::Parse for VersionLink {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let version = input.parse()?;
+        input.parse::<syn::Token![=]>()?;
+        Ok(Self {
+            version,
+            formula: input.parse()?,
+        })
     }
 }
 
-proc_easy::easy_parse! {
-    pub struct SerializeDeriveArgs {
-        pub formula: syn::Path,
-        pub variant: proc_easy::EasyMaybe<Variant>,
-        pub where_clause: Option<syn::WhereClause>,
+impl EasyPeek for VersionLinks {
+    fn peek(lookahead: &Lookahead1) -> bool {
+        lookahead.peek(syn::Token![,])
+    }
+    fn peek_stream(input: syn::parse::ParseStream) -> bool {
+        input.peek(syn::Token![,])
+    }
+}
+
+impl syn::parse::Parse for VersionLinks {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        input.parse::<syn::Token![,]>()?;
+        input.parse::<versions>()?;
+        let content;
+        syn::parenthesized!(content in input);
+        Ok(Self {
+            entries: content.parse_terminated(VersionLink::parse, syn::Token![,])?,
+        })
+    }
+}
+
+pub fn revision_links(
+    links: &EasyMaybe<VersionLinks>,
+    current: u32,
+) -> syn::Result<Vec<proc_macro2::TokenStream>> {
+    let mut revisions = std::collections::BTreeSet::from([current]);
+    let mut callbacks = Vec::new();
+    if let EasyMaybe::Just(links) = links {
+        for entry in &links.entries {
+            let version: u32 = entry.version.base10_parse()?;
+            if !revisions.insert(version) {
+                return Err(syn::Error::new_spanned(
+                    &entry.version,
+                    "duplicate formula version, including the current version",
+                ));
+            }
+            let formula = &entry.formula;
+            callbacks.push(quote::quote!({
+                assert!(<#formula as ::alkahest::Formula<#version>>::SCHEMA.version == #version);
+                ::alkahest::schema::<#formula, #version>
+            }));
+        }
+    }
+    Ok(callbacks)
+}
+
+pub fn version_value(value: &EasyMaybe<TrailingVersion>) -> syn::Result<u32> {
+    match value {
+        EasyMaybe::Nothing => Ok(0),
+        EasyMaybe::Just(value) => value.version.value.base10_parse(),
+    }
+}
+pub fn field_version(attrs: &[syn::Attribute]) -> syn::Result<u32> {
+    let mut version = None;
+    for attr in attrs.iter().filter(|attr| attr.path().is_ident("alkahest")) {
+        if version.is_some() {
+            return Err(syn::Error::new_spanned(attr, "duplicate alkahest version"));
+        }
+        version = Some(attr.parse_args::<VersionArg>()?.value.base10_parse()?);
+    }
+    Ok(version.unwrap_or(0))
+}
+pub fn derive_args<T: syn::parse::Parse + Default>(attrs: &[syn::Attribute]) -> syn::Result<T> {
+    let mut args = None;
+    for attr in attrs.iter().filter(|attr| attr.path().is_ident("alkahest")) {
+        if args.is_some() {
+            return Err(syn::Error::new_spanned(
+                attr,
+                "duplicate alkahest arguments",
+            ));
+        }
+        args = Some(attr.parse_args()?);
+    }
+    Ok(args.unwrap_or_default())
+}
+#[derive(Default)]
+pub struct FormulaDeriveArgs {
+    pub version: EasyMaybe<TrailingVersion>,
+    pub versions: EasyMaybe<VersionLinks>,
+    pub where_clause: Option<syn::WhereClause>,
+}
+impl syn::parse::Parse for FormulaDeriveArgs {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let version = if input.peek(version) {
+            EasyMaybe::Just(TrailingVersion {
+                _comma: Default::default(),
+                version: input.parse()?,
+            })
+        } else {
+            EasyMaybe::Nothing
+        };
+        Ok(Self {
+            version,
+            versions: input.parse()?,
+            where_clause: input.parse()?,
+        })
+    }
+}
+
+pub struct SerializeDeriveArgs {
+    pub formula: syn::Path,
+    pub variant: proc_easy::EasyMaybe<Variant>,
+    pub version: EasyMaybe<TrailingVersion>,
+    pub versions: EasyMaybe<VersionLinks>,
+    pub where_clause: Option<syn::WhereClause>,
+}
+impl syn::parse::Parse for SerializeDeriveArgs {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        if input.peek(version) {
+            return Ok(Self {
+                version: EasyMaybe::Just(TrailingVersion {
+                    _comma: Default::default(),
+                    version: input.parse()?,
+                }),
+                versions: input.parse()?,
+                where_clause: input.parse()?,
+                ..Self::default()
+            });
+        }
+        Ok(Self {
+            formula: input.parse()?,
+            variant: input.parse()?,
+            version: input.parse()?,
+            versions: input.parse()?,
+            where_clause: input.parse()?,
+        })
     }
 }
 
@@ -94,15 +248,38 @@ impl Default for SerializeDeriveArgs {
         SerializeDeriveArgs {
             formula: syn::Path::from(syn::Ident::new("Self", Span::call_site())),
             variant: proc_easy::EasyMaybe::Nothing,
+            version: EasyMaybe::Nothing,
+            versions: EasyMaybe::Nothing,
             where_clause: None,
         }
     }
 }
 
-proc_easy::easy_parse! {
-    pub struct DeserializeDeriveArgs {
-        pub formula: syn::Path,
-        pub where_clause: Option<syn::WhereClause>,
+pub struct DeserializeDeriveArgs {
+    pub formula: syn::Path,
+    pub version: EasyMaybe<TrailingVersion>,
+    pub versions: EasyMaybe<VersionLinks>,
+    pub where_clause: Option<syn::WhereClause>,
+}
+impl syn::parse::Parse for DeserializeDeriveArgs {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        if input.peek(version) {
+            return Ok(Self {
+                version: EasyMaybe::Just(TrailingVersion {
+                    _comma: Default::default(),
+                    version: input.parse()?,
+                }),
+                versions: input.parse()?,
+                where_clause: input.parse()?,
+                ..Self::default()
+            });
+        }
+        Ok(Self {
+            formula: input.parse()?,
+            version: input.parse()?,
+            versions: input.parse()?,
+            where_clause: input.parse()?,
+        })
     }
 }
 
@@ -110,21 +287,42 @@ impl Default for DeserializeDeriveArgs {
     fn default() -> Self {
         DeserializeDeriveArgs {
             formula: syn::Path::from(syn::Ident::new("Self", Span::call_site())),
+            version: EasyMaybe::Nothing,
+            versions: EasyMaybe::Nothing,
             where_clause: None,
         }
     }
 }
 
-proc_easy::easy_parse! {
-    #[derive(Default)]
-    pub struct MixtureDeriveArgs {
-        pub where_clause: Option<syn::WhereClause>,
+#[derive(Default)]
+pub struct MixtureDeriveArgs {
+    pub version: EasyMaybe<TrailingVersion>,
+    pub versions: EasyMaybe<VersionLinks>,
+    pub where_clause: Option<syn::WhereClause>,
+}
+impl syn::parse::Parse for MixtureDeriveArgs {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let version = if input.peek(version) {
+            EasyMaybe::Just(TrailingVersion {
+                _comma: Default::default(),
+                version: input.parse()?,
+            })
+        } else {
+            EasyMaybe::Nothing
+        };
+        Ok(Self {
+            version,
+            versions: input.parse()?,
+            where_clause: input.parse()?,
+        })
     }
 }
 
 proc_easy::easy_parse! {
     pub struct FormulaArgs {
         pub _formula: Formula,
+        pub version: EasyMaybe<TrailingVersion>,
+    pub versions: EasyMaybe<VersionLinks>,
         pub where_clause: Option<syn::WhereClause>,
     }
 }
@@ -137,6 +335,8 @@ proc_easy::easy_parse! {
         pub formula: syn::Path,
         pub _gt: syn::Token![>],
         pub variant: proc_easy::EasyMaybe<Variant>,
+        pub version: EasyMaybe<TrailingVersion>,
+    pub versions: EasyMaybe<VersionLinks>,
         pub where_clause: Option<syn::WhereClause>,
     }
 }
@@ -156,6 +356,8 @@ proc_easy::easy_parse! {
         pub lifetime: EasyMaybe<DeserializeLifetime>,
         pub formula: syn::Path,
         pub _gt: syn::Token![>],
+        pub version: EasyMaybe<TrailingVersion>,
+    pub versions: EasyMaybe<VersionLinks>,
         pub where_clause: Option<syn::WhereClause>,
     }
 }
@@ -163,6 +365,8 @@ proc_easy::easy_parse! {
 proc_easy::easy_parse! {
     pub struct MixtureArgs {
         pub _mixture: Mixture,
+        pub version: EasyMaybe<TrailingVersion>,
+    pub versions: EasyMaybe<VersionLinks>,
         pub where_clause: Option<syn::WhereClause>,
     }
 }
@@ -340,13 +544,9 @@ impl FormulaArgs {
     pub fn from_derive(args: FormulaDeriveArgs) -> Self {
         FormulaArgs {
             _formula: Formula(Span::call_site()),
+            version: args.version,
+            versions: args.versions,
             where_clause: args.where_clause,
-        }
-    }
-
-    pub fn add_default_where_clause(&mut self, generics: &syn::Generics) {
-        if self.where_clause.is_none() {
-            self.where_clause = impl_for_each_type_param(generics, "Element");
         }
     }
 }
@@ -360,6 +560,8 @@ impl SerializeArgs {
             formula: args.formula,
             _gt: syn::Token![>](Span::call_site()),
             variant: args.variant,
+            version: args.version,
+            versions: args.versions,
             where_clause: args.where_clause,
         }
     }
@@ -378,6 +580,8 @@ impl DeserializeArgs {
             lifetime: EasyMaybe::Nothing,
             formula: args.formula,
             _gt: syn::Token![>](Span::call_site()),
+            version: args.version,
+            versions: args.versions,
             where_clause: args.where_clause,
         }
     }
@@ -418,21 +622,20 @@ impl MixtureArgs {
     pub fn from_derive(args: MixtureDeriveArgs) -> Self {
         MixtureArgs {
             _mixture: Mixture(Span::call_site()),
+            version: args.version,
+            versions: args.versions,
             where_clause: args.where_clause,
         }
     }
 
-    pub fn formula_args(&self, generics: &syn::Generics) -> FormulaArgs {
-        // Only require `Element` for generics when implementing `Formula`.
-        let where_clause = if self.where_clause.is_some() {
-            self.where_clause.clone()
-        } else {
-            impl_for_each_type_param(generics, "Element")
-        };
+    pub fn formula_args(&self, _generics: &syn::Generics) -> FormulaArgs {
+        let where_clause = self.where_clause.clone();
 
         FormulaArgs {
             _formula: Formula(Span::call_site()),
-            where_clause: where_clause,
+            version: self.version.clone(),
+            versions: self.versions.clone(),
+            where_clause,
         }
     }
 
@@ -454,6 +657,8 @@ impl MixtureArgs {
                 formula: syn::parse_quote!(Self),
                 _gt: syn::Token![>](Span::call_site()),
                 variant: proc_easy::EasyMaybe::Nothing,
+                version: self.version.clone(),
+                versions: self.versions.clone(),
                 where_clause: where_clause.clone(),
             },
             DeserializeArgs {
@@ -463,8 +668,110 @@ impl MixtureArgs {
                 lifetime: EasyMaybe::Nothing,
                 formula: syn::parse_quote!(Self),
                 _gt: syn::Token![>](Span::call_site()),
-                where_clause: where_clause,
+                version: self.version.clone(),
+                versions: self.versions.clone(),
+                where_clause,
             },
         )
+    }
+}
+
+#[cfg(test)]
+mod version_tests {
+    use super::*;
+
+    #[test]
+    fn version_syntax_selects_same_root_for_every_derive() {
+        let formula: FormulaDeriveArgs = syn::parse_quote!(version = 7);
+        let serialize: SerializeDeriveArgs = syn::parse_quote!(version = 7);
+        let deserialize: DeserializeDeriveArgs = syn::parse_quote!(version = 7);
+        let mixture: MixtureDeriveArgs = syn::parse_quote!(version = 7);
+        for version in [
+            &formula.version,
+            &serialize.version,
+            &deserialize.version,
+            &mixture.version,
+        ] {
+            assert_eq!(version_value(version).unwrap(), 7);
+        }
+        let serialize: SerializeDeriveArgs = syn::parse_quote!(Wire, version = 9);
+        let deserialize: DeserializeDeriveArgs = syn::parse_quote!(Wire, version = 9);
+        assert_eq!(version_value(&serialize.version).unwrap(), 9);
+        assert_eq!(version_value(&deserialize.version).unwrap(), 9);
+    }
+
+    #[test]
+    fn duplicate_and_invalid_versions_are_rejected() {
+        assert!(syn::parse_str::<FormulaDeriveArgs>("version = 1, version = 2").is_err());
+        assert!(syn::parse_str::<SerializeDeriveArgs>("Wire, version = 1, version = 2").is_err());
+        let negative: FormulaDeriveArgs = syn::parse_quote!(version = -1);
+        assert!(version_value(&negative.version).is_err());
+        assert!(syn::parse_str::<FormulaDeriveArgs>("version = name").is_err());
+        let overflow: FormulaDeriveArgs = syn::parse_quote!(version = 4294967296);
+        assert!(version_value(&overflow.version).is_err());
+        let input: syn::DeriveInput = syn::parse_quote! {
+            #[alkahest(version = 1)]
+            #[alkahest(version = 2)]
+            struct Wire;
+        };
+        assert!(derive_args::<FormulaDeriveArgs>(&input.attrs).is_err());
+    }
+
+    #[test]
+    fn version_links_reject_duplicates_invalid_numbers_and_malformed_entries() {
+        let input: FormulaDeriveArgs = syn::parse_quote!(version = 2, versions(1 = Old, 3 = Next));
+        assert_eq!(revision_links(&input.versions, 2).unwrap().len(), 2);
+        let input: FormulaDeriveArgs = syn::parse_quote!(version = 2, versions(2 = Other));
+        assert!(revision_links(&input.versions, 2).is_err());
+        let input: FormulaDeriveArgs = syn::parse_quote!(version = 2, versions(1 = Old, 1 = Other));
+        assert!(revision_links(&input.versions, 2).is_err());
+        let input: FormulaDeriveArgs = syn::parse_quote!(version = 2, versions(4294967296 = Other));
+        assert!(revision_links(&input.versions, 2).is_err());
+        let input: FormulaDeriveArgs = syn::parse_quote!(version = 2, versions(-1 = Other));
+        assert!(revision_links(&input.versions, 2).is_err());
+        assert!(syn::parse_str::<FormulaDeriveArgs>("version = 2, versions(Old)").is_err());
+        assert!(syn::parse_str::<FormulaDeriveArgs>("version = 2, versions(1 =)").is_err());
+        assert!(
+            syn::parse_str::<FormulaDeriveArgs>("version = 2, versions(), versions()").is_err()
+        );
+        let serialize: SerializeDeriveArgs = syn::parse_quote!(version = 2, versions(1 = Old));
+        let deserialize: DeserializeDeriveArgs = syn::parse_quote!(version = 2, versions(1 = Old));
+        assert_eq!(revision_links(&serialize.versions, 2).unwrap().len(), 1);
+        assert_eq!(revision_links(&deserialize.versions, 2).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn separate_codecs_cannot_declare_formula_version_tables() {
+        let input: syn::DeriveInput = syn::parse_quote!(
+            struct Data;
+        );
+        let serialize: SerializeDeriveArgs =
+            syn::parse_quote!(Wire, version = 2, versions(1 = Old));
+        let deserialize: DeserializeDeriveArgs =
+            syn::parse_quote!(Wire, version = 2, versions(1 = Old));
+        assert!(
+            crate::serialize::derive_impl(input.clone(), SerializeArgs::from_derive(serialize))
+                .is_err()
+        );
+        assert!(
+            crate::deserialize::derive_impl(input, DeserializeArgs::from_derive(deserialize))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn misplaced_and_duplicate_child_versions_are_rejected() {
+        let input: syn::DeriveInput = syn::parse_quote! {
+            enum Wire { #[alkahest(version = 1)] Value(u8) }
+        };
+        assert!(crate::formula::validate_annotations(&input.data).is_err());
+        let input: syn::DeriveInput = syn::parse_quote! {
+            struct Wire(#[alkahest(version = 1)] #[alkahest(version = 2)] u8);
+        };
+        assert!(crate::formula::validate_annotations(&input.data).is_err());
+        let input: syn::DeriveInput = syn::parse_quote! {
+            struct Data(#[alkahest(version = 1)] u8);
+        };
+        assert!(crate::formula::reject_field_annotations(&input.data).is_err());
     }
 }

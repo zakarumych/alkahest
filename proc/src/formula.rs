@@ -45,56 +45,129 @@ impl ToTokens for SizeFields<'_> {
     }
 }
 
-fn make_formula_generics(generics: &syn::Generics) -> syn::Generics {
-    let mut formula_generics = generics.clone();
-    if generics.type_params().count() > 0 {
-        formula_generics
-            .make_where_clause()
-            .predicates
-            .extend(generics.type_params().map(|param| {
-                syn::WherePredicate::Type(syn::PredicateType {
-                    attrs: Vec::new(),
-                    lifetimes: None,
-                    bounded_ty: syn::Type::Path(syn::TypePath {
-                        attrs: Vec::new(),
-                        qself: None,
-                        path: syn::Path {
-                            leading_colon: None,
-                            segments: std::iter::once(syn::PathSegment {
-                                ident: param.ident.clone(),
-                                arguments: syn::PathArguments::None,
-                            })
-                            .collect(),
-                        },
-                    }),
-                    colon_token: syn::Token![:](Span::call_site()),
-                    bounds: std::iter::once(syn::TypeParamBound::Trait(syn::TraitBound {
-                        paren_token: None,
-                        lifetimes: None,
-                        modifiers: syn::TraitBoundModifiers::default(),
-                        maybe: None,
-                        path: syn::Path {
-                            leading_colon: Some(syn::Token![::](Span::call_site())),
-                            segments: [
-                                syn::PathSegment {
-                                    ident: syn::Ident::new("alkahest", Span::call_site()),
-                                    arguments: syn::PathArguments::None,
-                                },
-                                syn::PathSegment {
-                                    ident: syn::Ident::new("Element", Span::call_site()),
-                                    arguments: syn::PathArguments::None,
-                                },
-                            ]
-                            .into_iter()
-                            .collect(),
-                        },
-                    }))
-                    .collect(),
-                })
-            }));
+fn make_formula_generics(
+    generics: &syn::Generics,
+    generate_type_definition: bool,
+) -> syn::Generics {
+    let mut result = generics.clone();
+    if generate_type_definition {
+        for param in generics.type_params() {
+            let ident = &param.ident;
+            result
+                .make_where_clause()
+                .predicates
+                .push(syn::parse_quote!(#ident: ::alkahest::Element));
+        }
     }
+    result
+}
 
-    formula_generics
+pub(crate) fn needs_field_bound(
+    ty: &syn::Type,
+    generics: &syn::Generics,
+    self_name: &Ident,
+) -> bool {
+    fn contains(tokens: TokenStream, name: &Ident) -> bool {
+        tokens.into_iter().any(|token| match token {
+            proc_macro2::TokenTree::Ident(ident) => ident == *name,
+            proc_macro2::TokenTree::Group(group) => contains(group.stream(), name),
+            _ => false,
+        })
+    }
+    let tokens = ty.to_token_stream();
+    !contains(tokens.clone(), self_name)
+        && !contains(tokens.clone(), &Ident::new("Self", Span::call_site()))
+        && generics
+            .type_params()
+            .any(|param| contains(tokens.clone(), &param.ident))
+}
+
+pub(crate) fn field_helper_name(
+    version: u32,
+    variant: Option<&Ident>,
+    idx: usize,
+    name: Option<&Ident>,
+) -> Ident {
+    let field = name
+        .map(ToString::to_string)
+        .unwrap_or_else(|| idx.to_string());
+    match variant {
+        Some(variant) => {
+            quote::format_ident!("__alkahest_field_v{}_{}_{}", version, variant, field)
+        }
+        None => quote::format_ident!("__alkahest_field_v{}_{}", version, field),
+    }
+}
+
+pub(crate) fn validate_annotations(data: &syn::Data) -> syn::Result<()> {
+    let fields: Vec<_> = match data {
+        syn::Data::Struct(data) => data.fields.iter().collect(),
+        syn::Data::Enum(data) => {
+            for variant in &data.variants {
+                for attr in &variant.attrs {
+                    if attr.path().is_ident("alkahest") {
+                        return Err(syn::Error::new_spanned(
+                            attr,
+                            "version belongs on a formula or field, not a variant",
+                        ));
+                    }
+                }
+            }
+            data.variants.iter().flat_map(|v| v.fields.iter()).collect()
+        }
+        syn::Data::Union(_) => Vec::new(),
+    };
+    for field in fields {
+        crate::args::field_version(&field.attrs)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn reject_field_annotations(data: &syn::Data) -> syn::Result<()> {
+    let fields: Vec<_> = match data {
+        syn::Data::Struct(data) => data.fields.iter().collect(),
+        syn::Data::Enum(data) => data.variants.iter().flat_map(|v| v.fields.iter()).collect(),
+        syn::Data::Union(_) => Vec::new(),
+    };
+    for field in fields {
+        if let Some(attr) = field
+            .attrs
+            .iter()
+            .find(|attr| attr.path().is_ident("alkahest"))
+        {
+            return Err(syn::Error::new_spanned(
+                attr,
+                "child versions must be declared on the formula fields",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn field_metadata(
+    version: u32,
+    variant: Option<&Ident>,
+    fields: impl Iterator<Item = (Option<Ident>, syn::Type, u32)>,
+) -> (TokenStream, TokenStream) {
+    let (helpers, metadata): (Vec<_>, Vec<_>) = fields.enumerate().map(|(idx,(name, ty, child))| {
+        let helper = field_helper_name(version, variant, idx, name.as_ref());
+        let label = name.as_ref().map(ToString::to_string).unwrap_or_else(|| idx.to_string());
+        let helpers = quote::quote! {
+            #[doc(hidden)]
+            #[allow(non_snake_case)]
+            pub fn #helper() -> ::alkahest::private::WithElement<#ty, #child> {
+                ::alkahest::private::with_element_versioned::<(), #ty, #child>(|_| unreachable!())
+            }
+        };
+        let metadata = quote::quote! {
+            ::alkahest::Field { name: #label, element: ::alkahest::element_schema::<#ty, #child>() }
+        };
+        (helpers, metadata)
+    }).unzip();
+    (
+        quote::quote!(#(#helpers)*),
+        quote::quote!(&[#(#metadata),*]),
+    )
 }
 
 fn make_size_generics(formula_generics: &syn::Generics) -> syn::Generics {
@@ -136,10 +209,12 @@ enum VariantInhabited {
 pub fn derive_unit(
     ident: syn::Ident,
     generics: syn::Generics,
+    version: u32,
+    linked_versions: &[TokenStream],
     generate_type_definition: bool,
     tokens: &mut TokenStream,
 ) {
-    let formula_generics = make_formula_generics(&generics);
+    let formula_generics = make_formula_generics(&generics, generate_type_definition);
 
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
@@ -165,26 +240,32 @@ pub fn derive_unit(
             }
         }
 
-        impl #formula_impl_generics ::alkahest::Formula for #ident #formula_ty_generics #formula_where_clause {
+        impl #formula_impl_generics ::alkahest::Formula<#version> for #ident #formula_ty_generics #formula_where_clause {
             type StackSize<const __SIZE_BYTES: usize> = ::alkahest::ExactSize<0>;
             type HeapSize<const __SIZE_BYTES: usize> = ::alkahest::ExactSize<0>;
 
             const INHABITED: bool = true;
+            const VERSIONS: &'static [fn() -> &'static ::alkahest::Schema] = &[::alkahest::schema::<Self, #version>, #(#linked_versions),*];
+            const SCHEMA: ::alkahest::Schema = ::alkahest::Schema::new::<Self, #version>(::alkahest::SchemaKind::Record(&[]));
         }
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn derive_tuple(
     ident: syn::Ident,
     generics: syn::Generics,
     fields: impl Iterator<Item = syn::Type>,
+    version: u32,
+    linked_versions: &[TokenStream],
+    field_versions: &[u32],
     generate_type_definition: bool,
     tokens: &mut TokenStream,
 ) {
     let stack_size_ident = quote::format_ident!("__Alkahest_{}StackSize", ident);
     let heap_size_ident = quote::format_ident!("__Alkahest_{}HeapSize", ident);
 
-    let formula_generics = make_formula_generics(&generics);
+    let formula_generics = make_formula_generics(&generics, generate_type_definition);
     let size_generics = make_size_generics(&formula_generics);
 
     let (formula_impl_generics, formula_ty_generics, formula_where_clause) =
@@ -195,17 +276,18 @@ pub fn derive_tuple(
     let size_fields = SizeFields(&generics);
 
     // Extract information about each field
-    let fields = fields.map(|element| {
+    let fields = fields.enumerate().map(|(idx, element)| {
+        let child = field_versions.get(idx).copied().unwrap_or(0);
         let stack_size = quote::quote! {
-            ::alkahest::stack_size::<#element, __SIZE_BYTES>()
+            ::alkahest::stack_size_versioned::<#element, __SIZE_BYTES, #child>()
         };
 
         let heap_size = quote::quote! {
-            ::alkahest::heap_size::<#element, __SIZE_BYTES>()
+            ::alkahest::heap_size_versioned::<#element, __SIZE_BYTES, #child>()
         };
 
         let inhabited = quote::quote! {
-            ::alkahest::inhabited::<#element>()
+            ::alkahest::inhabited_versioned::<#element, #child>()
         };
 
         (element, stack_size, heap_size, inhabited)
@@ -275,6 +357,16 @@ pub fn derive_tuple(
         .map(|idx| quote::format_ident!("__alkahest__field_{}", idx))
         .collect::<Vec<_>>();
 
+    let (field_helpers, schema_fields) = field_metadata(
+        version,
+        None,
+        field_tys
+            .iter()
+            .cloned()
+            .enumerate()
+            .map(|(idx, ty)| (None, ty, field_versions.get(idx).copied().unwrap_or(0))),
+    );
+
     tokens.extend(quote::quote! {
         #[allow(non_camel_case_types)]
         pub struct #stack_size_ident #size_generics #size_fields;
@@ -291,6 +383,7 @@ pub fn derive_tuple(
         }
 
         impl #formula_impl_generics #ident #formula_ty_generics #formula_where_clause {
+            #field_helpers
             const __ALKAHEST_FIELD_COUNT: usize = #fields_count;
 
             #[allow(unused)]
@@ -299,11 +392,13 @@ pub fn derive_tuple(
             }
         }
 
-        impl #formula_impl_generics ::alkahest::Formula for #ident #formula_ty_generics #formula_where_clause {
+        impl #formula_impl_generics ::alkahest::Formula<#version> for #ident #formula_ty_generics #formula_where_clause {
             type StackSize<const __SIZE_BYTES: usize> = #stack_size_ident #size_ty_generics;
             type HeapSize<const __SIZE_BYTES: usize> = #heap_size_ident #size_ty_generics;
 
             const INHABITED: bool = #inhabited;
+            const VERSIONS: &'static [fn() -> &'static ::alkahest::Schema] = &[::alkahest::schema::<Self, #version>, #(#linked_versions),*];
+            const SCHEMA: ::alkahest::Schema = ::alkahest::Schema::new::<Self, #version>(::alkahest::SchemaKind::Record(#schema_fields));
         }
     });
 }
@@ -312,13 +407,16 @@ pub fn derive_record(
     ident: syn::Ident,
     generics: syn::Generics,
     fields: impl Iterator<Item = (Ident, syn::Type)>,
+    version: u32,
+    linked_versions: &[TokenStream],
+    field_versions: &[u32],
     generate_type_definition: bool,
     tokens: &mut TokenStream,
 ) {
     let stack_size_ident = quote::format_ident!("__Alkahest_{}StackSize", ident);
     let heap_size_ident = quote::format_ident!("__Alkahest_{}HeapSize", ident);
 
-    let formula_generics = make_formula_generics(&generics);
+    let formula_generics = make_formula_generics(&generics, generate_type_definition);
     let size_generics = make_size_generics(&formula_generics);
 
     let (formula_impl_generics, formula_ty_generics, formula_where_clause) =
@@ -329,17 +427,18 @@ pub fn derive_record(
     let size_fields = SizeFields(&generics);
 
     // Extract information about each field
-    let fields = fields.map(|(name, element)| {
+    let fields = fields.enumerate().map(|(idx, (name, element))| {
+        let child = field_versions.get(idx).copied().unwrap_or(0);
         let stack_size = quote::quote! {
-            ::alkahest::stack_size::<#element, __SIZE_BYTES>()
+            ::alkahest::stack_size_versioned::<#element, __SIZE_BYTES, #child>()
         };
 
         let heap_size = quote::quote! {
-            ::alkahest::heap_size::<#element, __SIZE_BYTES>()
+            ::alkahest::heap_size_versioned::<#element, __SIZE_BYTES, #child>()
         };
 
         let inhabited = quote::quote! {
-            ::alkahest::inhabited::<#element>()
+            ::alkahest::inhabited_versioned::<#element, #child>()
         };
 
         (name, element, stack_size, heap_size, inhabited)
@@ -413,6 +512,18 @@ pub fn derive_record(
         });
     }
 
+    let (field_helpers, schema_fields) = field_metadata(
+        version,
+        None,
+        field_tys.iter().cloned().enumerate().map(|(idx, ty)| {
+            (
+                Some(field_names[idx].clone()),
+                ty,
+                field_versions.get(idx).copied().unwrap_or(0),
+            )
+        }),
+    );
+
     tokens.extend(quote::quote! {
         #[allow(non_camel_case_types)]
         pub struct #stack_size_ident #size_generics #size_fields;
@@ -435,6 +546,7 @@ pub fn derive_record(
                 pub const #field_order_names: usize = #fields_order;
             )*
 
+            #field_helpers
             pub const __ALKAHEST_FIELD_COUNT: usize = #fields_count;
 
             #[allow(unused)]
@@ -443,10 +555,12 @@ pub fn derive_record(
             }
         }
 
-        impl #formula_impl_generics ::alkahest::Formula for #ident #formula_ty_generics #formula_where_clause {
+        impl #formula_impl_generics ::alkahest::Formula<#version> for #ident #formula_ty_generics #formula_where_clause {
             type StackSize<const __SIZE_BYTES: usize> = #stack_size_ident #size_ty_generics;
             type HeapSize<const __SIZE_BYTES: usize> = #heap_size_ident #size_ty_generics;
             const INHABITED: bool = #inhabited;
+            const VERSIONS: &'static [fn() -> &'static ::alkahest::Schema] = &[::alkahest::schema::<Self, #version>, #(#linked_versions),*];
+            const SCHEMA: ::alkahest::Schema = ::alkahest::Schema::new::<Self, #version>(::alkahest::SchemaKind::Record(#schema_fields));
         }
     });
 }
@@ -461,6 +575,9 @@ pub fn derive_enum<T, S>(
     ident: syn::Ident,
     generics: syn::Generics,
     variants: impl Iterator<Item = (Ident, VarianFormula<T, S>)>,
+    version: u32,
+    linked_versions: &[TokenStream],
+    field_versions: &[Vec<u32>],
     generate_type_definition: bool,
     tokens: &mut TokenStream,
 ) where
@@ -470,7 +587,7 @@ pub fn derive_enum<T, S>(
     let stack_size_ident = quote::format_ident!("__Alkahest_{}StackSize", ident);
     let heap_size_ident = quote::format_ident!("__Alkahest_{}HeapSize", ident);
 
-    let formula_generics = make_formula_generics(&generics);
+    let formula_generics = make_formula_generics(&generics, generate_type_definition);
     let size_generics = make_size_generics(&formula_generics);
 
     let (formula_impl_generics, formula_ty_generics, formula_where_clause) =
@@ -481,7 +598,11 @@ pub fn derive_enum<T, S>(
     let size_fields = SizeFields(&generics);
 
     // Extract information about each variant
-    let variants = variants.map(|(name, variant)| {
+    let variants = variants.enumerate().map(|(variant_idx, (name, variant))| {
+        let field_versions = field_versions
+            .get(variant_idx)
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
         let variant_name = name;
 
         // Extract information about each field of the variant
@@ -495,17 +616,18 @@ pub fn derive_enum<T, S>(
             ),
             VarianFormula::Tuple(tuple) => {
                 // Extract information about each field
-                let fields = tuple.map(|element| {
+                let fields = tuple.enumerate().map(|(idx, element)| {
+                    let child = field_versions.get(idx).copied().unwrap_or(0);
                     let stack_size = quote::quote! {
-                        ::alkahest::stack_size::<#element, __SIZE_BYTES>()
+                        ::alkahest::stack_size_versioned::<#element, __SIZE_BYTES, #child>()
                     };
 
                     let heap_size = quote::quote! {
-                        ::alkahest::heap_size::<#element, __SIZE_BYTES>()
+                        ::alkahest::heap_size_versioned::<#element, __SIZE_BYTES, #child>()
                     };
 
                     let inhabited = quote::quote! {
-                        ::alkahest::inhabited::<#element>()
+                        ::alkahest::inhabited_versioned::<#element, #child>()
                     };
 
                     let field = syn::Field {
@@ -565,17 +687,18 @@ pub fn derive_enum<T, S>(
             }
             VarianFormula::Record(record) => {
                 // Extract information about each field
-                let fields = record.map(|(name, element)| {
+                let fields = record.enumerate().map(|(idx, (name, element))| {
+                    let child = field_versions.get(idx).copied().unwrap_or(0);
                     let stack_size = quote::quote! {
-                        ::alkahest::stack_size::<#element, __SIZE_BYTES>()
+                        ::alkahest::stack_size_versioned::<#element, __SIZE_BYTES, #child>()
                     };
 
                     let heap_size = quote::quote! {
-                        ::alkahest::heap_size::<#element, __SIZE_BYTES>()
+                        ::alkahest::heap_size_versioned::<#element, __SIZE_BYTES, #child>()
                     };
 
                     let inhabited = quote::quote! {
-                        ::alkahest::inhabited::<#element>()
+                        ::alkahest::inhabited_versioned::<#element, #child>()
                     };
 
                     let field = syn::Field {
@@ -668,6 +791,14 @@ pub fn derive_enum<T, S>(
         variant_inhabiteds,
         variant_fields_orders,
     ): (Vec<_>, Vec<_>, Vec<_>, Vec<_>, Vec<_>, Vec<_>) = variants.collect();
+
+    let (variant_helpers, schema_variants): (Vec<_>, Vec<_>) = variant_names.iter().zip(&variant_fields).enumerate().map(|(variant_idx, (name, fields))| {
+        let versions = field_versions.get(variant_idx).map(Vec::as_slice).unwrap_or(&[]);
+        let (helpers, fields) = field_metadata(version, Some(name), fields.iter().enumerate().map(|(idx, field)| (field.ident.clone(), field.ty.clone(), versions.get(idx).copied().unwrap_or(0))));
+        let tag = quote::format_ident!("__ALKAHEST_DISCRIMINANT_OF_{}", name);
+        let label = name.to_string();
+        (helpers, quote::quote!(::alkahest::Variant { name: #label, tag: Self::#tag, fields: #fields }))
+    }).unzip();
 
     let discriminant_count = match variant_stack_sizes.len() {
         0 => {
@@ -908,6 +1039,7 @@ pub fn derive_enum<T, S>(
             )*
 
             #(#variant_fields_orders)*
+            #(#variant_helpers)*
 
             pub const __ALKAHEST_DISCRIMINANT_COUNT: usize = #discriminant_count;
         }
@@ -926,10 +1058,12 @@ pub fn derive_enum<T, S>(
             const VALUE: ::alkahest::SizeBound = #heap_size;
         }
 
-        impl #formula_impl_generics ::alkahest::Formula for #ident #formula_ty_generics #formula_where_clause {
+        impl #formula_impl_generics ::alkahest::Formula<#version> for #ident #formula_ty_generics #formula_where_clause {
             type StackSize<const __SIZE_BYTES: usize> = #stack_size_ident #size_ty_generics;
             type HeapSize<const __SIZE_BYTES: usize> = #heap_size_ident #size_ty_generics;
             const INHABITED: bool = #inhabited;
+            const VERSIONS: &'static [fn() -> &'static ::alkahest::Schema] = &[::alkahest::schema::<Self, #version>, #(#linked_versions),*];
+            const SCHEMA: ::alkahest::Schema = ::alkahest::Schema::new::<Self, #version>(::alkahest::SchemaKind::Enum { variants: &[#(#schema_variants),*], discriminant_count: Self::__ALKAHEST_DISCRIMINANT_COUNT });
         }
     });
 }
@@ -951,25 +1085,49 @@ pub(crate) fn derive(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
 }
 
 fn get_args(attrs: &[syn::Attribute]) -> syn::Result<FormulaDeriveArgs> {
-    for attr in attrs {
-        if attr.path().is_ident("alkahest") {
-            let args = attr.parse_args::<FormulaDeriveArgs>()?;
-            return Ok(args);
-        }
-    }
-
-    Ok(FormulaDeriveArgs::default())
+    crate::args::derive_args(attrs)
 }
 
 pub fn derive_impl(
     input: syn::DeriveInput,
-    mut args: FormulaArgs,
+    args: FormulaArgs,
 ) -> syn::Result<proc_macro2::TokenStream> {
-    args.add_default_where_clause(&input.generics);
+    let version = crate::args::version_value(&args.version)?;
+    let linked_versions = crate::args::revision_links(&args.versions, version)?;
+    validate_annotations(&input.data)?;
+    let field_groups: Vec<_> = match &input.data {
+        syn::Data::Struct(data) => vec![&data.fields],
+        syn::Data::Enum(data) => data.variants.iter().map(|v| &v.fields).collect(),
+        syn::Data::Union(_) => Vec::new(),
+    };
+    let field_versions = field_groups
+        .iter()
+        .map(|fields| {
+            fields
+                .iter()
+                .map(|field| crate::args::field_version(&field.attrs))
+                .collect::<syn::Result<Vec<_>>>()
+        })
+        .collect::<syn::Result<Vec<_>>>()?;
+    let field_bounds: Vec<syn::WherePredicate> = field_groups
+        .iter()
+        .zip(&field_versions)
+        .flat_map(|(fields, versions)| {
+            fields
+                .iter()
+                .zip(versions)
+                .filter(|(field, _)| needs_field_bound(&field.ty, &input.generics, &input.ident))
+                .map(|(field, child)| {
+                    let ty = &field.ty;
+                    syn::parse_quote!(#ty: ::alkahest::Element<#child>)
+                })
+        })
+        .collect();
 
     let mut tokens = TokenStream::new();
 
     let mut generics = input.generics;
+    generics.make_where_clause().predicates.extend(field_bounds);
 
     if args.where_clause.is_some() {
         generics
@@ -985,7 +1143,14 @@ pub fn derive_impl(
         )),
         syn::Data::Struct(data) => match data.fields {
             syn::Fields::Unit => {
-                derive_unit(input.ident, generics, false, &mut tokens);
+                derive_unit(
+                    input.ident,
+                    generics,
+                    version,
+                    &linked_versions,
+                    false,
+                    &mut tokens,
+                );
                 Ok(tokens)
             }
             syn::Fields::Unnamed(fields) => {
@@ -993,6 +1158,9 @@ pub fn derive_impl(
                     input.ident,
                     generics,
                     fields.unnamed.into_iter().map(|f| f.ty),
+                    version,
+                    &linked_versions,
+                    &field_versions[0],
                     false,
                     &mut tokens,
                 );
@@ -1003,6 +1171,9 @@ pub fn derive_impl(
                     input.ident,
                     generics,
                     fields.named.into_iter().map(|f| (f.ident.unwrap(), f.ty)),
+                    version,
+                    &linked_versions,
+                    &field_versions[0],
                     false,
                     &mut tokens,
                 );
@@ -1029,6 +1200,9 @@ pub fn derive_impl(
                         ),
                     }
                 }),
+                version,
+                &linked_versions,
+                &field_versions,
                 false,
                 &mut tokens,
             );

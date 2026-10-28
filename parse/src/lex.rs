@@ -171,7 +171,7 @@ impl Ident {
     }
 
     pub fn as_str(&self) -> &str {
-        &*self.string
+        &self.string
     }
 
     pub(crate) fn clone_rc_str(&self) -> Rc<str> {
@@ -245,7 +245,7 @@ impl Literal {
     }
 
     pub fn as_str(&self) -> &str {
-        &*self.value
+        &self.value
     }
 
     #[allow(unused)]

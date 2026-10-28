@@ -109,7 +109,25 @@ fn type_alkahest_impl(
 ) -> syn::Result<proc_macro2::TokenStream> {
     let args = syn::parse::<args::TypeArgs>(attr)?;
 
-    let mut tokens = quote::quote! { #input };
+    let mut output = input.clone();
+    if matches!(&args, TypeArgs::Formula(_) | TypeArgs::Mixture(_)) {
+        match &mut output.data {
+            syn::Data::Struct(data) => {
+                for field in &mut data.fields {
+                    field.attrs.retain(|attr| !attr.path().is_ident("alkahest"));
+                }
+            }
+            syn::Data::Enum(data) => {
+                for variant in &mut data.variants {
+                    for field in &mut variant.fields {
+                        field.attrs.retain(|attr| !attr.path().is_ident("alkahest"));
+                    }
+                }
+            }
+            syn::Data::Union(_) => {}
+        }
+    }
+    let mut tokens = quote::quote! { #output };
 
     match args {
         TypeArgs::Formula(args) => tokens.extend(formula::derive_impl(input, args)?),

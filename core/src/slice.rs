@@ -1,15 +1,15 @@
 use crate::{
-    advanced::size_hint,
-    element::{Element, Indirect, heap_size, stack_size},
+    advanced::size_hint_versioned,
+    element::{Element, Indirect, heap_size_versioned, stack_size_versioned},
     formula::SizeBound,
     list::List,
     serialize::{Serialize, Serializer, Sizes},
 };
 
-impl<E, T> Serialize<List<E>> for [T]
+impl<E, T, const VERSION: u32> Serialize<List<E>, VERSION> for [T]
 where
-    E: Element + ?Sized,
-    T: Serialize<E::Formula>,
+    E: Element<VERSION> + ?Sized,
+    T: Serialize<E::Formula, VERSION>,
 {
     #[inline]
     fn serialize<S>(&self, mut serializer: S) -> Result<(), S::Error>
@@ -47,12 +47,19 @@ where
             return Some(sizes);
         }
 
-        match const { (stack_size::<E, SIZE_BYTES>(), heap_size::<E, SIZE_BYTES>()) } {
+        match const {
+            (
+                stack_size_versioned::<E, SIZE_BYTES, VERSION>(),
+                heap_size_versioned::<E, SIZE_BYTES, VERSION>(),
+            )
+        } {
             (SizeBound::Bounded(max_stack), SizeBound::Exact(heap_size)) => {
                 sizes.add_stack((self.len() - 1) * max_stack);
                 sizes.add_heap(self.len() * heap_size);
-                sizes.stack +=
-                    simple_some!(size_hint::<E, T, SIZE_BYTES>(self.last().unwrap())).stack;
+                sizes.stack += simple_some!(size_hint_versioned::<E, T, SIZE_BYTES, VERSION>(
+                    self.last().unwrap()
+                ))
+                .stack;
                 Some(sizes)
             }
             (SizeBound::Exact(max_stack), SizeBound::Exact(heap_size)) => {
@@ -64,9 +71,12 @@ where
                 // For short slices, just sum up size hints.
                 0..4 => {
                     for (index, item) in self.iter().enumerate() {
-                        let mut next = simple_some!(size_hint::<E, T, SIZE_BYTES>(item));
+                        let mut next =
+                            simple_some!(size_hint_versioned::<E, T, SIZE_BYTES, VERSION>(item));
                         if index + 1 < self.len() {
-                            if let SizeBound::Bounded(max_stack) = stack_size::<E, SIZE_BYTES>() {
+                            if let SizeBound::Bounded(max_stack) =
+                                stack_size_versioned::<E, SIZE_BYTES, VERSION>()
+                            {
                                 next.stack = max_stack;
                             }
                         }
@@ -80,4 +90,4 @@ where
     }
 }
 
-element_alias!(for[E: Element] [E] as Indirect<List<E>>);
+element_alias!(for[const VERSION; E: Element<VERSION>] [E] as Indirect<List<E>>);

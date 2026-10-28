@@ -2,7 +2,7 @@ use core::{fmt, str::Utf8Error};
 
 use crate::{
     cold_err,
-    element::{Element, stack_size},
+    element::{Element, stack_size_versioned},
     formula::{Formula, SizeBound},
     serialize::{trivial_padded_size, trivial_size},
 };
@@ -63,25 +63,60 @@ pub trait Deserializer<'de> {
 
     fn read_usize(&mut self) -> Result<usize, DeserializeError>;
 
+    #[inline(always)]
     fn read_value<F, T>(&mut self) -> Result<T, DeserializeError>
     where
         F: Formula + ?Sized,
-        T: Deserialize<'de, F>;
+        T: Deserialize<'de, F>,
+    {
+        self.read_value_versioned::<F, T, 0>()
+    }
+    /// Uses the explicit formula version for this value or slice.
+    fn read_value_versioned<F, T, const VERSION: u32>(&mut self) -> Result<T, DeserializeError>
+    where
+        F: Formula<VERSION> + ?Sized,
+        T: Deserialize<'de, F, VERSION>;
 
+    #[inline(always)]
     fn read_slice<F, T>(&mut self, len: usize, push: impl FnMut(T)) -> Result<(), DeserializeError>
     where
         F: Formula + ?Sized,
-        T: Deserialize<'de, F>;
+        T: Deserialize<'de, F>,
+    {
+        self.read_slice_versioned::<F, T, 0>(len, push)
+    }
+    /// Uses the explicit formula version for this value or slice.
+    fn read_slice_versioned<F, T, const VERSION: u32>(
+        &mut self,
+        len: usize,
+        push: impl FnMut(T),
+    ) -> Result<(), DeserializeError>
+    where
+        F: Formula<VERSION> + ?Sized,
+        T: Deserialize<'de, F, VERSION>;
 
     /// Reads and deserializes field from the input buffer in-place.
     ///
     /// # Errors
     ///
     /// Returns `DeserializeError` if deserialization fails.
+
+    #[inline(always)]
     fn read_value_in_place<F, T>(&mut self, place: &mut T) -> Result<(), DeserializeError>
     where
         F: Formula + ?Sized,
-        T: Deserialize<'de, F> + ?Sized;
+        T: Deserialize<'de, F> + ?Sized,
+    {
+        self.read_value_in_place_versioned::<F, T, 0>(place)
+    }
+    /// Uses the explicit formula version for this value or slice.
+    fn read_value_in_place_versioned<F, T, const VERSION: u32>(
+        &mut self,
+        place: &mut T,
+    ) -> Result<(), DeserializeError>
+    where
+        F: Formula<VERSION> + ?Sized,
+        T: Deserialize<'de, F, VERSION> + ?Sized;
 
     #[doc(hidden)]
     fn input(&self) -> &'de [u8];
@@ -93,9 +128,11 @@ pub trait Deserializer<'de> {
     fn size_bytes(&self) -> usize;
 }
 
-/// Trait for types that can be deserialized
-/// from raw bytes with specified `F: `[`Formula`].
-pub trait Deserialize<'de, F: ?Sized> {
+/// Deserializes values using formula `F` at the selected `VERSION`.
+///
+/// The caller selects the version; no version tag is read from the byte stream.
+/// Version zero is the default.
+pub trait Deserialize<'de, F: Formula<VERSION> + ?Sized, const VERSION: u32 = 0> {
     /// Deserializes value provided deserializer.
     /// Returns deserialized value and the number of bytes consumed from
     /// the and of input.
@@ -155,11 +192,11 @@ impl<'de, const SIZE_BYTES: usize> ComplexDeserializer<'de, SIZE_BYTES> {
     }
 
     #[inline(always)]
-    fn skip_padding<F>(&mut self, new_len: &mut usize)
+    fn skip_padding<F, const VERSION: u32>(&mut self, new_len: &mut usize)
     where
-        F: Formula + ?Sized,
+        F: Formula<VERSION> + ?Sized,
     {
-        match const { stack_size::<F, SIZE_BYTES>() } {
+        match const { stack_size_versioned::<F, SIZE_BYTES, VERSION>() } {
             SizeBound::Bounded(max_stack) => {
                 debug_assert!(*new_len >= self.input.len().saturating_sub(max_stack));
 
@@ -271,15 +308,15 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for ComplexDeserializer<'de
     ///
     /// Returns `DeserializeError` if deserialization fails.
     #[inline(always)]
-    fn read_value<F, T>(&mut self) -> Result<T, DeserializeError>
+    fn read_value_versioned<F, T, const VERSION: u32>(&mut self) -> Result<T, DeserializeError>
     where
-        F: Formula + ?Sized,
-        T: Deserialize<'de, F>,
+        F: Formula<VERSION> + ?Sized,
+        T: Deserialize<'de, F, VERSION>,
     {
         #[cfg(debug_assertions)]
         self.debug_validate();
 
-        if let Some(trivial_size) = const { trivial_size::<F, SIZE_BYTES>() } {
+        if let Some(trivial_size) = const { trivial_size::<F, SIZE_BYTES, VERSION>() } {
             // Switch to trivial layout deserialization.
 
             if trivial_size > self.input.len() {
@@ -290,7 +327,7 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for ComplexDeserializer<'de
             let tail = &self.input[at..][..trivial_size];
 
             let de = TrivialDeserializer::<SIZE_BYTES>::new(tail);
-            let value = simple_try!(<T as Deserialize<F>>::deserialize(de));
+            let value = simple_try!(<T as Deserialize<F, VERSION>>::deserialize(de));
 
             self.input = &self.input[..at];
 
@@ -299,24 +336,24 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for ComplexDeserializer<'de
 
         let mut new_len: usize = 0;
         let de = TrackingDeserializer::<SIZE_BYTES>::new(self.input, &mut new_len);
-        let value = simple_try!(<T as Deserialize<'de, F>>::deserialize(de));
+        let value = simple_try!(<T as Deserialize<'de, F, VERSION>>::deserialize(de));
 
-        self.skip_padding::<F>(&mut new_len);
+        self.skip_padding::<F, VERSION>(&mut new_len);
 
         self.input = &self.input[..new_len];
         Ok(value)
     }
 
-    fn read_slice<F, T>(
+    fn read_slice_versioned<F, T, const VERSION: u32>(
         &mut self,
         len: usize,
         mut push: impl FnMut(T),
     ) -> Result<(), DeserializeError>
     where
-        F: Formula + ?Sized,
-        T: Deserialize<'de, F>,
+        F: Formula<VERSION> + ?Sized,
+        T: Deserialize<'de, F, VERSION>,
     {
-        if let Some(trivial_size) = const { trivial_padded_size::<F, SIZE_BYTES>() } {
+        if let Some(trivial_size) = const { trivial_padded_size::<F, SIZE_BYTES, VERSION>() } {
             let slice_size = trivial_size * len;
 
             let at = self.input.len() - slice_size;
@@ -324,7 +361,7 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for ComplexDeserializer<'de
 
             for chunk in slice_input.chunks_exact(trivial_size).rev() {
                 let de = TrivialDeserializer::<SIZE_BYTES>::new(chunk);
-                let item = simple_try!(<T as Deserialize<'de, F>>::deserialize(de));
+                let item = simple_try!(<T as Deserialize<'de, F, VERSION>>::deserialize(de));
                 push(item);
             }
 
@@ -332,7 +369,7 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for ComplexDeserializer<'de
         }
 
         for _ in 0..len {
-            let value = simple_try!(self.read_value::<F, T>());
+            let value = simple_try!(self.read_value_versioned::<F, T, VERSION>());
             push(value);
         }
 
@@ -345,15 +382,18 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for ComplexDeserializer<'de
     ///
     /// Returns `DeserializeError` if deserialization fails.
     #[inline]
-    fn read_value_in_place<F, T>(&mut self, place: &mut T) -> Result<(), DeserializeError>
+    fn read_value_in_place_versioned<F, T, const VERSION: u32>(
+        &mut self,
+        place: &mut T,
+    ) -> Result<(), DeserializeError>
     where
-        F: Formula + ?Sized,
-        T: Deserialize<'de, F> + ?Sized,
+        F: Formula<VERSION> + ?Sized,
+        T: Deserialize<'de, F, VERSION> + ?Sized,
     {
         #[cfg(debug_assertions)]
         self.debug_validate();
 
-        if let Some(trivial_size) = const { trivial_size::<F, SIZE_BYTES>() } {
+        if let Some(trivial_size) = const { trivial_size::<F, SIZE_BYTES, VERSION>() } {
             // Switch to trivial layout deserialization.
 
             if trivial_size > self.input.len() {
@@ -363,7 +403,7 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for ComplexDeserializer<'de
             let at = self.input.len() - trivial_size;
             let tail = &self.input[at..][..trivial_size];
 
-            simple_try!(<T as Deserialize<F>>::deserialize_in_place(
+            simple_try!(<T as Deserialize<F, VERSION>>::deserialize_in_place(
                 place,
                 TrivialDeserializer::<SIZE_BYTES>::new(tail),
             ));
@@ -374,12 +414,12 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for ComplexDeserializer<'de
         }
 
         let mut new_len: usize = 0;
-        simple_try!(<T as Deserialize<'de, F>>::deserialize_in_place(
+        simple_try!(<T as Deserialize<'de, F, VERSION>>::deserialize_in_place(
             place,
             TrackingDeserializer::<SIZE_BYTES>::new(self.input, &mut new_len),
         ));
 
-        self.skip_padding::<F>(&mut new_len);
+        self.skip_padding::<F, VERSION>(&mut new_len);
 
         self.input = &self.input[..new_len];
         Ok(())
@@ -494,20 +534,24 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for TrackingDeserializer<'d
     ///
     /// Returns `DeserializeError` if deserialization fails.
     #[inline(always)]
-    fn read_value<F, T>(&mut self) -> Result<T, DeserializeError>
+    fn read_value_versioned<F, T, const VERSION: u32>(&mut self) -> Result<T, DeserializeError>
     where
-        F: Formula + ?Sized,
-        T: Deserialize<'de, F>,
+        F: Formula<VERSION> + ?Sized,
+        T: Deserialize<'de, F, VERSION>,
     {
-        self.inner.read_value()
+        self.inner.read_value_versioned::<F, T, VERSION>()
     }
 
-    fn read_slice<F, T>(&mut self, len: usize, push: impl FnMut(T)) -> Result<(), DeserializeError>
+    fn read_slice_versioned<F, T, const VERSION: u32>(
+        &mut self,
+        len: usize,
+        push: impl FnMut(T),
+    ) -> Result<(), DeserializeError>
     where
-        F: Formula + ?Sized,
-        T: Deserialize<'de, F>,
+        F: Formula<VERSION> + ?Sized,
+        T: Deserialize<'de, F, VERSION>,
     {
-        self.inner.read_slice(len, push)
+        self.inner.read_slice_versioned::<F, T, VERSION>(len, push)
     }
 
     /// Reads and deserializes field from the input buffer in-place.
@@ -516,12 +560,16 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for TrackingDeserializer<'d
     ///
     /// Returns `DeserializeError` if deserialization fails.
     #[inline(always)]
-    fn read_value_in_place<F, T>(&mut self, place: &mut T) -> Result<(), DeserializeError>
+    fn read_value_in_place_versioned<F, T, const VERSION: u32>(
+        &mut self,
+        place: &mut T,
+    ) -> Result<(), DeserializeError>
     where
-        F: Formula + ?Sized,
-        T: Deserialize<'de, F> + ?Sized,
+        F: Formula<VERSION> + ?Sized,
+        T: Deserialize<'de, F, VERSION> + ?Sized,
     {
-        self.inner.read_value_in_place(place)
+        self.inner
+            .read_value_in_place_versioned::<F, T, VERSION>(place)
     }
 
     #[inline(always)]
@@ -611,19 +659,18 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for TrivialDeserializer<'de
     /// # Errors
     ///
     /// Returns `DeserializeError` if deserialization fails.
-    #[inline(always)]
-    fn read_value<F, T>(&mut self) -> Result<T, DeserializeError>
+    fn read_value_versioned<F, T, const VERSION: u32>(&mut self) -> Result<T, DeserializeError>
     where
-        F: Formula + ?Sized,
-        T: Deserialize<'de, F>,
+        F: Formula<VERSION> + ?Sized,
+        T: Deserialize<'de, F, VERSION>,
     {
-        if let Some(trivial_size) = const { trivial_padded_size::<F, SIZE_BYTES>() } {
+        if let Some(trivial_size) = const { trivial_padded_size::<F, SIZE_BYTES, VERSION>() } {
             // Switch to trivial layout serialization.
             let (head, tail) = self.input.split_at(trivial_size);
             self.input = tail;
 
             let de = TrivialDeserializer::<SIZE_BYTES>::new(head);
-            let value = simple_try!(<T as Deserialize<F>>::deserialize(de));
+            let value = simple_try!(<T as Deserialize<F, VERSION>>::deserialize(de));
 
             return Ok(value);
         }
@@ -631,16 +678,16 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for TrivialDeserializer<'de
         unreachable!()
     }
 
-    fn read_slice<F, T>(
+    fn read_slice_versioned<F, T, const VERSION: u32>(
         &mut self,
         len: usize,
         mut push: impl FnMut(T),
     ) -> Result<(), DeserializeError>
     where
-        F: Formula + ?Sized,
-        T: Deserialize<'de, F>,
+        F: Formula<VERSION> + ?Sized,
+        T: Deserialize<'de, F, VERSION>,
     {
-        if let Some(trivial_size) = const { trivial_padded_size::<F, SIZE_BYTES>() } {
+        if let Some(trivial_size) = const { trivial_padded_size::<F, SIZE_BYTES, VERSION>() } {
             let slice_size = trivial_size * len;
 
             let at = self.input.len() - slice_size;
@@ -648,7 +695,7 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for TrivialDeserializer<'de
 
             for chunk in slice_input.chunks_exact(trivial_size).rev() {
                 let de = TrivialDeserializer::<SIZE_BYTES>::new(chunk);
-                let item = simple_try!(<T as Deserialize<'de, F>>::deserialize(de));
+                let item = simple_try!(<T as Deserialize<'de, F, VERSION>>::deserialize(de));
                 push(item);
             }
 
@@ -656,7 +703,7 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for TrivialDeserializer<'de
         }
 
         for _ in 0..len {
-            let value = simple_try!(self.read_value::<F, T>());
+            let value = simple_try!(self.read_value_versioned::<F, T, VERSION>());
             push(value);
         }
 
@@ -668,19 +715,23 @@ impl<'de, const SIZE_BYTES: usize> Deserializer<'de> for TrivialDeserializer<'de
     /// # Errors
     ///
     /// Returns `DeserializeError` if deserialization fails.
-    #[inline(always)]
-    fn read_value_in_place<F, T>(&mut self, place: &mut T) -> Result<(), DeserializeError>
+    fn read_value_in_place_versioned<F, T, const VERSION: u32>(
+        &mut self,
+        place: &mut T,
+    ) -> Result<(), DeserializeError>
     where
-        F: Formula + ?Sized,
-        T: Deserialize<'de, F> + ?Sized,
+        F: Formula<VERSION> + ?Sized,
+        T: Deserialize<'de, F, VERSION> + ?Sized,
     {
-        if let Some(trivial_size) = const { trivial_padded_size::<F, SIZE_BYTES>() } {
+        if let Some(trivial_size) = const { trivial_padded_size::<F, SIZE_BYTES, VERSION>() } {
             // Switch to trivial layout serialization.
             let (head, tail) = self.input.split_at(trivial_size);
             self.input = tail;
 
             let de = TrivialDeserializer::<SIZE_BYTES>::new(head);
-            simple_try!(<T as Deserialize<F>>::deserialize_in_place(place, de));
+            simple_try!(<T as Deserialize<F, VERSION>>::deserialize_in_place(
+                place, de
+            ));
 
             return Ok(());
         }
@@ -729,16 +780,27 @@ where
     F: Formula + ?Sized,
     T: Deserialize<'de, F>,
 {
-    if let Some(trivial_size) = const { trivial_size::<F, SIZE_BYTES>() } {
+    deserialize_at_version::<F, T, SIZE_BYTES, 0>(input)
+}
+/// Version-selecting form of [`deserialize`]. Uses `VERSION` without compatibility checks or a version tag.
+#[inline(always)]
+pub fn deserialize_at_version<'de, F, T, const SIZE_BYTES: usize, const VERSION: u32>(
+    input: &'de [u8],
+) -> Result<T, DeserializeError>
+where
+    F: Formula<VERSION> + ?Sized,
+    T: Deserialize<'de, F, VERSION>,
+{
+    if let Some(trivial_size) = const { trivial_size::<F, SIZE_BYTES, VERSION>() } {
         if input.len() < trivial_size {
             return cold_err(DeserializeError::WrongLength);
         }
         let de = TrivialDeserializer::<SIZE_BYTES>::new(&input[..trivial_size]);
-        return <T as Deserialize<F>>::deserialize(de);
+        return <T as Deserialize<F, VERSION>>::deserialize(de);
     }
 
     let de = ComplexDeserializer::<SIZE_BYTES>::new(input);
-    <T as Deserialize<F>>::deserialize(de)
+    <T as Deserialize<F, VERSION>>::deserialize(de)
 }
 
 /// Deserializes value from the input.
@@ -762,17 +824,33 @@ where
     F: Formula + ?Sized,
     T: Deserialize<'de, F> + ?Sized,
 {
-    if let Some(trivial_size) = const { trivial_size::<F, SIZE_BYTES>() } {
+    deserialize_in_place_at_version::<F, T, SIZE_BYTES, 0>(place, input)
+}
+/// Version-selecting form of [`deserialize_in_place`]. Uses `VERSION` without compatibility checks or a version tag.
+#[inline(always)]
+pub fn deserialize_in_place_at_version<'de, F, T, const SIZE_BYTES: usize, const VERSION: u32>(
+    place: &mut T,
+    input: &'de [u8],
+) -> Result<(), DeserializeError>
+where
+    F: Formula<VERSION> + ?Sized,
+    T: Deserialize<'de, F, VERSION> + ?Sized,
+{
+    if let Some(trivial_size) = const { trivial_size::<F, SIZE_BYTES, VERSION>() } {
         if input.len() < trivial_size {
             return cold_err(DeserializeError::WrongLength);
         }
         let de = TrivialDeserializer::<SIZE_BYTES>::new(&input[..trivial_size]);
-        simple_try!(<T as Deserialize<F>>::deserialize_in_place(place, de));
+        simple_try!(<T as Deserialize<F, VERSION>>::deserialize_in_place(
+            place, de
+        ));
         return Ok(());
     }
 
     let de = ComplexDeserializer::<SIZE_BYTES>::new(input);
-    simple_try!(<T as Deserialize<F>>::deserialize_in_place(place, de));
+    simple_try!(<T as Deserialize<F, VERSION>>::deserialize_in_place(
+        place, de
+    ));
     Ok(())
 }
 
@@ -830,13 +908,24 @@ macro_rules! fixed_size_module {
             /// # Errors
             ///
             /// Returns `DeserializeError` if deserialization fails.
-            #[inline]
-            pub fn deserialize<'de, E, T>(
+            #[inline(always)]
+pub fn deserialize<'de, E, T>(
                 input: &'de [u8],
             ) -> Result<T, DeserializeError>
             where
                 E: Element + ?Sized,
                 T: Deserialize<'de, E::Formula>,
+            {
+    deserialize_at_version::<E, T, 0>(input)
+}
+            /// Version-selecting form of [`deserialize`]. Uses `VERSION` without compatibility checks or a version tag.
+            #[inline(always)]
+            pub fn deserialize_at_version<'de, E, T, const VERSION: u32>(
+                input: &'de [u8],
+            ) -> Result<T, DeserializeError>
+            where
+                E: Element<VERSION> + ?Sized,
+                T: Deserialize<'de, E::Formula, VERSION>,
             {
                 let mut de = ComplexDeserializer::<$size_bytes>::new(input);
                 E::deserialize(&mut de)
@@ -848,14 +937,26 @@ macro_rules! fixed_size_module {
             /// # Errors
             ///
             /// Returns `DeserializeError` if deserialization fails.
-            #[inline]
-            pub fn deserialize_in_place<'de, E, T>(
+            #[inline(always)]
+pub fn deserialize_in_place<'de, E, T>(
                 place: &mut T,
                 input: &'de [u8],
             ) -> Result<(), DeserializeError>
             where
                 E: Element + ?Sized,
                 T: Deserialize<'de, E::Formula> + ?Sized,
+            {
+    deserialize_in_place_at_version::<E, T, 0>(place, input)
+}
+            /// Version-selecting form of [`deserialize_in_place`]. Uses `VERSION` without compatibility checks or a version tag.
+            #[inline(always)]
+            pub fn deserialize_in_place_at_version<'de, E, T, const VERSION: u32>(
+                place: &mut T,
+                input: &'de [u8],
+            ) -> Result<(), DeserializeError>
+            where
+                E: Element<VERSION> + ?Sized,
+                T: Deserialize<'de, E::Formula, VERSION> + ?Sized,
             {
                 let mut de = ComplexDeserializer::<$size_bytes>::new(input);
                 simple_try!(E::deserialize_in_place(place, &mut de));

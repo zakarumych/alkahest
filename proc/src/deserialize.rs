@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::TokenStream;
 
 use crate::args::{DeserializeArgs, DeserializeDeriveArgs};
 
@@ -21,54 +21,50 @@ pub(crate) fn derive(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
 }
 
 fn get_args(attrs: &[syn::Attribute]) -> syn::Result<DeserializeDeriveArgs> {
-    for attr in attrs {
-        if attr.path().is_ident("alkahest") {
-            let args = attr.parse_args::<DeserializeDeriveArgs>()?;
-            return Ok(args);
-        }
-    }
-
-    Ok(DeserializeDeriveArgs::default())
+    crate::args::derive_args(attrs)
 }
 
 fn with_element(
     formula: &syn::Path,
+    version: u32,
     variant: Option<&syn::Ident>,
     idx: usize,
     field: &syn::Field,
 ) -> TokenStream {
-    let mut formula_name = formula.clone();
-    formula_name.segments.last_mut().unwrap().arguments = syn::PathArguments::None;
+    let helper = crate::formula::field_helper_name(version, variant, idx, field.ident.as_ref());
+    quote::quote! { <#formula>::#helper() }
+}
 
-    match variant {
-        None => match &field.ident {
-            Some(ident) => quote::quote! {
-                ::alkahest::private::with_element(|#formula_name { #ident, .. }: &#formula| #ident)
-            },
-            None => {
-                let underscores = std::iter::repeat(syn::Token![_](Span::call_site())).take(idx);
-
-                quote::quote! {
-                    ::alkahest::private::with_element(|#formula_name ( #(#underscores,)* field, .. ): &#formula| field)
-                }
+fn bind_self_fields(
+    ty: &syn::Ident,
+    variant: Option<&syn::Ident>,
+    fields: &syn::Fields,
+) -> TokenStream {
+    let variant = variant.into_iter();
+    match fields {
+        syn::Fields::Named(fields) => {
+            let iter = fields.named.iter().map(|f| f.ident.as_ref().unwrap());
+            quote::quote! {
+                #ty #(:: #variant)* { #(ref mut #iter),* }
             }
-        },
-        Some(variant) => match &field.ident {
-            Some(ident) => quote::quote! {
-                ::alkahest::private::with_element(|__formula_ref: &#formula| { match *__formula_ref { #formula_name :: #variant { ref #ident, .. } => #ident, _ => unreachable!() } })
-            },
-            None => {
-                let underscores = std::iter::repeat(syn::Token![_](Span::call_site())).take(idx);
-
-                quote::quote! {
-                    ::alkahest::private::with_element(|__formula_ref: &#formula| { match *__formula_ref { #formula_name :: #variant ( #(#underscores,)* ref field, .. ) => field, _ => unreachable!() } })
-                }
+        }
+        syn::Fields::Unnamed(fields) => {
+            let iter = fields
+                .unnamed
+                .iter()
+                .enumerate()
+                .map(|(idx, _)| quote::format_ident!("__alkahest_field_{}", idx));
+            quote::quote! {
+                #ty #(:: #variant)* ( #(ref mut #iter),* )
             }
+        }
+        syn::Fields::Unit => quote::quote! {
+            #ty #(:: #variant)*
         },
     }
 }
 
-fn bind_self_fields(
+fn build_self_fields(
     ty: &syn::Ident,
     variant: Option<&syn::Ident>,
     fields: &syn::Fields,
@@ -108,6 +104,17 @@ pub fn derive_impl(
     input: syn::DeriveInput,
     args: DeserializeArgs,
 ) -> syn::Result<proc_macro2::TokenStream> {
+    let version = crate::args::version_value(&args.version)?;
+    crate::formula::validate_annotations(&input.data)?;
+    if !args.formula.is_ident("Self") {
+        if matches!(args.versions, proc_easy::EasyMaybe::Just(_)) {
+            return Err(syn::Error::new_spanned(
+                &args.formula,
+                "version links must be declared on the formula",
+            ));
+        }
+        crate::formula::reject_field_annotations(&input.data)?;
+    }
     let formula = &args.formula;
     let name = &input.ident;
 
@@ -121,7 +128,9 @@ pub fn derive_impl(
 
     match input.data {
         syn::Data::Struct(data) => {
+            let build_self_fields = build_self_fields(name, None, &data.fields);
             let bind_self_fields = bind_self_fields(name, None, &data.fields);
+
             let fields = data.fields.iter().enumerate().map(|(idx, field)| {
                 let check_idx = field.ident.as_ref().map(|name| {
                     let ident = quote::format_ident!("__ALKAHEST_ORDER_OF_{}", name);
@@ -131,7 +140,7 @@ pub fn derive_impl(
                     }
                 });
 
-                let with_element = with_element(formula, None, idx, field);
+                let with_element = with_element(formula, version, None, idx, field);
                 let bound_field = bound_field(idx, field);
 
                 let deserialize = quote::quote! {
@@ -152,7 +161,7 @@ pub fn derive_impl(
             ) = fields.collect();
 
             Ok(quote::quote! {
-                impl #impl_generics ::alkahest::Deserialize<#deserializer_lifetime, #formula> for #name #ty_generics #where_clause {
+                impl #impl_generics ::alkahest::Deserialize<#deserializer_lifetime, #formula, #version> for #name #ty_generics #where_clause {
                     #[inline]
                     fn deserialize<__Deserializer>(mut __deserializer: __Deserializer) -> ::alkahest::private::Result<Self, ::alkahest::DeserializeError>
                     where
@@ -160,7 +169,7 @@ pub fn derive_impl(
                     {
                         #(#fields_check_idx)*
                         #(#fields_deserialize)*
-                        ::alkahest::private::Ok(#bind_self_fields)
+                        ::alkahest::private::Ok(#build_self_fields)
                     }
 
                     #[inline]
@@ -169,7 +178,7 @@ pub fn derive_impl(
                         __Deserializer: ::alkahest::Deserializer<#deserializer_lifetime>,
                     {
                         #(#fields_check_idx)*
-                        let #bind_self_fields = self;
+                        let #bind_self_fields = *self;
                         #(#fields_deserialize_in_place)*
                         ::alkahest::private::Ok(())
                     }
@@ -202,7 +211,7 @@ pub fn derive_impl(
                         }
                     });
 
-                    let with_element = with_element(formula, Some(variant), idx, field);
+                    let with_element = with_element(formula, version, Some(variant), idx, field);
                     let bound_field = bound_field(idx, field);
 
                     let deserialize = quote::quote! {
@@ -222,13 +231,14 @@ pub fn derive_impl(
                     Vec<_>,
                 ) = fields.collect();
 
+                let build_self_fields = build_self_fields(name, Some(variant), &data_variant.fields);
                 let bind_self_fields = bind_self_fields(name, Some(variant), &data_variant.fields);
 
                 let variant_deserialize = quote::quote! {
                     if #variant_idx_check {
                         #(#fields_check_idx)*
                         #(#fields_deserialize)*
-                        return ::alkahest::private::Ok(#bind_self_fields);
+                        return ::alkahest::private::Ok(#build_self_fields);
                     }
                 };
 
@@ -247,7 +257,7 @@ pub fn derive_impl(
                 variants.unzip();
 
             Ok(quote::quote! {
-                impl #impl_generics ::alkahest::private::DeserializeEnumVariant<#deserializer_lifetime, #formula> for #name #ty_generics #where_clause {
+                impl #impl_generics ::alkahest::private::DeserializeEnumVariant<#deserializer_lifetime, #formula, #version> for #name #ty_generics #where_clause {
                     #[inline]
                     fn deserialize_enum_variant<__Deserializer>(__discriminant: usize, mut __deserializer: __Deserializer) -> ::alkahest::private::Result<Self, ::alkahest::DeserializeError>
                     where
@@ -258,14 +268,14 @@ pub fn derive_impl(
                     }
                 }
 
-                impl #impl_generics ::alkahest::Deserialize<#deserializer_lifetime, #formula> for #name #ty_generics #where_clause {
+                impl #impl_generics ::alkahest::Deserialize<#deserializer_lifetime, #formula, #version> for #name #ty_generics #where_clause {
                     #[inline]
                     fn deserialize<__Deserializer>(mut __deserializer: __Deserializer) -> ::alkahest::private::Result<Self, ::alkahest::DeserializeError>
                     where
                         __Deserializer: ::alkahest::Deserializer<#deserializer_lifetime>,
                     {
                         #deserialize_discriminant
-                        <Self as ::alkahest::private::DeserializeEnumVariant<#deserializer_lifetime, #formula>>::deserialize_enum_variant(__discriminant, __deserializer)
+                        <Self as ::alkahest::private::DeserializeEnumVariant<#deserializer_lifetime, #formula, #version>>::deserialize_enum_variant(__discriminant, __deserializer)
                     }
 
                     #[inline]
@@ -274,11 +284,11 @@ pub fn derive_impl(
                         __Deserializer: ::alkahest::Deserializer<#deserializer_lifetime>,
                     {
                         #deserialize_discriminant
-                        match self {
+                        match *self {
                             #(#variants_deserialize_in_place)*
                             _ => {
                                 // Different variant, cannot deserialize in place
-                                *self = ::alkahest::simple_try!(<Self as ::alkahest::private::DeserializeEnumVariant<#deserializer_lifetime, #formula>>::deserialize_enum_variant(__discriminant, __deserializer));
+                                *self = ::alkahest::simple_try!(<Self as ::alkahest::private::DeserializeEnumVariant<#deserializer_lifetime, #formula, #version>>::deserialize_enum_variant(__discriminant, __deserializer));
                                 ::alkahest::private::Ok(())
                             }
                         }
@@ -286,11 +296,9 @@ pub fn derive_impl(
                 }
             })
         }
-        _ => {
-            return Err(syn::Error::new(
-                input.ident.span(),
-                "Serialize can only be derived for structs and enums",
-            ));
-        }
+        _ => Err(syn::Error::new(
+            input.ident.span(),
+            "Serialize can only be derived for structs and enums",
+        )),
     }
 }

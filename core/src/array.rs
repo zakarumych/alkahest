@@ -1,7 +1,7 @@
 use crate::{
-    advanced::{size_hint, size_hint_padded},
+    advanced::{size_hint_padded_versioned, size_hint_versioned},
     deserialize::{Deserialize, DeserializeError, Deserializer},
-    element::{Element, heap_size, stack_size},
+    element::{Element, heap_size_versioned, stack_size_versioned},
     formula::SizeBound,
     list::List,
     serialize::{Serialize, Serializer, Sizes},
@@ -9,11 +9,11 @@ use crate::{
 
 // Array of `N` elements of type `T` can be serialized as a list of `N` elements of type `E` if `T` can be serialized as `E`,
 // and N is within the bounds of the list formula.
-impl<E, T, const N: usize, const MIN: usize, const MAX: usize> Serialize<List<E, MIN, MAX>>
-    for [T; N]
+impl<E, T, const N: usize, const MIN: usize, const MAX: usize, const VERSION: u32>
+    Serialize<List<E, MIN, MAX>, VERSION> for [T; N]
 where
-    E: Element + ?Sized,
-    T: Serialize<E::Formula>,
+    E: Element<VERSION> + ?Sized,
+    T: Serialize<E::Formula, VERSION>,
 {
     #[inline]
     fn serialize<S>(&self, mut serializer: S) -> Result<(), S::Error>
@@ -49,12 +49,19 @@ where
             return Some(sizes);
         }
 
-        match const { (stack_size::<E, SIZE_BYTES>(), heap_size::<E, SIZE_BYTES>()) } {
+        match const {
+            (
+                stack_size_versioned::<E, SIZE_BYTES, VERSION>(),
+                heap_size_versioned::<E, SIZE_BYTES, VERSION>(),
+            )
+        } {
             (SizeBound::Bounded(max_stack), SizeBound::Exact(heap_size)) => {
                 sizes.add_stack((N - 1) * max_stack);
                 sizes.add_heap(N * heap_size);
-                sizes.stack +=
-                    simple_some!(size_hint::<E, _, SIZE_BYTES>(self.last().unwrap())).stack;
+                sizes.stack += simple_some!(size_hint_versioned::<E, _, SIZE_BYTES, VERSION>(
+                    self.last().unwrap()
+                ))
+                .stack;
                 Some(sizes)
             }
             (SizeBound::Exact(max_stack), SizeBound::Exact(heap_size)) => {
@@ -66,9 +73,14 @@ where
                 // For short slices, just sum up size hints.
                 1..4 => {
                     for item in &self[..N - 1] {
-                        sizes += simple_some!(size_hint_padded::<E, T, SIZE_BYTES>(item));
+                        sizes +=
+                            simple_some!(size_hint_padded_versioned::<E, T, SIZE_BYTES, VERSION>(
+                                item
+                            ));
                     }
-                    sizes += simple_some!(size_hint::<E, T, SIZE_BYTES>(&self[N - 1]));
+                    sizes += simple_some!(size_hint_versioned::<E, T, SIZE_BYTES, VERSION>(
+                        &self[N - 1]
+                    ));
                     Some(sizes)
                 }
                 _ => None,
@@ -79,10 +91,11 @@ where
 
 // Array of `N` elements of type `T` can be deserialized from a list of `N` elements of type `E` if `T` can be deserialized from `E`,
 // and list formula is bounded to exactly `N` elements.
-impl<'de, E, T, const N: usize> Deserialize<'de, List<E, N, N>> for [T; N]
+impl<'de, E, T, const N: usize, const VERSION: u32> Deserialize<'de, List<E, N, N>, VERSION>
+    for [T; N]
 where
-    E: Element + ?Sized,
-    T: Deserialize<'de, E::Formula>,
+    E: Element<VERSION> + ?Sized,
+    T: Deserialize<'de, E::Formula, VERSION>,
 {
     #[inline]
     fn deserialize<D>(mut deserializer: D) -> Result<Self, DeserializeError>
@@ -141,4 +154,4 @@ where
     }
 }
 
-element_alias!(for[E: Element, const N: usize] [E; N] as List<E, N, N>);
+element_alias!(for[const VERSION; E: Element<VERSION>, const N: usize] [E; N] as List<E, N, N>);

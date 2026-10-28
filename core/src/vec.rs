@@ -1,6 +1,6 @@
 use crate::{
     Deserialize, DeserializeError, Deserializer, cold_err,
-    element::{Element, Indirect, stack_size},
+    element::{Element, Indirect, stack_size_versioned},
     formula::SizeBound,
     list::List,
     serialize::{Serialize, Serializer, Sizes},
@@ -8,13 +8,13 @@ use crate::{
 
 use alloc::vec::Vec;
 
-fn validate_length<'de, E: Element + ?Sized, D: Deserializer<'de>>(
+fn validate_length<'de, E: Element<VERSION> + ?Sized, D: Deserializer<'de>, const VERSION: u32>(
     deserializer: &D,
     len: usize,
 ) -> Result<(), DeserializeError> {
     with_size_bytes!(SIZE_BYTES = deserializer.size_bytes() => {
         {
-            let required = match stack_size::<E, SIZE_BYTES>() {
+            let required = match stack_size_versioned::<E, SIZE_BYTES, VERSION>() {
                 SizeBound::Exact(size) => size.checked_mul(len),
                 // Only the final element may omit trailing padding.
                 SizeBound::Bounded(size) => size.checked_mul(len.saturating_sub(1)),
@@ -30,29 +30,30 @@ fn validate_length<'de, E: Element + ?Sized, D: Deserializer<'de>>(
     })
 }
 
-impl<E, T> Serialize<List<E>> for Vec<T>
+impl<E, T, const VERSION: u32> Serialize<List<E>, VERSION> for Vec<T>
 where
-    E: Element + ?Sized,
-    T: Serialize<E::Formula>,
+    E: Element<VERSION> + ?Sized,
+    T: Serialize<E::Formula, VERSION>,
 {
     #[inline(always)]
     fn serialize<S>(&self, serializer: S) -> Result<(), S::Error>
     where
         S: Serializer,
     {
-        Serialize::<List<E>>::serialize(self.as_slice(), serializer)
+        Serialize::<List<E>, VERSION>::serialize(self.as_slice(), serializer)
     }
 
     #[inline(always)]
     fn size_hint<const SIZE_BYTES: usize>(&self) -> Option<Sizes> {
-        Serialize::<List<E>>::size_hint::<SIZE_BYTES>(self.as_slice())
+        Serialize::<List<E>, VERSION>::size_hint::<SIZE_BYTES>(self.as_slice())
     }
 }
 
-impl<'de, E, T, const MIN: usize, const MAX: usize> Deserialize<'de, List<E, MIN, MAX>> for Vec<T>
+impl<'de, E, T, const MIN: usize, const MAX: usize, const VERSION: u32>
+    Deserialize<'de, List<E, MIN, MAX>, VERSION> for Vec<T>
 where
-    E: Element + ?Sized,
-    T: Deserialize<'de, E::Formula>,
+    E: Element<VERSION> + ?Sized,
+    T: Deserialize<'de, E::Formula, VERSION>,
 {
     #[inline]
     fn deserialize<D>(mut deserializer: D) -> Result<Self, DeserializeError>
@@ -74,7 +75,7 @@ where
             len
         };
 
-        simple_try!(validate_length::<E, _>(&deserializer, len));
+        simple_try!(validate_length::<E, _, VERSION>(&deserializer, len));
 
         simple_try!(
             vec.try_reserve(len)
@@ -112,7 +113,7 @@ where
             len
         };
 
-        simple_try!(validate_length::<E, _>(&deserializer, len));
+        simple_try!(validate_length::<E, _, VERSION>(&deserializer, len));
 
         simple_try!(
             self.try_reserve(len.saturating_sub(self.len()))
@@ -148,4 +149,4 @@ where
 
 // Vec is commonly used in compound types,
 // so the alias makes it indirect.
-element_alias!(for[E: Element] Vec<E> as Indirect<List<E>>);
+element_alias!(for[const VERSION; E: Element<VERSION>] Vec<E> as Indirect<List<E>>);

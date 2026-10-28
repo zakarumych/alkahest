@@ -1,16 +1,18 @@
 use crate::{
-    advanced::size_hint,
+    advanced::size_hint_versioned,
     deserialize::{Deserialize, DeserializeError, Deserializer},
-    element::{Element, heap_size, stack_size},
+    element::{Element, heap_size_versioned, stack_size_versioned},
     formula::{Formula, SizeBound, SizeType},
     serialize::{Serialize, Serializer, Sizes},
 };
 
-pub struct OptionStackSize<E: Element, const SIZE_BYTES: usize>(E);
+pub struct OptionStackSize<E: Element<VERSION>, const SIZE_BYTES: usize, const VERSION: u32 = 0>(E);
 
-impl<E: Element, const SIZE_BYTES: usize> SizeType for OptionStackSize<E, SIZE_BYTES> {
+impl<E: Element<VERSION>, const SIZE_BYTES: usize, const VERSION: u32> SizeType
+    for OptionStackSize<E, SIZE_BYTES, VERSION>
+{
     const VALUE: SizeBound = if E::INHABITED {
-        stack_size::<E, SIZE_BYTES>()
+        stack_size_versioned::<E, SIZE_BYTES, VERSION>()
             .max(SizeBound::Exact(0))
             .add(SizeBound::Exact(1))
     } else {
@@ -18,30 +20,34 @@ impl<E: Element, const SIZE_BYTES: usize> SizeType for OptionStackSize<E, SIZE_B
     };
 }
 
-pub struct OptionHeapSize<E: Element, const SIZE_BYTES: usize>(E);
+pub struct OptionHeapSize<E: Element<VERSION>, const SIZE_BYTES: usize, const VERSION: u32 = 0>(E);
 
-impl<E: Element, const SIZE_BYTES: usize> SizeType for OptionHeapSize<E, SIZE_BYTES> {
+impl<E: Element<VERSION>, const SIZE_BYTES: usize, const VERSION: u32> SizeType
+    for OptionHeapSize<E, SIZE_BYTES, VERSION>
+{
     const VALUE: SizeBound = if E::INHABITED {
-        heap_size::<E, SIZE_BYTES>().max(SizeBound::Exact(0))
+        heap_size_versioned::<E, SIZE_BYTES, VERSION>().max(SizeBound::Exact(0))
     } else {
         // if E is uninhabited, option can only be None, and thus has no heap size
         SizeBound::Exact(0)
     };
 }
 
-impl<E> Formula for Option<E>
+impl<E, const VERSION: u32> Formula<VERSION> for Option<E>
 where
-    E: Element,
+    E: Element<VERSION>,
 {
-    type StackSize<const SIZE_BYTES: usize> = OptionStackSize<E, SIZE_BYTES>;
-    type HeapSize<const SIZE_BYTES: usize> = OptionHeapSize<E, SIZE_BYTES>;
+    const SCHEMA: crate::version::Schema =
+        crate::version::Schema::new::<Self, VERSION>(crate::version::SchemaKind::Option(E::SCHEMA));
+    type StackSize<const SIZE_BYTES: usize> = OptionStackSize<E, SIZE_BYTES, VERSION>;
+    type HeapSize<const SIZE_BYTES: usize> = OptionHeapSize<E, SIZE_BYTES, VERSION>;
     const INHABITED: bool = true;
 }
 
-impl<E, T> Serialize<Option<E>> for Option<T>
+impl<E, T, const VERSION: u32> Serialize<Option<E>, VERSION> for Option<T>
 where
-    E: Element,
-    T: Serialize<E::Formula>,
+    E: Element<VERSION>,
+    T: Serialize<E::Formula, VERSION>,
 {
     #[inline(always)]
     fn serialize<S>(&self, mut serializer: S) -> Result<(), S::Error>
@@ -82,17 +88,17 @@ where
                     "Cannot serialize Some(_) for uninhabited option type"
                 );
                 let mut sizes = Sizes::with_stack(1);
-                sizes += simple_some!(size_hint::<E, T, SIZE_BYTES>(value));
+                sizes += simple_some!(size_hint_versioned::<E, T, SIZE_BYTES, VERSION>(value));
                 Some(sizes)
             }
         }
     }
 }
 
-impl<'de, E, T> Deserialize<'de, Option<E>> for Option<T>
+impl<'de, E, T, const VERSION: u32> Deserialize<'de, Option<E>, VERSION> for Option<T>
 where
-    E: Element,
-    T: Deserialize<'de, E::Formula>,
+    E: Element<VERSION>,
+    T: Deserialize<'de, E::Formula, VERSION>,
 {
     #[inline]
     fn deserialize<D>(mut de: D) -> Result<Self, DeserializeError>

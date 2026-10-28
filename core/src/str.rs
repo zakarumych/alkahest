@@ -8,13 +8,15 @@ use crate::{
 /// Formula representing a string slice.
 pub struct Str;
 
-impl Formula for Str {
+impl<const VERSION: u32> Formula<VERSION> for Str {
+    const SCHEMA: crate::version::Schema =
+        crate::version::Schema::new::<Self, VERSION>(crate::version::SchemaKind::Str);
     type StackSize<const SIZE_BYTES: usize> = UnboundedSize;
     type HeapSize<const SIZE_BYTES: usize> = ExactSize<0>;
     const INHABITED: bool = true;
 }
 
-impl Serialize<Str> for str {
+impl<const VERSION: u32> Serialize<Str, VERSION> for str {
     #[inline(always)]
     fn serialize<S>(&self, mut serializer: S) -> Result<(), S::Error>
     where
@@ -32,7 +34,7 @@ impl Serialize<Str> for str {
     }
 }
 
-impl<'de, 'fe: 'de> Deserialize<'fe, Str> for &'de str {
+impl<'de, 'fe: 'de, const VERSION: u32> Deserialize<'fe, Str, VERSION> for &'de str {
     #[inline]
     fn deserialize<D>(mut deserializer: D) -> Result<Self, DeserializeError>
     where
